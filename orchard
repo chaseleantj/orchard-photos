@@ -1,0 +1,10 @@
+#!/bin/zsh
+# Start Orchard, or point the running one at another folder: orchard [folder]
+set -e
+folder=${1:+${1:A}}
+cd "${0:A:h}"
+if [[ ! -x .venv/bin/python || ! -f dist/index.html ]]; then
+  print 'Run the setup steps in README.md first.'
+  exit 1
+fi
+exec .venv/bin/python -m server.api --open-browser ${folder:+"$folder"} "${@:2}"

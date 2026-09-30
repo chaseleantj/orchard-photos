@@ -1,5 +1,6 @@
 {
-  "name": "Photo Viz",
+  "name": "Orchard",
+  "slug": "orchard",
   "port": 4400,
   "devPort": 5173
 }

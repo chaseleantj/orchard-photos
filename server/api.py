@@ -29,6 +29,13 @@ FORM_LIMIT = 64 * 1024
 IMMUTABLE = 'private, max-age=31536000, immutable'
 
 
+def default_data_dir() -> Path:
+    """Where the cache and model live: the platform's per-user application data folder."""
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / APP['slug']
+    return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / APP['slug']
+
+
 def tilde(path: Path) -> str:
     """A path as people write it: the home folder shortened to ~."""
     try:
@@ -103,11 +110,11 @@ class App:
         library = self.library
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
-        result = {'app': APP['name'], 'platform': sys.platform, 'recent': recent, 'folder': None}
+        result = {'app': APP['name'], 'platform': sys.platform, 'recent': recent, 'folder': None, 'library': None}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
                                 'name': library.folder.name or str(library.folder), 'id': library.directory.name}
-            result.update(library.status())
+            result['library'] = library.status()
         return result
 
 
@@ -325,10 +332,10 @@ def hand_over(url: str, folder: str | None):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog=APP['name'], description='Browse and search the images in a folder.')
+    parser = argparse.ArgumentParser(prog=APP['slug'], description='Browse and search the images in a folder.')
     parser.add_argument('folder', nargs='?', help='folder to show; defaults to the last one opened')
     parser.add_argument('--port', type=int, default=APP['port'])
-    parser.add_argument('--data-dir', type=Path, default=ROOT / '.data')
+    parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--no-watch', action='store_true', help='scan only on request, not every minute')
     parser.add_argument('--open-browser', action='store_true')
     args = parser.parse_args()
