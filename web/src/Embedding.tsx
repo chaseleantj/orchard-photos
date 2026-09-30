@@ -108,7 +108,7 @@ export default function Embedding({ root, rootName, filters, highlight, search, 
     catch (e) { setWorking(null); setError((e as Error).message); setPhase('error'); }
   };
   // A bar only appears for work that outlasts a blink.
-  const busy = phase === 'loading' || !!working;
+  const busy = (phase === 'loading' && !unprepared && !holding) || !!working;
   useEffect(() => { if (!busy) { setSlow(false); return; } const timer = setTimeout(() => setSlow(true), 250); return () => clearTimeout(timer); }, [busy]);
   useEffect(() => {
     if (unprepared || holding) return;

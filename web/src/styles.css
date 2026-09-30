@@ -31,7 +31,7 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .header { display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
 .wordmark { font-size: var(--title); font-weight: 500; letter-spacing: -.8px; justify-self: start; padding: 0; min-height: var(--s10); }
-.header-actions { display: flex; gap: var(--s1); justify-content: flex-end; }
+.header-actions { grid-column: -2; display: flex; gap: var(--s1); justify-content: flex-end; }
 .search { height: var(--s12); display: flex; align-items: center; gap: var(--s3); background: var(--soft); border-radius: var(--pill); padding: 0 var(--s4); }
 .search:focus-within { outline: 1px solid var(--line); }
 .search { transition: background var(--motion) var(--ease), outline-color var(--motion) var(--ease); }

@@ -67,7 +67,9 @@ export default function App() {
   const refreshStatus = useCallback(async () => {
     try { applyStatus(await request<Status>('/api/status')); } catch { setOffline(true); }
   }, [applyStatus]);
-  useEffect(() => { void refreshStatus(); const timer = setInterval(refreshStatus, 4000); return () => clearInterval(timer); }, [refreshStatus]);
+  // Poll quickly while a scan is filling the grid, gently otherwise.
+  const polling = status?.library?.scan.state === 'scanning' ? 1000 : 4000;
+  useEffect(() => { void refreshStatus(); const timer = setInterval(refreshStatus, polling); return () => clearInterval(timer); }, [refreshStatus, polling]);
   // Another folder was opened, here or from the command line: its subfolders and searches start fresh.
   useEffect(() => {
     if (!status) return;
