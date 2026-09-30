@@ -4,6 +4,7 @@ import Gallery from './Gallery';
 import Embedding from './Embedding';
 import Viewer from './Viewer';
 import { Progress } from './Progress';
+import { Lockup, Mark } from './Logo';
 import { FilterPanel, FolderChooser, FolderPanel, LibraryPanel, SearchPanel } from './Panels';
 import { APP_NAME, IMAGE_DRAG, defaults, filterParams, imageUrl, isFiltered, plural, rangeLabel, readPreferences, request, savePreferences, typeLabel } from './types';
 import type { Picture, Results, SearchMode, Status, View } from './types';
@@ -155,7 +156,7 @@ export default function App() {
   const gathering = scanBusy && !library?.counts.images;
   return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(!!(e.target as Element).closest?.('.search')); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
     <header className="header">
-      <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}>{APP_NAME}</button>
+      <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
         {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : mode === 'visual' ? 'Search by appearance' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
         {(query || searching) && <button className="icon-button" type="button" aria-label="Clear search" onClick={clearSearch}><X /></button>}
@@ -166,7 +167,7 @@ export default function App() {
     {ready && <div className="library-meta"><p aria-live="polite">{loading ? 'Finding images…' : subtitle}{scope}</p><button className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
     <main aria-busy={loading}>
       {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. Check that it is still running in Terminal.</span><button className="text-button" onClick={refreshStatus}>Retry</button></div>}
-      {status && !folder ? <div className="empty welcome"><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p><FolderChooser status={status} onOpened={applyStatus} /></div>
+      {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p><FolderChooser status={status} onOpened={applyStatus} /></div>
       : !ready ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
       : mapped ? <Embedding key={root} root={root} rootName={folder!.name} filters={filters} highlight={highlight} search={library!.search} scanning={!!scanBusy} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onLibrary={() => setPanel('library')} onReset={reset} /> : <>
       {scan?.state === 'error' && <div className="notice error" role="alert"><span>{scan.error}{library!.counts.images ? ' Showing the images from the last scan.' : ''}</span><button className="text-button" onClick={() => setPanel('folder')}>Choose folder</button></div>}

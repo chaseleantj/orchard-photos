@@ -1,5 +1,7 @@
 # Orchard
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard" height="56"></picture>
+
 Orchard is a private photo browser for a folder on your computer. Point it at a folder and it shows every image inside, including all subfolders. You can scroll through them, filter by folder, type and date, and search by what the pictures look like. Everything runs locally, and your files are never changed.
 
 ## Run
@@ -63,7 +65,7 @@ Deleting a `libraries/<id>` folder clears that folder's cache. The server listen
 
 ## Renaming
 
-The name, command slug and ports live in `app.json`. The window title, wordmark, messages, data folder and browser storage keys all read it. The package name in `package.json`, the `orchard` launcher file name, and this README also carry the name.
+The name, command slug and ports live in `app.json`. The logo (in `web/src/Logo.tsx`, `public/` and `docs/`) spells the name, so it changes with a rename. The window title, wordmark, messages, data folder and browser storage keys all read it. The package name in `package.json`, the `orchard` launcher file name, and this README also carry the name.
 
 ## Verify
 
