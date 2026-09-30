@@ -4,6 +4,14 @@
 
 Orchard is a private photo browser for a folder on your computer. Point it at a folder and it shows every image inside, including all subfolders. You can scroll through them, filter by folder, type and date, and search by what the pictures look like. Everything runs locally, and your files are never changed.
 
+Big photo folders are hard to look through. Folder views show one directory at a time, and file names say little about what a picture contains. Orchard treats the whole tree as one library, and lets you find pictures by describing them or by showing it a similar one. Nothing is uploaded, so it is safe to use on personal photos.
+
+## How it works
+
+Orchard has two parts. A Python server scans the folder, reads each image's size and EXIF date, makes thumbnails, and stores the results in a SQLite index. A React page talks to that server and shows the grid, viewer, search and map.
+
+For search by appearance, the server runs CLIP, a model that turns an image or a sentence into a list of numbers. Pictures and descriptions with similar meaning get similar numbers, so a search is a nearest-neighbour lookup. The map uses the same numbers. UMAP squeezes them down to two dimensions, which places look-alike images close together.
+
 ## Run
 
 ```sh
@@ -45,7 +53,7 @@ Click an image to open it. The viewer shows the file name, folder, dimensions, s
 
 **Library** (the ⓘ button) shows counts, lists files that could not be read and why, and can rescan the folder. Orchard also rescans every minute, so added, changed and removed files show up without asking.
 
-Visual search uses CLIP, a model that places images and text in the same space. It is downloaded once (about 600 MB) from **Library → Prepare visual search** and then runs offline. After that, every folder you open is prepared automatically.
+The CLIP model is downloaded once (about 600 MB) from **Library → Prepare visual search** and then runs offline. After that, every folder you open is prepared automatically. Until then, the grid, filters and file-name search work without it.
 
 ## What it reads
 
