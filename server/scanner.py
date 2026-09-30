@@ -24,9 +24,9 @@ except ImportError:
 EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
 THUMBNAIL_SIZE = 720
 # Anything larger is refused as a possible decompression bomb; this still admits 300-megapixel panoramas.
-# Pillow only warns up to twice the limit, so the warning is raised as an error too.
+# Pillow only warns between one and two times its limit, so the scanner checks the size itself.
 Image.MAX_IMAGE_PIXELS = 300_000_000
-warnings.simplefilter('error', Image.DecompressionBombWarning)
+warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
 WORKERS = min(8, os.cpu_count() or 2)
 EXIF_TAKEN, EXIF_DIGITIZED, EXIF_OFFSET = 36867, 36868, 36881
@@ -125,7 +125,7 @@ def displayable(image):
 
 
 def failure(error: Exception) -> str:
-    if isinstance(error, (Image.DecompressionBombError, Image.DecompressionBombWarning)):
+    if isinstance(error, Image.DecompressionBombError):
         return 'Too large to open'
     if isinstance(error, UnidentifiedImageError):
         return 'Not a readable image'
@@ -231,6 +231,8 @@ class Scanner:
             with Image.open(path) as image:
                 mime = Image.MIME.get(image.format or '', 'application/octet-stream')
                 width, height = image.size
+                if width * height > Image.MAX_IMAGE_PIXELS:
+                    raise Image.DecompressionBombError(f'{width} x {height} pixels')
                 if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                     width, height = height, width
                 taken, camera = exif_details(image)
