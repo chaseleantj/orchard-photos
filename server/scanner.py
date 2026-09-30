@@ -1,0 +1,266 @@
+"""Find the image files under one folder and keep a content-addressed index of them: metadata and thumbnails.
+
+Originals are only ever read. Identical files share one image entry, so thumbnails and embeddings survive renames
+and moves, and duplicates are indexed once.
+"""
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import logging
+import os
+from pathlib import Path
+import sqlite3
+import warnings
+
+from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
+
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
+
+EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
+THUMBNAIL_SIZE = 720
+# Anything larger is refused as a possible decompression bomb; this still admits 300-megapixel panoramas.
+# Pillow only warns up to twice the limit, so the warning is raised as an error too.
+Image.MAX_IMAGE_PIXELS = 300_000_000
+warnings.simplefilter('error', Image.DecompressionBombWarning)
+BATCH = 48
+WORKERS = min(8, os.cpu_count() or 2)
+EXIF_TAKEN, EXIF_DIGITIZED, EXIF_OFFSET = 36867, 36868, 36881
+EXIF_MAKE, EXIF_MODEL = 271, 272
+logger = logging.getLogger(__name__)
+
+
+class FolderUnavailable(RuntimeError):
+    pass
+
+
+class ScanCancelled(Exception):
+    pass
+
+
+def thumbnail_path(directory: Path, image_id: str) -> Path:
+    return Path(directory) / 'thumbnails' / f'{image_id}.webp'
+
+
+def preview_path(directory: Path, image_id: str) -> Path:
+    """A full-size JPEG for formats browsers cannot show, drawn when first viewed."""
+    return Path(directory) / 'previews' / f'{image_id}.jpg'
+
+
+def walk(root: Path, skip=frozenset()):
+    """Every image file below root as (relative posix path, stat), plus the folders that could not be listed.
+
+    Hidden entries are skipped. Symlinked folders are followed once each, so a link loop ends instead of recursing,
+    and only after the real folders, so a folder reached both ways is listed under its real path.
+    """
+    files, unreadable, visited = [], [], set()
+    stack, links = [('', str(root))], []
+    while stack or links:
+        relative, directory = stack.pop() if stack else links.pop()
+        try:
+            status = os.stat(directory)
+            key = (status.st_dev, status.st_ino)
+            if key in visited or key in skip:
+                continue
+            visited.add(key)
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.name.startswith('.'):
+                        continue
+                    child = f'{relative}/{entry.name}' if relative else entry.name
+                    try:
+                        if entry.is_dir():
+                            (links if entry.is_symlink() else stack).append((child, entry.path))
+                        elif entry.is_file() and os.path.splitext(entry.name)[1].lower() in EXTENSIONS:
+                            files.append((child, entry.stat()))
+                    except OSError:
+                        continue
+        except OSError:
+            unreadable.append(relative)
+    return files, unreadable
+
+
+def utc(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def exif_details(image):
+    """When the photo was taken, and the camera, from EXIF. Either may be None."""
+    try:
+        exif = image.getexif()
+        detail = exif.get_ifd(ExifTags.IFD.Exif)
+    except Exception:
+        return None, None
+    taken = None
+    value = detail.get(EXIF_TAKEN) or detail.get(EXIF_DIGITIZED)
+    if isinstance(value, str):
+        try:
+            moment = datetime.strptime(value.strip('\x00 ')[:19], '%Y:%m:%d %H:%M:%S')
+            offset = str(detail.get(EXIF_OFFSET) or '').strip('\x00 ')
+            if offset:
+                moment = datetime.fromisoformat(moment.isoformat() + offset)
+            # Without an offset, EXIF time is the camera's local time; read it as this computer's zone.
+            taken = utc(moment)
+        except ValueError:
+            pass
+    make, model = (str(exif.get(tag) or '').strip('\x00 ') for tag in (EXIF_MAKE, EXIF_MODEL))
+    camera = model if model.lower().startswith(make.lower()) else f'{make} {model}'.strip()
+    return taken, camera or None
+
+
+def displayable(image):
+    """Convert to a mode WebP and JPEG can store, scaling 16-bit and float images instead of clipping them."""
+    if image.mode in ('RGB', 'RGBA', 'L'):
+        return image
+    if image.mode.startswith('I;16') or image.mode in ('I', 'F'):
+        image = image.convert('I') if image.mode.startswith('I;16') else image
+        extent = image.getextrema()[1] or 1
+        return image.point(lambda value: value * 255 / extent).convert('L')
+    has_alpha = image.mode in ('LA', 'PA', 'RGBa', 'La') or 'transparency' in image.info
+    return image.convert('RGBA' if has_alpha else 'RGB')
+
+
+def failure(error: Exception) -> str:
+    if isinstance(error, (Image.DecompressionBombError, Image.DecompressionBombWarning)):
+        return 'Too large to open'
+    if isinstance(error, UnidentifiedImageError):
+        return 'Not a readable image'
+    if isinstance(error, PermissionError):
+        return 'Permission denied'
+    if isinstance(error, OSError) and 'truncated' in str(error):
+        return 'Damaged or incomplete'
+    return 'Not a readable image'
+
+
+class Scanner:
+    def __init__(self, folder: Path, directory: Path):
+        self.folder = Path(folder)
+        self.directory = Path(directory)
+        (self.directory / 'thumbnails').mkdir(parents=True, exist_ok=True)
+        self.db_path = self.directory / 'library.sqlite'
+        with self.connect() as db:
+            db.executescript('''
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS images (
+                    id TEXT PRIMARY KEY, width INTEGER NOT NULL, height INTEGER NOT NULL, mime TEXT NOT NULL,
+                    size INTEGER NOT NULL, taken TEXT, camera TEXT
+                );
+                CREATE TABLE IF NOT EXISTS files (
+                    path TEXT PRIMARY KEY, folder TEXT NOT NULL, image_id TEXT REFERENCES images(id),
+                    size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, modified TEXT NOT NULL, error TEXT
+                );
+                CREATE INDEX IF NOT EXISTS file_image ON files(image_id);
+                CREATE INDEX IF NOT EXISTS file_folder ON files(folder);
+            ''')
+
+    @contextmanager
+    def connect(self):
+        db = sqlite3.connect(self.db_path, timeout=30)
+        db.row_factory = sqlite3.Row
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def scan(self, progress=None, committed=None, cancelled=lambda: False):
+        """Bring the index in line with the folder. Unchanged files are recognised by size and modification time."""
+        if not self.folder.is_dir():
+            raise FolderUnavailable(f'{self.folder} is not available. Reconnect its drive, or choose another folder.')
+        skip = set()
+        if self.directory.exists():
+            status = self.directory.stat()
+            skip.add((status.st_dev, status.st_ino))
+        found, unreadable = walk(self.folder, skip)
+        if '' in unreadable:
+            raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
+        with self.connect() as db:
+            known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute('SELECT path, size, mtime_ns FROM files')}
+            self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
+        changed = [(path, status) for path, status in found if known.get(path) != (status.st_size, status.st_mtime_ns)]
+        stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
+        if progress:
+            progress(dict(stats))
+        with ThreadPoolExecutor(WORKERS) as pool:
+            for start in range(0, len(changed), BATCH):
+                if cancelled():
+                    raise ScanCancelled
+                batch = changed[start:start + BATCH]
+                results = list(pool.map(self._examine, [path for path, _ in batch]))
+                with self.connect() as db:
+                    for (path, status), result in zip(batch, results):
+                        if 'width' in result:
+                            db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
+                                       (result['id'], result['width'], result['height'], result['mime'],
+                                        status.st_size, result['taken'], result['camera']))
+                        modified = utc(datetime.fromtimestamp(status.st_mtime_ns / 1e9, timezone.utc))
+                        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
+                                   (path, path.rpartition('/')[0], result.get('id') if 'error' not in result else None,
+                                    status.st_size, status.st_mtime_ns, modified, result.get('error')))
+                self._seen.update(result['id'] for result in results if 'width' in result)
+                stats['done'] += len(batch)
+                if committed:
+                    committed()
+                if progress:
+                    progress(dict(stats))
+        removed = self._remove_missing({path for path, _ in found}, unreadable)
+        if removed and committed:
+            committed()
+        with self.connect() as db:
+            stats['images'] = db.execute('SELECT count(*) FROM images').fetchone()[0]
+            stats['files'] = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
+            stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
+        stats['removed'] = removed
+        stats['unlisted_folders'] = len(unreadable)
+        return stats
+
+    def _examine(self, relative: str) -> dict:
+        """Hash one file and, if its content is new, read its metadata and draw its thumbnail."""
+        path = self.folder / relative
+        try:
+            if path.stat().st_size == 0:
+                return {'error': 'Empty file'}
+            with path.open('rb') as stream:
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if digest in self._seen:
+                return {'id': digest}
+            with Image.open(path) as image:
+                mime = Image.MIME.get(image.format or '', 'application/octet-stream')
+                width, height = image.size
+                if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
+                    width, height = height, width
+                taken, camera = exif_details(image)
+                # JPEG can decode straight to a smaller scale, which makes large photos much faster to thumbnail.
+                image.draft('RGB', (THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+                display = ImageOps.exif_transpose(image)
+                display.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+                target = thumbnail_path(self.directory, digest)
+                temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
+                displayable(display).save(temporary, 'WEBP', quality=82)
+                temporary.replace(target)
+            return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
+        except Exception as error:
+            logger.info('Could not read %s: %s', relative, error)
+            return {'error': failure(error)}
+
+    def _remove_missing(self, present: set, unreadable: list) -> int:
+        """Forget files that are gone, and the images and thumbnails nothing refers to any more.
+
+        Files inside a folder that could not be listed are kept: the folder may only be locked for now.
+        """
+        blocked = tuple(f'{folder}/' for folder in unreadable if folder)
+        with self.connect() as db:
+            gone = [path for (path,) in db.execute('SELECT path FROM files')
+                    if path not in present and not path.startswith(blocked)]
+            db.executemany('DELETE FROM files WHERE path=?', [(path,) for path in gone])
+            orphans = [image_id for (image_id,) in db.execute(
+                'SELECT id FROM images WHERE id NOT IN (SELECT image_id FROM files WHERE image_id IS NOT NULL)')]
+            db.executemany('DELETE FROM images WHERE id=?', [(image_id,) for image_id in orphans])
+        for image_id in orphans:
+            for path in (thumbnail_path(self.directory, image_id), preview_path(self.directory, image_id)):
+                path.unlink(missing_ok=True)
+        return len(gone)

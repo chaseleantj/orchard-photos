@@ -1,0 +1,252 @@
+"""One folder's library: its scan, visual index, map, and the queries the API answers from them."""
+from contextlib import closing
+from datetime import datetime, timezone
+import json
+import logging
+from pathlib import Path
+import re
+import sqlite3
+import threading
+
+from PIL import Image, ImageOps
+
+from server.atlas import Atlas
+from server.layout import Layout
+from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable, preview_path, thumbnail_path
+from server.semantic import SemanticIndex
+
+PAGE_SIZE = 80
+IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
+SIMILAR_LIMIT = 100
+# Browsers show these directly; anything else is viewed through a converted JPEG.
+WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
+PREVIEW_EDGE = 4096
+logger = logging.getLogger(__name__)
+
+
+class Library:
+    def __init__(self, folder: Path, directory: Path, encoder):
+        self.folder = Path(folder)
+        self.directory = Path(directory)
+        self.scanner = Scanner(self.folder, self.directory)
+        self.semantic = SemanticIndex(self.directory, encoder)
+        self.atlas = Atlas(self.directory)
+        self.layout = Layout(self.semantic)
+        self.closed = threading.Event()
+        self.scan_lock = threading.Lock()
+        self.semantic_lock = threading.Lock()
+        self.scan_state = {'state': 'ready'}
+        # Bumped whenever a scan commits, so open pages know to refresh what they show.
+        self.revision = 0
+        self.stats_path = self.directory / 'scan-status.json'
+        try:
+            self.stats = json.loads(self.stats_path.read_text())
+        except (OSError, ValueError):
+            self.stats = {}
+        (self.directory / 'folder.txt').write_text(str(self.folder) + '\n')
+
+    def close(self):
+        """Stop background work for a folder that is no longer shown."""
+        self.closed.set()
+
+    def scan(self):
+        if not self.scan_lock.acquire(blocking=False):
+            return
+        self.scan_state = {'state': 'scanning'}
+        try:
+            def progress(stats):
+                self.scan_state = {'state': 'scanning', 'found': stats['found'], 'done': stats['done'], 'changed': stats['changed']}
+
+            def committed():
+                self.revision += 1
+            self.stats = self.scanner.scan(progress, committed, self.closed.is_set)
+            self.stats['updated'] = datetime.now(timezone.utc).isoformat()
+            self.stats_path.write_text(json.dumps(self.stats))
+            self.scan_state = {'state': 'ready'}
+            search = self.semantic.status()
+            # Once the model is on this computer, new images are indexed without asking.
+            if search['indexed'] < search['total'] and (search['downloaded'] or search['indexed']):
+                threading.Thread(target=self.index, daemon=True).start()
+        except ScanCancelled:
+            self.scan_state = {'state': 'ready'}
+        except FolderUnavailable as error:
+            self.scan_state = {'state': 'error', 'error': str(error)}
+        except Exception:
+            logger.exception('Scan failed')
+            self.scan_state = {'state': 'error', 'error': 'The folder could not be read completely. Rescan to retry.'}
+        finally:
+            self.scan_lock.release()
+
+    def index(self):
+        if not self.semantic_lock.acquire(blocking=False):
+            return
+        try:
+            self.semantic.index(self.closed.is_set)
+        finally:
+            self.semantic_lock.release()
+
+    def connect(self):
+        db = sqlite3.connect(self.scanner.db_path, timeout=30)
+        db.row_factory = sqlite3.Row
+        return closing(db)
+
+    def status(self):
+        with self.connect() as db:
+            images = db.execute('SELECT count(*) FROM images').fetchone()[0]
+            files = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
+            unreadable = [dict(row) for row in db.execute(
+                'SELECT path, error FROM files WHERE error IS NOT NULL ORDER BY path LIMIT 50')]
+            unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
+        return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'unreadable': unreadable_count},
+                'unreadable': unreadable, 'unlistedFolders': self.stats.get('unlisted_folders', 0),
+                'scan': self.scan_state, 'search': self.semantic.status(), 'updated': self.stats.get('updated'),
+                'revision': self.revision}
+
+    def filters(self, params):
+        """Translate the folder, type and date filters into a WHERE clause over files joined to images."""
+        where, values = ['f.image_id IS NOT NULL'], []
+        folder = params.get('folder', '').strip('/')
+        if folder:
+            where.append('(f.folder=? OR substr(f.folder,1,?)=?)')
+            values += [folder, len(folder) + 1, folder + '/']
+        if params.get('type'):
+            where.append('i.mime=?')
+            values.append(params['type'])
+        # Dates are the viewer's local days: shift the stored UTC timestamp by their offset before comparing.
+        try:
+            offset = max(-1440, min(1440, int(params.get('tz') or 0)))
+        except ValueError:
+            raise ValueError('Use a valid date range.')
+        for key, operator in [('from', '>='), ('to', '<=')]:
+            if params.get(key):
+                date = params[key]
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                    raise ValueError('Use a valid date range.')
+                datetime.strptime(date, '%Y-%m-%d')
+                where.append(f'substr(datetime(coalesce(i.taken,f.modified),?),1,10){operator}?')
+                values += [f'{offset:+d} minutes', date]
+        if params.get('from') and params.get('to') and params['from'] > params['to']:
+            raise ValueError('The end date must follow the start date.')
+        return where, values
+
+    def library(self, where, values, limit=None, offset=0):
+        """One row per image, described by its newest matching file, newest first. Returns (rows, total)."""
+        condition = ' AND '.join(where)
+        # Photos are dated when they were taken; anything without EXIF falls back to the file's modification time.
+        matching = f'''WITH matching AS (
+            SELECT f.path, f.image_id, f.modified, coalesce(i.taken, f.modified) AS date,
+                   row_number() OVER (PARTITION BY f.image_id ORDER BY coalesce(i.taken, f.modified) DESC, f.path) AS rank,
+                   count(*) OVER (PARTITION BY f.image_id) AS copies
+            FROM files f JOIN images i ON i.id=f.image_id WHERE {condition}
+        )'''
+        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,m.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,m.path,m.copies
+                  FROM images i JOIN matching m ON m.image_id=i.id WHERE m.rank=1 ORDER BY m.date DESC,i.id'''
+        with self.connect() as db:
+            if limit is None:
+                rows = [dict(row) for row in db.execute(sql, values)]
+                return rows, len(rows)
+            rows = [dict(row) for row in db.execute(f'{sql} LIMIT ? OFFSET ?', values + [limit, offset])]
+            total = db.execute(f'{matching} SELECT count(*) FROM matching WHERE rank=1', values).fetchone()[0]
+            return rows, total
+
+    def pictures(self, params, image_bytes=None):
+        where, values = self.filters(params)
+        query = params.get('q', '').strip()[:1000]
+        reference = params.get('similar', '')
+        if reference and not IMAGE_ID.fullmatch(reference):
+            raise ValueError('Choose an image from this folder.')
+        offset = max(0, int(params.get('offset', '0')))
+        limit = min(200, max(1, int(params.get('limit', str(PAGE_SIZE)))))
+        visual = bool(image_bytes or reference or (query and params.get('mode') == 'visual'))
+        if not visual:
+            for word in query.split():
+                where.append("f.path LIKE ? ESCAPE '\\'")
+                values.append('%' + word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
+            rows, total = self.library(where, values, limit, offset)
+            return {'items': rows, 'total': total, 'offset': offset, 'hasMore': offset + limit < total}
+        if self.semantic.status()['indexed'] == 0:
+            raise ValueError('Visual search is not ready. Open Library to prepare it, or search by file name.')
+        ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
+        ranking.pop(reference, None)
+        rows = [row for row in self.library(where, values)[0] if row['id'] in ranking]
+        rows.sort(key=lambda row: ranking[row['id']], reverse=True)
+        if reference or image_bytes:
+            # Beyond the closest matches, similarity to a single image is noise.
+            rows = rows[:SIMILAR_LIMIT]
+        return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'hasMore': offset + limit < len(rows)}
+
+    def facets(self):
+        """The subfolders and file types present, each with how many distinct images it holds."""
+        with self.connect() as db:
+            pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
+            types = [dict(row) for row in db.execute(
+                'SELECT mime, count(*) AS count FROM images GROUP BY mime ORDER BY count DESC, mime')]
+        folders: dict[str, set] = {}
+        for folder, image_id in pairs:
+            # A folder counts everything beneath it.
+            parts = folder.split('/') if folder else []
+            for depth in range(1, len(parts) + 1):
+                folders.setdefault('/'.join(parts[:depth]), set()).add(image_id)
+        return {'folders': [{'path': path, 'count': len(ids)} for path, ids in sorted(folders.items(), key=lambda item: item[0].lower())],
+                'types': types}
+
+    def details(self, image_id):
+        with self.connect() as db:
+            image = db.execute('SELECT * FROM images WHERE id=?', (image_id,)).fetchone()
+            if not image:
+                return None
+            files = [dict(row) for row in db.execute(
+                'SELECT path, modified FROM files WHERE image_id=? ORDER BY modified DESC, path', (image_id,))]
+        return {**dict(image), 'root': str(self.folder), 'files': files, 'preview': image['mime'] not in WEB_TYPES}
+
+    def original(self, image_id, relative=None):
+        """The file on disk for an image: the named copy if given (and it holds this image), else the first."""
+        with self.connect() as db:
+            if relative is not None:
+                row = db.execute('SELECT path FROM files WHERE image_id=? AND path=?', (image_id, relative)).fetchone()
+            else:
+                row = db.execute('SELECT path FROM files WHERE image_id=? ORDER BY path LIMIT 1', (image_id,)).fetchone()
+        return self.folder / row['path'] if row else None
+
+    def thumbnail(self, image_id):
+        return thumbnail_path(self.directory, image_id)
+
+    def display(self, image_id):
+        """A file the browser can show: the original when it can, otherwise a JPEG drawn once and kept."""
+        path = self.original(image_id)
+        if path is None:
+            return None
+        with self.connect() as db:
+            mime = db.execute('SELECT mime FROM images WHERE id=?', (image_id,)).fetchone()['mime']
+        if mime in WEB_TYPES or not path.is_file():
+            return path
+        preview = preview_path(self.directory, image_id)
+        if not preview.is_file():
+            preview.parent.mkdir(exist_ok=True)
+            with Image.open(path) as source:
+                image = ImageOps.exif_transpose(source)
+                image.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE))
+                image = displayable(image)
+                temporary = preview.with_suffix(f'.{threading.get_ident()}.tmp')
+                (image.convert('RGB') if image.mode == 'RGBA' else image).save(temporary, 'JPEG', quality=90)
+                temporary.replace(preview)
+        return preview
+
+    def map(self, params):
+        """Every filtered image with a place on the map and an icon slot in the atlas."""
+        where, values = self.filters(params)
+        rows = self.library(where, values)[0]
+        if self.semantic.status()['indexed'] == 0:
+            raise ValueError('Visual search is not ready. Open Library to prepare it, then return to the map.')
+        positions = self.layout.positions()
+        if positions is None:
+            # First use: fit in the background and let the page follow the progress.
+            self.layout.start()
+            return {'points': [], 'pending': 0, 'sheets': [], 'layout': self.layout.status()}
+        slots = self.atlas.ensure()
+        points = []
+        for row in rows:
+            if row['id'] in positions and row['id'] in slots:
+                x, y = positions[row['id']]
+                points.append({**row, 'x': round(x, 4), 'y': round(y, 4), 'slot': slots[row['id']]})
+        return {'points': points, 'pending': len(rows) - len(points), 'sheets': self.atlas.versions(), 'layout': {'state': 'ready'}}
