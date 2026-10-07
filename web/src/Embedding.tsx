@@ -1,8 +1,8 @@
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Maximize, Minus, Plus, RefreshCw, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize, Minus, Plus, RefreshCw } from 'lucide-react';
 import { MapEngine } from './mapEngine';
-import type { MapCamera, MapPoint } from './mapEngine';
-import { APP_NAME, dateLabel, dragImage, fileName, filterParams, folderOf, imageUrl, request, storageKey } from './types';
+import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
+import { APP_NAME, filterParams, request, storageKey } from './types';
 import { Progress } from './Progress';
 import type { Filters, SearchStatus } from './types';
 
@@ -10,10 +10,6 @@ interface Working { state: string; stage?: string; error?: string }
 interface MapData { points: MapPoint[]; pending: number; sheets: string[]; layout: Working }
 type Phase = 'loading' | 'ready' | 'error';
 
-const CARD_EDGE = 240;
-const CARD_EDGE_NARROW = 190;
-const CARD_PAD = 8;
-const CARD_MARGIN = 12;
 const STORAGE = storageKey('map');
 
 // A stable scatter that previews the shape of the map while it loads.
@@ -31,15 +27,14 @@ function readCamera(key: string): MapCamera | undefined {
 }
 
 interface Props {
-  root: string; rootName: string; filters: Filters; highlight: string[] | null; search: SearchStatus; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
-  onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onLibrary: () => void; onReset: () => void;
+  root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
+  onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; onLibrary: () => void; onReset: () => void;
 }
 
-export default function Embedding({ root, rootName, filters, highlight, search, scanning, revision, filtered, searching, onOpen, onSimilar, onLibrary, onReset }: Props) {
+export default function Embedding({ root, filters, highlight, search, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, onLibrary, onReset }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
-  const card = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('loading');
   const [error, setError] = useState('');
   const [data, setData] = useState<MapData | null>(null);
@@ -49,7 +44,6 @@ export default function Embedding({ root, rootName, filters, highlight, search, 
   const [slow, setSlow] = useState(false);
   const [sheetsLoaded, setSheetsLoaded] = useState<number | null>(null);
   const shown = useRef({ key: '', sheets: '' });
-  const [size, setSize] = useState({ width: 1440 });
   // Each folder has its own map, and each filter its own remembered view of it.
   const key = JSON.stringify({ root, ...filterParams(filters) });
   const unprepared = search.indexed === 0;
@@ -58,35 +52,19 @@ export default function Embedding({ root, rootName, filters, highlight, search, 
   // A folder's first map waits for all of its images, so its first layout is the real one.
   const holding = preparing && !data;
   const byId = useMemo(() => new Map((data?.points ?? []).map(p => [p.id, p])), [data]);
-  const selected = selectedId ? byId.get(selectedId) ?? null : null;
-  const selectedRef = useRef<string | null>(null);
-  selectedRef.current = selectedId;
-
-  const place = useCallback(() => {
-    const node = card.current, id = selectedRef.current, map = engine.current, host = stage.current;
-    if (!node || !id || !map || !host) return;
-    const at = map.project(id);
-    if (!at) return;
-    const surface = node.firstElementChild as HTMLElement, image = surface.firstElementChild as HTMLElement;
-    const halfWidth = surface.offsetWidth / 2, above = CARD_PAD + image.offsetHeight / 2, below = surface.offsetHeight - above;
-    const x = Math.min(Math.max(at.x, CARD_MARGIN + halfWidth), Math.max(CARD_MARGIN + halfWidth, host.clientWidth - CARD_MARGIN - halfWidth));
-    const y = Math.min(Math.max(at.y, CARD_MARGIN + above), Math.max(CARD_MARGIN + above, host.clientHeight - CARD_MARGIN - below));
-    node.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-  }, []);
-  useLayoutEffect(place, [selectedId, place]);
-
-  const callbacks = useRef({ open: onOpen, place });
-  callbacks.current = { open: onOpen, place };
+  const callbacks = useRef({ open: (id: string) => { const point = byId.get(id); if (point) onOpen(point); }, carry: onCarry });
+  callbacks.current = { open: (id: string) => { const point = byId.get(id); if (point) onOpen(point); }, carry: onCarry };
 
   // The engine lives as long as the view; data comes and goes underneath it.
   useEffect(() => {
     const map = new MapEngine(canvas.current!, stage.current!, {
       onSelect: setSelectedId,
-      onFrame: () => callbacks.current.place(),
+      onOpen: id => callbacks.current.open(id),
+      onCarry: (id, x, y, dropped) => callbacks.current.carry(id, x, y, dropped),
       onSettle: camera => { try { localStorage.setItem(STORAGE, JSON.stringify({ key: keyRef.current, ...camera })); } catch { /* Position is a convenience. */ } },
     });
     engine.current = map;
-    const observer = new ResizeObserver(([entry]) => { setSize({ width: entry.contentRect.width }); map.resize(entry.contentRect.width, entry.contentRect.height, devicePixelRatio); });
+    const observer = new ResizeObserver(([entry]) => { map.resize(entry.contentRect.width, entry.contentRect.height, devicePixelRatio); });
     observer.observe(stage.current!);
     return () => { observer.disconnect(); map.destroy(); engine.current = null; };
   }, []);
@@ -157,9 +135,8 @@ export default function Embedding({ root, rootName, filters, highlight, search, 
   const wasLit = useRef(false);
   useEffect(() => { if (phase === 'ready' && wasLit.current && !lit) engine.current?.fit(); wasLit.current = !!lit; }, [lit, phase]);
 
-  const view = useCallback((id: string | null) => { const point = id ? byId.get(id) : null; if (point) onOpen(point); }, [byId, onOpen]);
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && selectedId) { e.preventDefault(); view(selectedId); return; }
+    if (e.key === 'Enter' && selectedId) { e.preventDefault(); callbacks.current.open(selectedId); return; }
     if ((e.key === 's' || e.key === 'S') && selectedId && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSimilar(selectedId); return; }
     if (engine.current?.key(e.nativeEvent)) e.preventDefault();
   };
@@ -181,34 +158,6 @@ export default function Embedding({ root, rootName, filters, highlight, search, 
       <button className="icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => engine.current?.zoomBy(1 / 1.7)}><Minus /></button>
       <button className="icon-button" aria-label="Show everything" title="Show everything" onClick={() => engine.current?.fit()}><Maximize /></button>
     </div>}
-    {selected && <Card key={selected.id} ref={card} point={selected} rootName={rootName} narrow={size.width < 560} onClose={() => engine.current?.select(null)} tile={engine.current?.project(selected.id)?.size ?? 24} place={place}
-      onView={() => onOpen(selected)} onSimilar={() => onSimilar(selected.id)} />}
   </div>;
 }
 
-
-const Card = forwardRef<HTMLDivElement, { point: MapPoint; rootName: string; narrow: boolean; onClose: () => void; tile: number; place: () => void; onView: () => void; onSimilar: () => void }>(function Card({ point, rootName, narrow, onClose, tile, place, onView, onSimilar }, ref) {
-  const [open, setOpen] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const longest = Math.max(point.width, point.height);
-  const edge = narrow ? CARD_EDGE_NARROW : CARD_EDGE;
-  const scale = Math.min(edge, Math.max(150, longest)) / longest;
-  const width = Math.max(48, Math.round(point.width * scale)), height = Math.max(48, Math.round(point.height * scale));
-  const square = Math.min(width, height);
-  useEffect(() => { const frame = requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true))); return () => cancelAnimationFrame(frame); }, []);
-  useLayoutEffect(place, [place]);
-  // Start exactly on the tile: its centred square crop, scaled to the tile's size.
-  const from = { '--from': tile / square, '--cut-x': `${(width - square) / 2}px`, '--cut-y': `${(height - square) / 2}px` } as React.CSSProperties;
-  return <div className="map-card" ref={ref} data-open={open} style={{ ...from, '--card-width': `${Math.max(width, 208) + 2 * CARD_PAD}px` } as React.CSSProperties}>
-    <div className="map-card-surface" style={{ marginTop: -(CARD_PAD + height / 2) }}>
-      <div className="map-card-image" style={{ width, height }}>
-        {failed ? <span className="missing">Preview unavailable</span> : <img src={imageUrl(point.id)} alt={fileName(point.path)} width={width} height={height} onError={() => setFailed(true)} onDragStart={dragImage(point.id)} />}
-      </div>
-      <div className="map-card-caption">
-        <p className="map-card-title" title={point.path}>{fileName(point.path)}</p>
-        <p className="map-card-meta">{folderOf(point.path) || rootName} · {dateLabel(point.date)}</p>
-        <div className="map-card-actions"><button className="text-button" onClick={onView}>View</button><button className="text-button" onClick={onSimilar}>Find similar</button><button className="icon-button" aria-label="Close preview" onClick={onClose}><X /></button></div>
-      </div>
-    </div>
-  </div>;
-});

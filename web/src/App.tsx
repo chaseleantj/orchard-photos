@@ -11,6 +11,8 @@ import type { Picture, Results, SearchMode, Status, View } from './types';
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
+// An image counts as dropped on the search bar anywhere this close to it, so it needs no careful aim.
+const DROP_REACH = 64;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
 export default function App() {
   const [filters, setFilters] = useState(initial.filters);
@@ -38,11 +40,17 @@ export default function App() {
   const [live, setLive] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [overSearch, setOverSearch] = useState(false);
+  // An image carried out of the map, drawn under the pointer while it is over the search bar.
+  const [carried, setCarried] = useState<{ id: string; x: number; y: number } | null>(null);
   const mapped = view === 'map';
   const folder = status?.folder ?? null;
   const library = status?.library ?? null;
   const ready = !!folder && folder.id === root;
   const searchRef = useRef<HTMLInputElement>(null);
+  const nearSearch = (x: number, y: number) => {
+    const bar = searchRef.current?.closest('.search')?.getBoundingClientRect();
+    return !!bar && x > bar.left - DROP_REACH && x < bar.right + DROP_REACH && y > bar.top - DROP_REACH && y < bar.bottom + DROP_REACH;
+  };
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -131,6 +139,12 @@ export default function App() {
     if (file.size > 20 * 1024 * 1024) { setError('Choose an image smaller than 20 MB.'); return; }
     clearSearch(); setPanel(null); setUpload(file); setMode('visual'); setSelected(null); setPicked(null); setView('grid');
   }, [clearSearch]);
+  const carry = (id: string | null, x: number, y: number, dropped: boolean) => {
+    const over = !!id && nearSearch(x, y);
+    setDragging(!!id && !dropped); setOverSearch(over && !dropped); setCarried(over && !dropped ? { id: id!, x, y } : null);
+    if (over && dropped) findSimilar(id!);
+    return over;
+  };
   const showFolder = (path: string) => { setSelected(null); setPicked(null); clearSearch(); setView('grid'); setFilters(f => ({ ...f, folder: path })); };
   useEffect(() => {
     const paste = (e: ClipboardEvent) => { const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/')); if (file && ready) { e.preventDefault(); useImage(file); } };
@@ -154,7 +168,7 @@ export default function App() {
   const subtitle = (similar || upload) && !mapped ? `${total.toLocaleString()} most similar ${total === 1 ? 'image' : 'images'}` : mapped && searching ? `Closest ${plural(items.length, 'match', 'matches')}` : searching ? (mode === 'visual' ? `${plural(total, 'image')} by similarity` : plural(total, 'match', 'matches')) : plural(total, 'image');
   const scope = [filters.folder && `in ${filters.folder}`, filters.type && typeLabel(filters.type), rangeLabel(filters), scanBusy && 'Updating'].filter(Boolean).map(part => ` · ${part}`).join('');
   const gathering = scanBusy && !library?.counts.images;
-  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(!!(e.target as Element).closest?.('.search')); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
+  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientX, e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientX, e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
     <header className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
@@ -169,7 +183,7 @@ export default function App() {
       {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. Check that it is still running in Terminal.</span><button className="text-button" onClick={refreshStatus}>Retry</button></div>}
       {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p><FolderChooser status={status} onOpened={applyStatus} /></div>
       : !ready ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
-      : mapped ? <Embedding key={root} root={root} rootName={folder!.name} filters={filters} highlight={highlight} search={library!.search} scanning={!!scanBusy} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onLibrary={() => setPanel('library')} onReset={reset} /> : <>
+      : mapped ? <Embedding key={root} root={root} filters={filters} highlight={highlight} search={library!.search} scanning={!!scanBusy} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onCarry={carry} onLibrary={() => setPanel('library')} onReset={reset} /> : <>
       {scan?.state === 'error' && <div className="notice error" role="alert"><span>{scan.error}{library!.counts.images ? ' Showing the images from the last scan.' : ''}</span><button className="text-button" onClick={() => setPanel('folder')}>Choose folder</button></div>}
       {error && <div className="notice error" role="alert"><span>{error}</span><button className="text-button" onClick={() => setRevision(r => r + 1)}>Retry</button>{searching && <button className="text-button" onClick={() => setPanel('library')}>Search setup</button>}</div>}
       {loading && !items.length ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
@@ -186,6 +200,7 @@ export default function App() {
     {panel === 'search' && <SearchPanel mode={mode} onMode={setMode} onUpload={() => uploadRef.current?.click()} onClose={() => setPanel(null)} />}
     {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setSelected(null)} onSimilar={findSimilar} onFolder={showFolder} />}
     {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setPicked(null)} onSimilar={findSimilar} onFolder={showFolder} />}
+    {carried && <img className="carried" src={imageUrl(carried.id)} alt="" style={{ left: carried.x, top: carried.y }} />}
     <input className="sr-only" ref={uploadRef} type="file" accept="image/*,.heic,.heif" aria-label="Image to match" tabIndex={-1} onChange={e => { if (e.target.files?.[0]) useImage(e.target.files[0]); e.target.value = ''; }} />
   </div>;
 }

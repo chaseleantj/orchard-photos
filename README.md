@@ -45,9 +45,9 @@ Click an image to open it. The viewer shows the file name, date, folder, dimensi
 
 **Filter** narrows the grid by subfolder (subfolders of it included), file type, and date: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
-**Search** defaults to appearance. Type a description and press Enter. You can also drop an image on the search bar, paste one, drag an image from the grid into it, or choose **Find similar**. Searching by an image shows its 100 closest matches. The search options button switches to searching file names. Filters still apply to every search.
+**Search** defaults to appearance. Type a description and press Enter. You can also drop an image on or near the search bar, paste one, drag an image from the grid or the map onto it, or choose **Find similar**. Searching by an image shows its 100 closest matches. The search options button switches to searching file names. Filters still apply to every search.
 
-**Map** lays the whole folder out by similarity, so look-alike images sit together. Scroll or pinch to zoom, drag to move, and click an image for a larger card. Searching lights up the matches and dims the rest. The first layout takes a few seconds. New images are placed next to their nearest neighbours, so the map stays put. The refresh button at the top left lays it out again, and images glide to their new places.
+**Map** lays the whole folder out by similarity, so look-alike images sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. Searching lights up the matches and dims the rest. The first layout takes a few seconds. New images are placed next to their nearest neighbours, so the map stays put. The refresh button at the top left lays it out again, and images glide to their new places.
 
 **Folder**, at the right of the line under the search bar, switches folders. On a Mac it opens the system folder dialog. You can also type a path or pick a recent folder. Each folder keeps its own cache, so switching back is quick.
 

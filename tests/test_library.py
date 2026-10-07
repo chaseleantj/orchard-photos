@@ -102,13 +102,15 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.library.pictures({'group': '../x'})
 
-    def test_finding_similar_skips_the_references_own_near_duplicates(self):
+    def test_finding_similar_starts_with_the_references_own_stack(self):
         reference, twin, other = (self.image(number) for number in (1, 2, 3))
         self.group(twin, reference)
+        # The stack's cover scores below another image, yet still leads.
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 3},
-                                                search=lambda **kwargs: [(reference, 1), (twin, .99), (other, .5)])
-        self.assertEqual(self.ids({'similar': reference}), [other])
-        self.assertEqual(self.ids({'q': 'x', 'mode': 'visual'}), [twin, other])
+                                                search=lambda **kwargs: [(reference, 1), (other, .97), (twin, .96)])
+        self.assertEqual(self.ids({'similar': reference}), [twin, other])
+        # A text search has no reference, so the stack ranks by its cover's score.
+        self.assertEqual(self.ids({'q': 'x', 'mode': 'visual'}), [other, twin])
 
     def test_dates_follow_the_viewers_timezone(self):
         self.image(1, modified='2026-09-20T23:30:00Z')
@@ -122,14 +124,14 @@ class LibraryTests(unittest.TestCase):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 self.library.pictures(params)
 
-    def test_visual_ranking_retains_filters_and_excludes_reference(self):
+    def test_visual_ranking_retains_filters_and_leads_with_the_reference(self):
         reference = self.image(1, 'a/ref.jpg')
         match = self.image(2, 'a/match.jpg')
         elsewhere = self.image(3, 'b/other.jpg')
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 3},
                                                 search=lambda **kwargs: [(reference, 1), (elsewhere, .9), (match, .8)])
-        self.assertEqual(self.ids({'similar': reference, 'folder': 'a'}), [match])
-        self.assertEqual(self.ids({'similar': reference}), [elsewhere, match])
+        self.assertEqual(self.ids({'similar': reference, 'folder': 'a'}), [reference, match])
+        self.assertEqual(self.ids({'similar': reference}), [reference, elsewhere, match])
 
     def test_image_similarity_returns_only_the_closest_hundred_but_text_is_not_capped(self):
         ids = [self.image(number) for number in range(1, 106)]
@@ -137,7 +139,7 @@ class LibraryTests(unittest.TestCase):
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 105}, search=lambda **kwargs: ranking)
         result = self.library.pictures({'similar': ids[0], 'limit': '200'})
         self.assertEqual((result['total'], result['hasMore']), (100, False))
-        self.assertEqual([row['id'] for row in result['items']][:2], ids[1:3])
+        self.assertEqual([row['id'] for row in result['items']][:2], ids[:2])
         self.assertEqual(self.library.pictures({'q': 'x', 'mode': 'visual', 'limit': '200'})['total'], 105)
 
     def test_visual_search_before_preparation_explains_itself(self):

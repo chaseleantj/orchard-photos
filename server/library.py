@@ -185,11 +185,11 @@ class Library:
             if self.semantic.status()['indexed'] == 0:
                 raise ValueError('Visual search is not ready. Open Library to prepare it, or search by file name.')
             ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
-            # The reference's own near-duplicates are already a click away in the viewer.
+            # The reference comes first, as the stack of its near-duplicates, so the results start from what was asked.
             with self.connect() as db:
                 own = db.execute('SELECT coalesce((SELECT group_id FROM image_groups WHERE image_id=?), ?)', (reference, reference)).fetchone()[0]
-            rows = [row for row in self.library(where, values) if row['id'] in ranking and row['group'] != own]
-            rows.sort(key=lambda row: ranking[row['id']], reverse=True)
+            rows = [row for row in self.library(where, values) if row['id'] in ranking]
+            rows.sort(key=lambda row: (row['group'] == own, ranking[row['id']]), reverse=True)
             if reference or image_bytes:
                 # Beyond the closest matches, similarity to a single image is noise.
                 rows = rows[:SIMILAR_LIMIT]

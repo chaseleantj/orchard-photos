@@ -4,8 +4,13 @@ import { imageUrl } from './types';
 export interface MapPoint extends Picture { x: number; y: number; slot: number }
 export interface MapCamera { x: number; y: number; zoom: number }
 export interface MapCallbacks {
+  /** The keyboard's current image, or none. */
   onSelect: (id: string | null) => void;
-  onFrame: () => void;
+  /** An image was clicked or tapped. */
+  onOpen: (id: string) => void;
+  /** An image is being carried by a drag, at a viewport position, or was just let go (`dropped`), or the drag
+   *  ended without one (`id` null). Returns whether the position is a drop target, which pauses panning. */
+  onCarry: (id: string | null, x: number, y: number, dropped: boolean) => boolean;
   onSettle: (camera: MapCamera) => void;
 }
 
@@ -27,7 +32,7 @@ interface Thumb { image: HTMLImageElement; ready: boolean; shown: number; used: 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const approach = (rate: number, dt: number) => 1 - Math.exp(-dt / rate);
 
-/** Draws the embedding on a canvas and owns the camera, hover and hit-testing. React only sees selections. */
+/** Draws the embedding on a canvas and owns the camera, hover and hit-testing. React only hears about selections, clicks and carried images. */
 export class MapEngine {
   private ctx: CanvasRenderingContext2D;
   private w = 0; private h = 0; private dpr = 1;
@@ -53,7 +58,8 @@ export class MapEngine {
   private settle = 0;
   private pointer: { x: number; y: number } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
-  private drag: { x: number; y: number; moved: boolean; vx: number; vy: number; t: number } | null = null;
+  // A drag pans the map; one that starts on an image also carries it, so it can be dropped on the search bar.
+  private drag: { x: number; y: number; moved: boolean; vx: number; vy: number; t: number; grabbed: number; start: Camera; over: boolean } | null = null;
   private pinch: { distance: number; x: number; y: number } | null = null;
   private glide = { vx: 0, vy: 0 };
   private reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -221,14 +227,6 @@ export class MapEngine {
 
   private iconSize(k = this.cam.k) { return Math.min(MAX_ICON, this.base * Math.sqrt(k / this.fitK)); }
 
-  /** Screen position and size of a point, for overlays that follow the camera. */
-  project(id: string) {
-    const i = this.index.get(id);
-    if (i === undefined) return null;
-    const p = this.points[i], c = this.cam;
-    return { x: (p.x - c.x) * c.k + this.w / 2, y: (p.y - c.y) * c.k + this.h / 2, size: this.iconSize() };
-  }
-
   // ---- Selection -------------------------------------------------------------------------------
 
   select(id: string | null, reveal = false) {
@@ -280,7 +278,7 @@ export class MapEngine {
     const r = this.canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
-  private onChrome(e: Event) { return (e.target as HTMLElement).closest?.('.map-card, .map-controls, button, a') !== null; }
+  private onChrome(e: Event) { return (e.target as HTMLElement).closest?.('.map-controls, button, a') !== null; }
 
   private wheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -295,7 +293,7 @@ export class MapEngine {
     const p = this.local(e);
     this.touches.set(e.pointerId, p);
     this.glide = { vx: 0, vy: 0 };
-    if (this.touches.size === 1) this.drag = { ...p, moved: false, vx: 0, vy: 0, t: e.timeStamp };
+    if (this.touches.size === 1) this.drag = { ...p, moved: false, vx: 0, vy: 0, t: e.timeStamp, grabbed: this.hit(p.x, p.y), start: { ...this.goal }, over: false };
     else { this.drag = null; this.startPinch(); }
   };
 
@@ -319,6 +317,8 @@ export class MapEngine {
       const d = this.drag, dx = p.x - d.x, dy = p.y - d.y;
       if (!d.moved && Math.hypot(dx, dy) < 5) return;
       d.moved = true; this.canvas.style.cursor = 'grabbing';
+      if (d.grabbed >= 0) d.over = this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, false);
+      if (d.over) { d.x = p.x; d.y = p.y; d.vx = d.vy = 0; return; }
       const dt = Math.max(1, e.timeStamp - d.t);
       d.vx = 0.7 * (dx / dt) + 0.3 * d.vx; d.vy = 0.7 * (dy / dt) + 0.3 * d.vy;
       d.x = p.x; d.y = p.y; d.t = e.timeStamp;
@@ -338,14 +338,20 @@ export class MapEngine {
     this.drag = null; this.canvas.style.cursor = '';
     if (!d.moved) {
       const i = this.hit(p.x, p.y);
-      this.select(i >= 0 ? this.points[i].id : null);
+      if (i >= 0) this.calls.onOpen(this.points[i].id); else this.select(null);
+    } else if (d.grabbed >= 0 && this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, true)) {
+      // Dropped on the search bar: the map goes back to where the drag began.
+      this.travel(d.start, true);
     } else if (!this.reduced && e.timeStamp - d.t < 80 && Math.hypot(d.vx, d.vy) > 0.05) {
       this.glide = { vx: d.vx, vy: d.vy }; this.invalidate();
     }
     if (e.pointerType !== 'mouse') this.setHover(-1);
   };
 
-  private cancel = (e: PointerEvent) => { this.touches.delete(e.pointerId); this.pinch = null; this.drag = null; this.canvas.style.cursor = ''; };
+  private cancel = (e: PointerEvent) => {
+    if (this.drag && this.drag.grabbed >= 0) this.calls.onCarry(null, 0, 0, false);
+    this.touches.delete(e.pointerId); this.pinch = null; this.drag = null; this.canvas.style.cursor = '';
+  };
   private leave = () => { this.pointer = null; if (!this.drag) this.setHover(-1); };
   private double = (e: MouseEvent) => {
     if (this.onChrome(e)) return;
@@ -383,7 +389,6 @@ export class MapEngine {
     const dt = Math.min(48, this.last ? now - this.last : 16); this.last = now; this.clock = now;
     const busy = this.update(dt);
     this.draw();
-    this.calls.onFrame();
     if (busy) this.invalidate(); else { this.last = 0; this.settled(); }
   };
 
