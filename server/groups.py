@@ -17,9 +17,9 @@ from PIL import Image
 
 from server.scanner import WORKERS, thumbnail_path
 
-# Cosine similarity between image embeddings. Bursts and resized copies score above it; different shots of the
-# same subject, like two photos of one plant or one speaker, score between 0.85 and 0.93.
-THRESHOLD = 0.95
+# Cosine similarity between image embeddings. Resized copies and the closest frames of a burst score above it;
+# looser bursts score from 0.93, and different shots of one subject, like one plant on two days, 0.85 to 0.93.
+THRESHOLD = 0.97
 # Files in one folder whose names differ only by a size or copy suffix, like photo-800x400.jpg and photo (1).jpg,
 # need only look related: crops of one picture score from 0.7 up, unrelated pictures that share a name far lower.
 RELATED_THRESHOLD = 0.7

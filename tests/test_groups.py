@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 from PIL import Image, ImageFilter
 
-from server.groups import Groups, gather, sharpness, stem
+from server.groups import THRESHOLD, Groups, gather, sharpness, stem
 from server.scanner import Scanner, thumbnail_path
 from server.semantic import MODEL, Encoder, SemanticIndex
 
@@ -29,11 +29,11 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(centres[3], 3)
 
     def test_a_slow_series_does_not_chain_into_one_group(self):
-        # Each step is a near-duplicate of the next (cos 15° ≈ 0.97), but the ends are far apart.
-        matrix = np.stack([turned(15 * step) for step in range(7)])
+        # Each step is a near-duplicate of the next (cos 10° ≈ 0.985), but the ends are far apart.
+        matrix = np.stack([turned(10 * step) for step in range(7)])
         centres = gather(matrix)
         for index, centre in enumerate(centres):
-            self.assertGreaterEqual(float(matrix[index] @ matrix[centre]), 0.95)
+            self.assertGreaterEqual(float(matrix[index] @ matrix[centre]), THRESHOLD)
         self.assertGreater(len(set(centres)), 1)
 
 
