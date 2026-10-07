@@ -65,9 +65,11 @@ export function LibraryPanel({ status, onClose, onRefresh }: { status: Status; o
     <dl className="counts">
       <dt>Images</dt><dd>{counts.images.toLocaleString()}</dd>
       {!!counts.duplicates && <><dt>Duplicate files</dt><dd>{counts.duplicates.toLocaleString()}</dd></>}
+      {!!counts.nearDuplicates && <><dt>Near-duplicates</dt><dd>{counts.nearDuplicates.toLocaleString()}</dd></>}
       {!!counts.unreadable && <><dt>Unreadable files</dt><dd>{counts.unreadable.toLocaleString()}</dd></>}
     </dl>
     {!!counts.duplicates && <p>Identical files appear once. Opening an image lists every place it is saved.</p>}
+    {!!counts.nearDuplicates && <p>Images that look almost the same, like bursts and resized copies, share one tile showing the sharpest. Opening it shows the rest.</p>}
     {!!library.unreadable.length && <details className="disclosure"><summary>Files that could not be read</summary><ul className="file-list">{library.unreadable.map(file => <li key={file.path}><span className="path">{file.path}</span><span>{file.error}</span></li>)}</ul>{counts.unreadable > library.unreadable.length && <p>And {plural(counts.unreadable - library.unreadable.length, 'more file')}.</p>}</details>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}

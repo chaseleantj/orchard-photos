@@ -76,6 +76,40 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.library.pictures({'offset': '3'})['items'], [])
         self.assertEqual(first, self.library.pictures({'limit': '2'}))
 
+    def group(self, *members):
+        """Store near-duplicates as the grouping would, best first."""
+        with self.library.scanner.connect() as db:
+            db.executemany('INSERT INTO image_groups VALUES (?,?,?)',
+                           [(image_id, members[0], len(members) - place) for place, image_id in enumerate(members)])
+
+    def test_near_duplicates_share_one_tile_fronted_by_the_best_match(self):
+        best = self.image(1, 'a/best.jpg', modified='2026-09-01T12:00:00Z')
+        blurry = self.image(2, 'b/blurry.jpg', modified='2026-09-02T12:00:00Z')
+        alone = self.image(3, 'b/alone.jpg')
+        self.group(best, blurry)
+        items = self.library.pictures({})['items']
+        self.assertEqual([(row['id'], row['members']) for row in items], [(alone, 1), (best, 2)])
+        self.assertEqual(self.library.status()['counts']['nearDuplicates'], 1)
+        # When the best is filtered out, the next one fronts what is left of the group.
+        self.assertEqual([(row['id'], row['members']) for row in self.library.pictures({'folder': 'b'})['items']], [(alone, 1), (blurry, 1)])
+
+    def test_a_group_lists_its_matching_members_best_first(self):
+        members = [self.image(number, f'{folder}/{number}.jpg') for number, folder in ((1, 'a'), (2, 'b'), (3, 'a'))]
+        self.group(*members)
+        self.assertEqual(self.ids({'group': members[0]}), members)
+        self.assertEqual(self.ids({'group': members[0], 'folder': 'a'}), [members[0], members[2]])
+        self.assertEqual(self.ids({'group': self.image(4)}), [f'{4:064x}'])
+        with self.assertRaises(ValueError):
+            self.library.pictures({'group': '../x'})
+
+    def test_finding_similar_skips_the_references_own_near_duplicates(self):
+        reference, twin, other = (self.image(number) for number in (1, 2, 3))
+        self.group(twin, reference)
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 3},
+                                                search=lambda **kwargs: [(reference, 1), (twin, .99), (other, .5)])
+        self.assertEqual(self.ids({'similar': reference}), [other])
+        self.assertEqual(self.ids({'q': 'x', 'mode': 'visual'}), [twin, other])
+
     def test_dates_follow_the_viewers_timezone(self):
         self.image(1, modified='2026-09-20T23:30:00Z')
         self.assertEqual(self.library.pictures({'from': '2026-09-21', 'to': '2026-09-21'})['total'], 0)

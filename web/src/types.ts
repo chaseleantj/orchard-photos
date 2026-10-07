@@ -5,14 +5,15 @@ export type SearchMode = 'name' | 'visual';
 export type View = 'grid' | 'map';
 export type Range = 'all' | 'today' | '7d' | '28d' | 'year' | 'custom';
 export interface Filters { folder: string; type: string; range: Range; from: string; to: string }
-/** One image, described by its newest file that passes the filters. `dated` says where its date came from. */
-export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number }
+/** One image, described by its newest file that passes the filters. `dated` says where its date came from.
+ *  In the grid it fronts its `group` of near-duplicates, `members` images in all, counting itself. */
+export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 export interface FileCopy { path: string; modified: string }
 export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; files: FileCopy[]; preview: boolean }
 export interface SearchStatus { state: 'idle' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; error?: string }
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
-  counts: { images: number; files: number; duplicates: number; unreadable: number };
+  counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
   unreadable: { path: string; error: string }[]; unlistedFolders: number; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 export interface Folder { path: string; label: string; name: string; id: string }

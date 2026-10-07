@@ -184,8 +184,8 @@ export default function App() {
     {panel === 'library' && status?.library && <LibraryPanel status={status} onClose={() => setPanel(null)} onRefresh={refreshStatus} />}
     {panel === 'folder' && status && <FolderPanel status={status} onOpened={applyStatus} onClose={() => setPanel(null)} />}
     {panel === 'search' && <SearchPanel mode={mode} onMode={setMode} onUpload={() => uploadRef.current?.click()} onClose={() => setPanel(null)} />}
-    {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} onClose={() => setSelected(null)} onSimilar={findSimilar} onFolder={showFolder} />}
-    {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} onClose={() => setPicked(null)} onSimilar={findSimilar} onFolder={showFolder} />}
+    {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setSelected(null)} onSimilar={findSimilar} onFolder={showFolder} />}
+    {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setPicked(null)} onSimilar={findSimilar} onFolder={showFolder} />}
     <input className="sr-only" ref={uploadRef} type="file" accept="image/*,.heic,.heif" aria-label="Image to match" tabIndex={-1} onChange={e => { if (e.target.files?.[0]) useImage(e.target.files[0]); e.target.value = ''; }} />
   </div>;
 }

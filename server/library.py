@@ -11,6 +11,7 @@ import threading
 from PIL import Image, ImageOps
 
 from server.atlas import Atlas
+from server.groups import Groups
 from server.layout import Layout
 from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable, preview_path, thumbnail_path
 from server.semantic import SemanticIndex
@@ -32,6 +33,7 @@ class Library:
         self.semantic = SemanticIndex(self.directory, encoder)
         self.atlas = Atlas(self.directory)
         self.layout = Layout(self.semantic)
+        self.groups = Groups(self.directory, self.semantic)
         self.closed = threading.Event()
         self.scan_lock = threading.Lock()
         self.semantic_lock = threading.Lock()
@@ -64,8 +66,8 @@ class Library:
             self.stats_path.write_text(json.dumps(self.stats))
             self.scan_state = {'state': 'ready'}
             search = self.semantic.status()
-            # Once the model is on this computer, new images are indexed without asking.
-            if search['indexed'] < search['total'] and (search['downloaded'] or search['indexed']):
+            # Once the model is on this computer, new images are indexed and grouped without asking.
+            if search['downloaded'] or search['indexed']:
                 threading.Thread(target=self.index, daemon=True).start()
         except ScanCancelled:
             self.scan_state = {'state': 'ready'}
@@ -82,6 +84,10 @@ class Library:
             return
         try:
             self.semantic.index(self.closed.is_set)
+            if not self.closed.is_set() and self.groups.update():
+                self.revision += 1
+        except Exception:
+            logger.exception('Grouping near-duplicates failed')
         finally:
             self.semantic_lock.release()
 
@@ -97,7 +103,8 @@ class Library:
             unreadable = [dict(row) for row in db.execute(
                 'SELECT path, error FROM files WHERE error IS NOT NULL ORDER BY path LIMIT 50')]
             unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
-        return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'unreadable': unreadable_count},
+            near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
+        return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unreadable': unreadable, 'unlistedFolders': self.stats.get('unlisted_folders', 0),
                 'scan': self.scan_state, 'search': self.semantic.status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
@@ -129,32 +136,43 @@ class Library:
             raise ValueError('The end date must follow the start date.')
         return where, values
 
-    def library(self, where, values, limit=None, offset=0):
-        """One row per image, described by its newest matching file, newest first. Returns (rows, total)."""
+    def library(self, where, values, collapse=True):
+        """One row per near-duplicate group, fronted by its best matching image and described by that image's newest
+        matching file, newest first. Without collapsing, every matching image of the groups, best first."""
         condition = ' AND '.join(where)
         # Photos are dated when they were taken; anything without EXIF falls back to the file's modification time.
         matching = f'''WITH matching AS (
             SELECT f.path, f.image_id, f.modified, coalesce(i.taken, f.modified) AS date,
+                   coalesce(g.group_id, f.image_id) AS grp, coalesce(g.score, 0) AS score,
                    row_number() OVER (PARTITION BY f.image_id ORDER BY coalesce(i.taken, f.modified) DESC, f.path) AS rank,
                    count(*) OVER (PARTITION BY f.image_id) AS copies
-            FROM files f JOIN images i ON i.id=f.image_id WHERE {condition}
+            FROM files f JOIN images i ON i.id=f.image_id LEFT JOIN image_groups g ON g.image_id=f.image_id WHERE {condition}
+        ), pictures AS (
+            SELECT image_id, date, path, copies, grp,
+                   row_number() OVER (PARTITION BY grp ORDER BY score DESC, date DESC, image_id) AS place,
+                   count(*) OVER (PARTITION BY grp) AS members
+            FROM matching WHERE rank=1
         )'''
-        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,m.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,m.path,m.copies
-                  FROM images i JOIN matching m ON m.image_id=i.id WHERE m.rank=1 ORDER BY m.date DESC,i.id'''
+        shown = 'WHERE p.place=1 ORDER BY p.date DESC,i.id' if collapse else 'ORDER BY p.place'
+        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
+                         p.path,p.copies,p.grp AS "group",p.members
+                  FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
+        # Grouping needs every matching row anyway, so a page is sliced from the whole list rather than counted twice.
         with self.connect() as db:
-            if limit is None:
-                rows = [dict(row) for row in db.execute(sql, values)]
-                return rows, len(rows)
-            rows = [dict(row) for row in db.execute(f'{sql} LIMIT ? OFFSET ?', values + [limit, offset])]
-            total = db.execute(f'{matching} SELECT count(*) FROM matching WHERE rank=1', values).fetchone()[0]
-            return rows, total
+            return [dict(row) for row in db.execute(sql, values)]
 
     def pictures(self, params, image_bytes=None):
         where, values = self.filters(params)
         query = params.get('q', '').strip()[:1000]
         reference = params.get('similar', '')
-        if reference and not IMAGE_ID.fullmatch(reference):
+        group = params.get('group', '')
+        if (reference and not IMAGE_ID.fullmatch(reference)) or (group and not IMAGE_ID.fullmatch(group)):
             raise ValueError('Choose an image from this folder.')
+        if group:
+            where.append('coalesce(g.group_id, f.image_id)=?')
+            values.append(group)
+            rows = self.library(where, values, collapse=False)
+            return {'items': rows, 'total': len(rows), 'offset': 0, 'hasMore': False}
         offset = max(0, int(params.get('offset', '0')))
         limit = min(200, max(1, int(params.get('limit', str(PAGE_SIZE)))))
         visual = bool(image_bytes or reference or (query and params.get('mode') == 'visual'))
@@ -162,17 +180,19 @@ class Library:
             for word in query.split():
                 where.append("f.path LIKE ? ESCAPE '\\'")
                 values.append('%' + word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
-            rows, total = self.library(where, values, limit, offset)
-            return {'items': rows, 'total': total, 'offset': offset, 'hasMore': offset + limit < total}
-        if self.semantic.status()['indexed'] == 0:
-            raise ValueError('Visual search is not ready. Open Library to prepare it, or search by file name.')
-        ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
-        ranking.pop(reference, None)
-        rows = [row for row in self.library(where, values)[0] if row['id'] in ranking]
-        rows.sort(key=lambda row: ranking[row['id']], reverse=True)
-        if reference or image_bytes:
-            # Beyond the closest matches, similarity to a single image is noise.
-            rows = rows[:SIMILAR_LIMIT]
+            rows = self.library(where, values)
+        else:
+            if self.semantic.status()['indexed'] == 0:
+                raise ValueError('Visual search is not ready. Open Library to prepare it, or search by file name.')
+            ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
+            # The reference's own near-duplicates are already a click away in the viewer.
+            with self.connect() as db:
+                own = db.execute('SELECT coalesce((SELECT group_id FROM image_groups WHERE image_id=?), ?)', (reference, reference)).fetchone()[0]
+            rows = [row for row in self.library(where, values) if row['id'] in ranking and row['group'] != own]
+            rows.sort(key=lambda row: ranking[row['id']], reverse=True)
+            if reference or image_bytes:
+                # Beyond the closest matches, similarity to a single image is noise.
+                rows = rows[:SIMILAR_LIMIT]
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'hasMore': offset + limit < len(rows)}
 
     def facets(self):
@@ -235,7 +255,7 @@ class Library:
     def map(self, params):
         """Every filtered image with a place on the map and an icon slot in the atlas."""
         where, values = self.filters(params)
-        rows = self.library(where, values)[0]
+        rows = self.library(where, values)
         if self.semantic.status()['indexed'] == 0:
             raise ValueError('Visual search is not ready. Open Library to prepare it, then return to the map.')
         positions = self.layout.positions()

@@ -58,6 +58,8 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .picture:hover img { opacity: .87; }
 .picture:focus-visible { outline-offset: var(--s1); }
 .picture .missing { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); font-size: var(--small); padding: var(--s4); }
+.picture .members { position: absolute; right: var(--s2); bottom: var(--s2); display: flex; align-items: center; gap: var(--s1); padding: 2px var(--s2); border-radius: var(--pill); background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font-size: var(--small); font-variant-numeric: tabular-nums; }
+.picture .members svg { width: 14px; height: 14px; }
 .load-more { display: flex; justify-content: center; padding: var(--s12); font-size: var(--small); color: var(--muted); min-height: var(--s16); }
 .empty { min-height: var(--empty-height); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--s3); padding: var(--s8); }
 .empty h1 { font-size: var(--title); font-weight: 400; letter-spacing: -.5px; margin: 0; }
@@ -117,6 +119,15 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .folder-link span { overflow-wrap: anywhere; }
 .folder-link:hover { background: none; color: var(--muted); }
 .numbers { font-variant-numeric: tabular-nums; }
+.near-duplicates { margin-top: var(--s6); }
+.near-duplicates h2 { margin: 0 0 var(--s3); font-size: var(--body); font-weight: 400; color: var(--muted); }
+.near-duplicates ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--s12), 1fr)); gap: var(--s2); max-height: 40vh; overflow: auto; }
+.near-duplicates button { display: block; width: 100%; aspect-ratio: 1; padding: 0; border-radius: var(--radius); overflow: hidden; background: var(--soft); }
+/* Drawn inside the thumbnail, since the scrolling list would clip an outline around it. */
+.near-duplicates button[aria-pressed='true'] { outline: 2px solid var(--ink); outline-offset: -2px; }
+.near-duplicates button:focus-visible { outline-offset: -2px; }
+.near-duplicates img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
+.near-duplicates button:hover img { opacity: .87; }
 .disclosure { margin-top: var(--s6); }
 .disclosure summary { cursor: pointer; color: var(--muted); min-height: var(--s10); padding-top: var(--s2); font-size: var(--body); }
 .disclosure summary:hover { color: var(--ink); }

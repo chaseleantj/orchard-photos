@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Layers } from 'lucide-react';
 import type { Picture } from './types';
-import { dragImage, fileName, imageUrl } from './types';
+import { dragImage, fileName, imageUrl, plural } from './types';
 
 const BUFFER = 1200;
 const STEP = 400;
@@ -55,7 +56,9 @@ export default function Gallery({ items, onOpen }: { items: Picture[]; onOpen: (
 const Tile = memo(function Tile({ item, index, style, onOpen }: { item: Picture; index: number; style: React.CSSProperties; onOpen: (index: number) => void }) {
   const [failed, setFailed] = useState(false);
   const name = fileName(item.path);
-  return <button className="picture" style={style} onClick={() => onOpen(index)} aria-label={`Open ${name}`} title={item.path}>
+  const label = item.members > 1 ? `Open ${name} and ${plural(item.members - 1, 'near-duplicate')}` : `Open ${name}`;
+  return <button className="picture" style={style} onClick={() => onOpen(index)} aria-label={label} title={item.path}>
     {failed ? <span className="missing">Preview unavailable</span> : <img src={imageUrl(item.id)} alt={name} decoding="async" onDragStart={dragImage(item.id)} onError={() => setFailed(true)} />}
+    {item.members > 1 && <span className="members" aria-hidden="true"><Layers />{item.members.toLocaleString()}</span>}
   </button>;
 });
