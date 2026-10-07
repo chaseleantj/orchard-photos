@@ -99,27 +99,28 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .viewer::backdrop { background: var(--bg); }
 .viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--detail-width); grid-template-rows: var(--s20) minmax(0,1fr); }
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
-.viewer-navigation { display: flex; align-items: center; gap: var(--s3); font-size: var(--small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.viewer-navigation { display: flex; align-items: center; gap: var(--s3); font-size: var(--body); line-height: 1.5; color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: auto; margin: 0 0 var(--s8) var(--page); }
 .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
 .image-stage.zoomed { display: block; }
 .image-stage.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
-.image-details { padding: var(--s8); overflow: auto; font-size: var(--body); }
-.image-details h1 { margin: 0 0 var(--s4); font-size: var(--title); font-weight: 400; line-height: 1.35; letter-spacing: -.4px; overflow-wrap: anywhere; }
-.image-details p { margin: var(--s2) 0; color: var(--muted); line-height: 1.6; }
-.detail-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); margin-top: var(--s6); }
-.detail-actions .text-button { padding-left: 0; }
-.detail-actions .text-button:hover { background: none; color: var(--muted); }
+/* The sidebar has two text styles, both at body size: ink for the name and path, muted for everything else. */
+.image-details { padding: var(--s8); overflow: auto; font-size: var(--body); line-height: 1.5; color: var(--muted); }
+.image-details h1 { margin: 0; font: inherit; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.image-details p { margin: 0; }
+.detail-summary { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
+.crumbs { padding: 0; text-align: left; color: var(--muted); overflow-wrap: anywhere; }
+.crumbs:hover { color: var(--ink); }
+/* Pulled left so the first icon lines up with the text above, not its hit area. */
+.detail-actions { display: flex; gap: var(--s1); margin: var(--s4) 0 0 calc((var(--icon) - var(--s10)) / 2); }
+.detail-status { min-height: 1.5em; }
 .view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }
 .path { color: var(--ink); overflow-wrap: anywhere; }
 .folder-button { max-width: 40%; gap: var(--s2); color: var(--muted); }
 .folder-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-button svg { width: var(--s4); height: var(--s4); }
-.folder-link { padding-left: 0; margin: var(--s1) 0; max-width: 100%; justify-content: flex-start; text-align: left; }
-.folder-link span { overflow-wrap: anywhere; }
-.folder-link:hover { background: none; color: var(--muted); }
 .numbers { font-variant-numeric: tabular-nums; }
-.near-duplicates { margin-top: var(--s6); }
+.near-duplicates { margin-top: var(--s4); }
 .near-duplicates h2 { margin: 0 0 var(--s3); font-size: var(--body); font-weight: 400; color: var(--muted); }
 .near-duplicates ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--s12), 1fr)); gap: var(--s2); max-height: 40vh; overflow: auto; }
 .near-duplicates button { display: block; width: 100%; aspect-ratio: 1; padding: 0; border-radius: var(--radius); overflow: hidden; background: var(--soft); }
@@ -129,6 +130,7 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .near-duplicates img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
 .near-duplicates button:hover img { opacity: .87; }
 .disclosure { margin-top: var(--s6); }
+.image-details .disclosure p { margin: var(--s2) 0; }
 .disclosure summary { cursor: pointer; color: var(--muted); min-height: var(--s10); padding-top: var(--s2); font-size: var(--body); }
 .disclosure summary:hover { color: var(--ink); }
 .file-list { list-style: none; margin: 0; padding: 0; font-size: var(--body); max-height: 40vh; overflow: auto; }
@@ -203,6 +205,5 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
  .viewer-top { position: sticky; top: 0; background: var(--bg); z-index: 1; padding: var(--s3) var(--page); }
  .image-stage { flex: 0 0 52dvh; margin: 0 var(--page); }
  .image-details { overflow: visible; padding: var(--s6) var(--page); }
- .detail-actions { flex-direction: row; flex-wrap: wrap; gap: var(--s4); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }

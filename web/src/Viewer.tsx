@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, X, Download, ScanSearch, FolderOpen, Folder } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
 import { dateLabel, downloadUrl, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
 
@@ -7,6 +7,10 @@ interface Props {
   items: Picture[]; index: number; total: number; hasMore: boolean; loadingMore: boolean; pageError: string; rootName: string; platform: string; filters: Filters;
   onChange: (index: number) => void; onClose: () => void; onSimilar: (id: string) => void; onFolder: (folder: string) => void;
 }
+// The deepest folders name a place; the rest of a long path is in the tooltip and under Details.
+const CRUMBS = 3;
+// Browsers refuse canvases much larger than this.
+const CLIPBOARD_PIXELS = 50_000_000;
 
 export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -14,6 +18,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const [error, setError] = useState('');
   const [failed, setFailed] = useState(false);
   const [zoom, setZoom] = useState(false);
+  const [copied, setCopied] = useState<{ id: string; note: string } | null>(null);
   // The grid shows one image per group of near-duplicates; the viewer can show any of them.
   const [members, setMembers] = useState<Picture[]>([]);
   const [shown, setShown] = useState(0);
@@ -46,48 +51,81 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     return () => controller.abort();
   }, [front.id, front.group, front.members, filters]);
   const show = async (path: string) => { setError(''); try { await post(`/api/images/${item.id}/reveal`, { path }); } catch (e) { setError((e as Error).message); } };
+  const copy = async () => {
+    const id = item.id;
+    setError(''); setCopied(null);
+    try {
+      // Safari only allows the write if the clipboard item is created during the click, so it takes a promise.
+      const png = toPng(imageUrl(id, 'display'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png.then(result => result.blob) })]);
+      const { width, height, scaled } = await png;
+      setCopied({ id, note: scaled ? `Copied at ${width.toLocaleString()} × ${height.toLocaleString()}, the most the clipboard takes` : 'Copied' });
+    } catch (e) { setError((e as Error).name === 'NotAllowedError' ? 'This browser blocked the clipboard. Download the image instead.' : 'The image could not be copied. Download it instead.'); }
+  };
   const file = details?.files.find(f => f.path === item.path);
   const others = details?.files.filter(f => f.path !== item.path) ?? [];
+  // The date not already shown under the name.
+  const otherDate = item.dated === 'taken' ? file && `Modified ${dateLabel(file.modified, true)}` : details?.taken && `Taken ${dateLabel(details.taken, true)}`;
+  const parts = folder ? folder.split('/') : [rootName];
+  const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
   return <dialog ref={dialog} className="viewer" aria-label="Image viewer" onCancel={onClose} onKeyDown={e => {
     if (e.key === 'ArrowRight' && (index < items.length - 1 || hasMore) && !loadingMore) { e.preventDefault(); onChange(index + 1); }
     if (e.key === 'ArrowLeft' && index > 0 && !loadingMore) { e.preventDefault(); onChange(index - 1); }
     if (e.key === 'ArrowDown' && shown < members.length - 1) { e.preventDefault(); setShown(shown + 1); }
     if (e.key === 'ArrowUp' && shown > 0) { e.preventDefault(); setShown(shown - 1); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !getSelection()?.toString()) { e.preventDefault(); void copy(); }
   }}>
     <div className="viewer-layout">
       <header className="viewer-top"><div className="viewer-navigation">
-        <button className="icon-button" aria-label="Previous image" disabled={index === 0 || loadingMore} onClick={() => onChange(index - 1)}><ArrowLeft /></button>
-        <span>{index + 1} / {total}</span>
-        <button className="icon-button" aria-label="Next image" disabled={loadingMore || (index === items.length - 1 && !hasMore)} onClick={() => onChange(index + 1)}><ArrowRight /></button>
-      </div><button className="icon-button" autoFocus aria-label="Close image" onClick={onClose}><X /></button></header>
+        <button className="icon-button" aria-label="Previous image" title="Previous image" disabled={index === 0 || loadingMore} onClick={() => onChange(index - 1)}><ArrowLeft /></button>
+        <span>{(index + 1).toLocaleString()} / {total.toLocaleString()}</span>
+        <button className="icon-button" aria-label="Next image" title="Next image" disabled={loadingMore || (index === items.length - 1 && !hasMore)} onClick={() => onChange(index + 1)}><ArrowRight /></button>
+      </div><div className="viewer-navigation">
+        <button className="icon-button" aria-label={zoom ? 'Fit to screen' : 'View actual size'} title={zoom ? 'Fit to screen' : 'Actual size'} onClick={() => setZoom(!zoom)}>{zoom ? <ZoomOut /> : <ZoomIn />}</button>
+        <button className="icon-button" autoFocus aria-label="Close image" title="Close" onClick={onClose}><X /></button>
+      </div></header>
       <div className={`image-stage ${zoom ? 'zoomed' : ''}`}>
         {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button" onClick={() => setFailed(false)}>Retry</button></div> : <img key={item.id} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onError={() => setFailed(true)} onClick={() => setZoom(!zoom)} />}
       </div>
       <aside className="image-details">
-        <h1>{fileName(item.path)}</h1>
-        <p>{item.dated === 'taken' ? 'Taken' : 'Modified'} {dateLabel(item.date, true)}</p>
-        <button className="text-button folder-link" title="Show only this folder" onClick={() => onFolder(folder)}><Folder /><span>{folder || rootName}</span></button>
-        <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
-        {details?.camera && <p>{details.camera}</p>}
-        {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
-        {(error || pageError) && <p className="error-copy" role="alert">{error || pageError}</p>}
-        <div className="detail-actions">
-          <a className="text-button" href={downloadUrl(item.id, item.path)} download><Download />Download original</a>
-          <button className="text-button" onClick={() => show(item.path)}><FolderOpen />{reveal}</button>
-          <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>
-          <button className="text-button" onClick={() => setZoom(!zoom)}>{zoom ? 'Fit to screen' : 'View actual size'}</button>
+        <div className="detail-summary">
+          <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
+          <p>{item.dated === 'taken' ? 'Taken' : 'Modified'} {dateLabel(item.date, true)}</p>
+          <button className="crumbs" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button>
+          <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
+          {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         </div>
+        <div className="detail-actions">
+          <button className="icon-button" aria-label="Find similar" title="Find similar" onClick={() => onSimilar(item.id)}><ScanSearch /></button>
+          <button className="icon-button" aria-label="Copy image" title="Copy image" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}</button>
+          <a className="icon-button" href={downloadUrl(item.id, item.path)} download aria-label="Download original" title="Download original"><Download /></a>
+          <button className="icon-button" aria-label={reveal} title={reveal} onClick={() => show(item.path)}><FolderOpen /></button>
+        </div>
+        <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
         {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
           <h2>{plural(members.length, 'near-duplicate')}</h2>
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => setShown(place)}><img src={imageUrl(member.id)} alt="" decoding="async" /></button></li>)}</ul>
         </section>}
-        {details && <details className="disclosure"><summary>File</summary>
+        {details && <details className="disclosure"><summary>Details</summary>
           <p className="path">{details.root}/{item.path}</p>
-          {file && <p>Modified {dateLabel(file.modified, true)}</p>}
-          {details.taken && <p>Taken {dateLabel(details.taken, true)}</p>}
+          {otherDate && <p>{otherDate}</p>}
+          {details.camera && <p>{details.camera}</p>}
+          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{other.path}</span><button className="text-button" onClick={() => show(other.path)}>{reveal}</button></li>)}</ul></>}
         </details>}
-        {!!others.length && <details className="disclosure"><summary>Also saved in {plural(others.length, 'other place')}</summary><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{other.path}</span><button className="text-button" onClick={() => show(other.path)}>{reveal}</button></li>)}</ul></details>}
       </aside>
     </div>
   </dialog>;
+}
+
+/** The image as a PNG, the one format every browser can put on the clipboard, scaled down only past what a canvas holds. */
+async function toPng(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Unavailable');
+  const bitmap = await createImageBitmap(await response.blob());
+  const scale = Math.min(1, Math.sqrt(CLIPBOARD_PIXELS / (bitmap.width * bitmap.height)));
+  const width = Math.round(bitmap.width * scale), height = Math.round(bitmap.height * scale);
+  const canvas = new OffscreenCanvas(width, height);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  return { blob: await canvas.convertToBlob({ type: 'image/png' }), width, height, scaled: scale < 1 };
 }
