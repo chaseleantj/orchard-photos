@@ -8,7 +8,7 @@ const STEP = 400;
 // Rows are filled to the full width at about this height; a month's last row keeps it rather than stretching.
 const ROW = 220;
 // A month heading's height, and the space above and below it. The first heading has no space above.
-const HEADING = 29;
+const HEADING = 21;
 const ABOVE = 40;
 const BELOW = 12;
 

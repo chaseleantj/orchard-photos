@@ -31,6 +31,8 @@ export default function App() {
   const [query, setQuery] = useState(new URLSearchParams(location.search).get('q') || '');
   const [submitted, setSubmitted] = useState(query);
   const [mode, setMode] = useState<SearchMode>('visual');
+  // The mode only changes what a typed query finds, so switching it with nothing typed reloads nothing.
+  const queryMode = submitted ? mode : '';
   const [similar, setSimilar] = useState('');
   const [upload, setUpload] = useState<File | null>(null);
   const [items, setItems] = useState<Picture[]>([]);
@@ -101,10 +103,10 @@ export default function App() {
   }, [status, root, clearSearch]);
 
   const fetchResults = useCallback(async (offset: number, signal?: AbortSignal, limit = 80) => {
-    const params = new URLSearchParams({ ...filterParams(filters), q: submitted, mode, similar, offset: String(offset), limit: String(limit) });
+    const params = new URLSearchParams({ ...filterParams(filters), q: submitted, mode: queryMode, similar, offset: String(offset), limit: String(limit) });
     if (upload) return request<Results>(`/api/search/image?${params}`, { method: 'POST', body: upload, headers: { 'Content-Type': upload.type || 'application/octet-stream' }, signal });
     return request<Results>(`/api/images?${params}`, { signal });
-  }, [filters, submitted, mode, similar, upload]);
+  }, [filters, submitted, queryMode, similar, upload]);
   useEffect(() => {
     if (!ready) return;
     const controller = new AbortController();
@@ -175,7 +177,7 @@ export default function App() {
   }, [loadThrough]);
   const changeSelected = async (index: number) => { if (index < items.length) setSelected(index); else if (await loadMore()) setSelected(index); };
   const reset = () => { clearSearch(); setFilters(defaults); window.scrollTo({ top: 0 }); };
-  useEffect(() => { window.scrollTo({ top: 0 }); }, [filters, submitted, mode, similar, upload]);
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [filters, submitted, queryMode, similar, upload]);
   // Image searches are answered by a ranked grid, wherever they start.
   const findSimilar = useCallback((id: string) => { clearSearch(); setPicked(null); setSelected(null); setView('grid'); setSimilar(id); setMode('visual'); }, [clearSearch]);
   const useImage = useCallback((file: File) => {
@@ -217,7 +219,7 @@ export default function App() {
       .catch(e => { if (e.name !== 'AbortError') setTimeline(null); });
     return () => controller.abort();
   }, [ready, mapped, searching, timelineKey, revision, live]); // eslint-disable-line react-hooks/exhaustive-deps
-  const timelineShown = !!timeline && timeline.key === timelineKey && !mapped && !searching && !loading && !!items.length && timeline.data.months.length > 1 && timeline.data.total > TIMELINE_MIN;
+  const timelineShown = !!timeline && timeline.key === timelineKey && !mapped && !searching && !!items.length && timeline.data.months.length > 1 && timeline.data.total > TIMELINE_MIN;
   const scan = library?.scan;
   const scanBusy = scan?.state === 'scanning';
   // While new results load, the map keeps lighting the previous matches instead of flashing back to everything.
