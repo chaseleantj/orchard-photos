@@ -8,8 +8,8 @@ export interface MapCallbacks {
   onSelect: (id: string | null) => void;
   /** An image was clicked or tapped. */
   onOpen: (id: string) => void;
-  /** An image is being carried by a drag, at a viewport position, or was just let go (`dropped`), or the drag
-   *  ended without one (`id` null). Returns whether the position is a drop target, which pauses panning. */
+  /** A lifted image is being carried, at a viewport position, or was just let go (`dropped`), or the carry was
+   *  cancelled (`id` null). Returns whether the position is a drop target. */
   onCarry: (id: string | null, x: number, y: number, dropped: boolean) => boolean;
   onSettle: (camera: MapCamera) => void;
 }
@@ -18,6 +18,10 @@ export interface MapCallbacks {
 const CELL = 64, INSET = 2, INNER = CELL - 2 * INSET, COLUMNS = 32, PER_SHEET = COLUMNS * COLUMNS;
 const CORNER = 7 / INNER;
 const DIMMED = 0.22;
+// Holding still on an image this long lifts it, so it can be carried to the search bar; a quicker drag pans.
+const HOLD = 250;
+// Pointer travel that turns a press into a pan.
+const SLOP = 5;
 const RECEDED = 0.5;
 const SHARP_AT = 72;
 const MAX_ZOOM = 120;
@@ -58,8 +62,9 @@ export class MapEngine {
   private settle = 0;
   private pointer: { x: number; y: number } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
-  // A drag pans the map; one that starts on an image also carries it, so it can be dropped on the search bar.
-  private drag: { x: number; y: number; moved: boolean; vx: number; vy: number; t: number; grabbed: number; start: Camera; over: boolean } | null = null;
+  // A drag pans the map. Pressing and holding on an image first lifts it instead, and then the drag carries it.
+  private drag: { x: number; y: number; moved: boolean; vx: number; vy: number; t: number; grabbed: number; lifted: boolean; cx: number; cy: number } | null = null;
+  private hold = 0;
   private pinch: { distance: number; x: number; y: number } | null = null;
   private glide = { vx: 0, vy: 0 };
   private reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -76,7 +81,7 @@ export class MapEngine {
   }
 
   destroy() {
-    cancelAnimationFrame(this.frame); clearTimeout(this.settle);
+    cancelAnimationFrame(this.frame); clearTimeout(this.settle); clearTimeout(this.hold);
     const s = this.stage;
     s.removeEventListener('wheel', this.wheel);
     s.removeEventListener('pointerdown', this.down);
@@ -293,9 +298,27 @@ export class MapEngine {
     const p = this.local(e);
     this.touches.set(e.pointerId, p);
     this.glide = { vx: 0, vy: 0 };
-    if (this.touches.size === 1) this.drag = { ...p, moved: false, vx: 0, vy: 0, t: e.timeStamp, grabbed: this.hit(p.x, p.y), start: { ...this.goal }, over: false };
-    else { this.drag = null; this.startPinch(); }
+    clearTimeout(this.hold);
+    if (this.touches.size === 1) {
+      const d = this.drag = { ...p, moved: false, vx: 0, vy: 0, t: e.timeStamp, grabbed: this.hit(p.x, p.y), lifted: false, cx: e.clientX, cy: e.clientY };
+      if (d.grabbed >= 0) this.hold = setTimeout(() => this.pickUp(), HOLD);
+    } else { this.dropCarry(); this.drag = null; this.startPinch(); }
   };
+
+  /** The held image comes up under the pointer; from here the drag carries it and the map stays still. */
+  private pickUp() {
+    const d = this.drag;
+    if (!d || d.moved || d.grabbed < 0) return;
+    d.lifted = true;
+    this.canvas.style.cursor = 'grabbing';
+    this.setHover(-1);
+    this.calls.onCarry(this.points[d.grabbed].id, d.cx, d.cy, false);
+  }
+
+  /** Puts a carried image back without dropping it anywhere. */
+  private dropCarry() {
+    if (this.drag?.lifted) this.calls.onCarry(null, 0, 0, false);
+  }
 
   private startPinch() {
     const [a, b] = [...this.touches.values()];
@@ -315,10 +338,10 @@ export class MapEngine {
     }
     if (this.drag && this.touches.has(e.pointerId)) {
       const d = this.drag, dx = p.x - d.x, dy = p.y - d.y;
-      if (!d.moved && Math.hypot(dx, dy) < 5) return;
-      d.moved = true; this.canvas.style.cursor = 'grabbing';
-      if (d.grabbed >= 0) d.over = this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, false);
-      if (d.over) { d.x = p.x; d.y = p.y; d.vx = d.vy = 0; return; }
+      d.cx = e.clientX; d.cy = e.clientY;
+      if (d.lifted) { this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, false); return; }
+      if (!d.moved && Math.hypot(dx, dy) < SLOP) return;
+      d.moved = true; this.canvas.style.cursor = 'grabbing'; clearTimeout(this.hold);
       const dt = Math.max(1, e.timeStamp - d.t);
       d.vx = 0.7 * (dx / dt) + 0.3 * d.vx; d.vy = 0.7 * (dy / dt) + 0.3 * d.vy;
       d.x = p.x; d.y = p.y; d.t = e.timeStamp;
@@ -335,13 +358,14 @@ export class MapEngine {
     this.touches.delete(e.pointerId);
     if (this.touches.size < 2) this.pinch = null;
     if (!d) return;
+    clearTimeout(this.hold);
     this.drag = null; this.canvas.style.cursor = '';
-    if (!d.moved) {
+    if (d.lifted) {
+      // Let go anywhere: on the search bar it finds similar images, elsewhere the image just goes back.
+      this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, true);
+    } else if (!d.moved) {
       const i = this.hit(p.x, p.y);
       if (i >= 0) this.calls.onOpen(this.points[i].id); else this.select(null);
-    } else if (d.grabbed >= 0 && this.calls.onCarry(this.points[d.grabbed].id, e.clientX, e.clientY, true)) {
-      // Dropped on the search bar: the map goes back to where the drag began.
-      this.travel(d.start, true);
     } else if (!this.reduced && e.timeStamp - d.t < 80 && Math.hypot(d.vx, d.vy) > 0.05) {
       this.glide = { vx: d.vx, vy: d.vy }; this.invalidate();
     }
@@ -349,7 +373,7 @@ export class MapEngine {
   };
 
   private cancel = (e: PointerEvent) => {
-    if (this.drag && this.drag.grabbed >= 0) this.calls.onCarry(null, 0, 0, false);
+    clearTimeout(this.hold); this.dropCarry();
     this.touches.delete(e.pointerId); this.pinch = null; this.drag = null; this.canvas.style.cursor = '';
   };
   private leave = () => { this.pointer = null; if (!this.drag) this.setHover(-1); };

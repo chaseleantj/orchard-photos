@@ -143,7 +143,7 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
 
   const empty = phase === 'ready' && data && data.points.length === 0;
   return <div className="map-stage" ref={stage} aria-busy={phase === 'loading'}>
-    <canvas ref={canvas} className="map-canvas" tabIndex={0} role="application" aria-label="Image map. Similar images sit close together. Arrow keys move, plus and minus zoom, zero shows everything, Enter selects the image nearest the middle." onKeyDown={onKeyDown} />
+    <canvas ref={canvas} className="map-canvas" tabIndex={0} role="application" aria-label="Image map. Similar images sit close together. Arrow keys move, plus and minus zoom, zero shows everything, Enter selects the image nearest the middle. Press and hold an image, then drag it to the search bar to find similar images." onKeyDown={onKeyDown} />
     {phase === 'loading' && !unprepared && !holding && <div className="map-placeholder" role="status" aria-label="Placing images">{placeholder.map((p, i) => <span key={i} style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }} />)}</div>}
     {slow && busy && <div className="map-progress"><Progress value={working ? null : sheetsLoaded} label={working?.stage || 'Loading the map'} /></div>}
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}

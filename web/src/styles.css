@@ -50,7 +50,8 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .search:focus-within { outline: 1px solid var(--line); }
 .search { transition: background var(--motion) var(--ease), outline-color var(--motion) var(--ease); }
 .search[data-drop] { outline: 1px dashed var(--focus); outline-offset: 2px; }
-.carried { position: fixed; z-index: 10; width: var(--s16); height: var(--s16); object-fit: cover; border-radius: var(--radius); box-shadow: var(--shadow); transform: translate(-50%, -50%); pointer-events: none; }
+.carried { position: fixed; z-index: 10; width: var(--s16); height: var(--s16); object-fit: cover; border-radius: var(--radius); box-shadow: var(--shadow); transform: translate(-50%, -50%); pointer-events: none; animation: lift var(--motion) var(--ease); }
+@keyframes lift { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
 .search[data-drop='over'] { background: var(--surface); outline: 2px solid var(--focus); }
 .search:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .search > svg { color: var(--muted); }

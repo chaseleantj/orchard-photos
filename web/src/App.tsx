@@ -13,8 +13,9 @@ import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, Vi
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
-// An image counts as dropped on the search bar anywhere this close to it, so it needs no careful aim.
-const DROP_REACH = 64;
+// An image counts as dropped on the search bar anywhere across the top of the window down to this far below the
+// bar, so it needs no careful aim. Nothing else up there takes drops.
+const DROP_REACH = 96;
 // A grid this short fits in a few screens and needs no timeline.
 const TIMELINE_MIN = 100;
 // The most images one request returns (MAX_PAGE on the server).
@@ -46,7 +47,7 @@ export default function App() {
   const [live, setLive] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [overSearch, setOverSearch] = useState(false);
-  // An image carried out of the map, drawn under the pointer while it is over the search bar.
+  // An image lifted from the map, drawn under the pointer while it is carried.
   const [carried, setCarried] = useState<{ id: string; x: number; y: number } | null>(null);
   const mapped = view === 'map';
   const folder = status?.folder ?? null;
@@ -58,9 +59,9 @@ export default function App() {
   // Each panel opens under its own control, whatever opened it.
   const anchors = { search: useRef<HTMLFormElement>(null), filters: useRef<HTMLButtonElement>(null), library: useRef<HTMLButtonElement>(null), folder: useRef<HTMLButtonElement>(null) };
   const anchor = (name: PanelName) => anchors[name].current;
-  const nearSearch = (x: number, y: number) => {
+  const nearSearch = (y: number) => {
     const bar = anchors.search.current?.getBoundingClientRect();
-    return !!bar && x > bar.left - DROP_REACH && x < bar.right + DROP_REACH && y > bar.top - DROP_REACH && y < bar.bottom + DROP_REACH;
+    return !!bar && y < bar.bottom + DROP_REACH;
   };
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
@@ -182,12 +183,14 @@ export default function App() {
     if (file.size > 20 * 1024 * 1024) { setError('Choose an image smaller than 20 MB.'); return; }
     clearSearch(); setPanel(null); setUpload(file); setMode('visual'); setSelected(null); setPicked(null); setView('grid');
   }, [clearSearch]);
+  // A lifted map image follows the pointer until it is let go, and finds similar images if that is on the search bar.
   const carry = (id: string | null, x: number, y: number, dropped: boolean) => {
-    const over = !!id && nearSearch(x, y);
-    setDragging(!!id && !dropped); setOverSearch(over && !dropped); setCarried(over && !dropped ? { id: id!, x, y } : null);
+    const over = !!id && nearSearch(y);
+    setDragging(!!id && !dropped); setOverSearch(over && !dropped); setCarried(id && !dropped ? { id, x, y } : null);
     if (over && dropped) findSimilar(id!);
     return over;
   };
+
   const showFolder = (path: string) => { setSelected(null); setPicked(null); clearSearch(); setView('grid'); setFilters(f => ({ ...f, folder: path })); };
   useEffect(() => {
     const paste = (e: ClipboardEvent) => { const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/')); if (file && ready) { e.preventDefault(); useImage(file); } };
@@ -223,7 +226,7 @@ export default function App() {
   const subtitle = (similar || upload) && !mapped ? `${total.toLocaleString()} most similar ${total === 1 ? 'image' : 'images'}` : mapped && searching ? `Closest ${plural(items.length, 'match', 'matches')}` : searching ? (mode === 'visual' ? `${plural(total, 'image')} by similarity` : plural(total, 'match', 'matches')) : plural(total, 'image');
   const scope = [filters.folder && `in ${filters.folder}`, filters.type && typeLabel(filters.type), rangeLabel(filters), scanBusy && 'Updating'].filter(Boolean).map(part => ` · ${part}`).join('');
   const gathering = scanBusy && !library?.counts.images;
-  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientX, e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientX, e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
+  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
     <header ref={headerRef} className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
