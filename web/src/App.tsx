@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, SlidersHorizontal, Moon, Sun, Info, ScanSearch, X, LayoutGrid, ChartScatter, FolderOpen, Image as ImageIcon } from 'lucide-react';
+import { Search, SlidersHorizontal, Moon, Sun, Info, ChevronDown, X, LayoutGrid, ChartScatter, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import Gallery from './Gallery';
 import Embedding from './Embedding';
 import Viewer from './Viewer';
 import { Progress } from './Progress';
 import { Lockup, Mark } from './Logo';
-import { FilterPanel, FolderChooser, FolderPanel, LibraryPanel, SearchPanel } from './Panels';
+import { FilterPanel, FolderChooser, FolderPanel, LibraryPanel, SearchMenu } from './Panels';
 import { APP_NAME, IMAGE_DRAG, defaults, filterParams, imageUrl, isFiltered, plural, rangeLabel, readPreferences, request, savePreferences, typeLabel } from './types';
 import type { Picture, Results, SearchMode, Status, View } from './types';
 const initial = readPreferences();
@@ -47,8 +47,11 @@ export default function App() {
   const library = status?.library ?? null;
   const ready = !!folder && folder.id === root;
   const searchRef = useRef<HTMLInputElement>(null);
+  // Each panel opens under its own control, whatever opened it.
+  const anchors = { search: useRef<HTMLFormElement>(null), filters: useRef<HTMLButtonElement>(null), library: useRef<HTMLButtonElement>(null), folder: useRef<HTMLButtonElement>(null) };
+  const anchor = (name: PanelName) => anchors[name].current;
   const nearSearch = (x: number, y: number) => {
-    const bar = searchRef.current?.closest('.search')?.getBoundingClientRect();
+    const bar = anchors.search.current?.getBoundingClientRect();
     return !!bar && x > bar.left - DROP_REACH && x < bar.right + DROP_REACH && y > bar.top - DROP_REACH && y < bar.bottom + DROP_REACH;
   };
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -171,33 +174,33 @@ export default function App() {
   return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientX, e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientX, e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
     <header className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
-      {ready && <form className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
+      {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
         {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : mode === 'visual' ? 'Search by appearance' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
         {(query || searching) && <button className="icon-button" type="button" aria-label="Clear search" onClick={clearSearch}><X /></button>}
-        <button className="icon-button" type="button" aria-label="Search options" title="Search options" aria-expanded={panel === 'search'} onClick={() => setPanel('search')}><ScanSearch /></button>
+        <button className="icon-button" type="button" aria-label="Search options" title="Search options" aria-haspopup="dialog" aria-expanded={panel === 'search'} onClick={() => setPanel('search')}><ChevronDown /></button>
       </form>}
-      <div className="header-actions">{ready && <><div className="view-switch" role="group" aria-label="View"><button className="text-button" aria-pressed={!mapped} aria-label="Grid" title="Grid" onClick={() => setView('grid')}><LayoutGrid /><span>Grid</span></button><button className="text-button" aria-pressed={mapped} aria-label="Map" title="Map by appearance" onClick={() => setView('map')}><ChartScatter /><span>Map</span></button></div><button className="text-button" aria-label="Filters" aria-expanded={panel === 'filters'} onClick={() => setPanel('filters')}><SlidersHorizontal /><span>{filtered ? 'Filtered' : 'Filter'}</span></button></>}<button className="icon-button" aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} title={theme === 'light' ? 'Dark mode' : 'Light mode'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon /> : <Sun />}</button>{ready && <button className="icon-button" aria-label="Library information" title="Library" aria-expanded={panel === 'library'} onClick={() => setPanel('library')}><Info /></button>}</div>
+      <div className="header-actions">{ready && <><div className="view-switch" role="group" aria-label="View"><button className="text-button" aria-pressed={!mapped} aria-label="Grid" title="Grid" onClick={() => setView('grid')}><LayoutGrid /><span>Grid</span></button><button className="text-button" aria-pressed={mapped} aria-label="Map" title="Map by appearance" onClick={() => setView('map')}><ChartScatter /><span>Map</span></button></div><button ref={anchors.filters} className={filtered ? 'text-button filter-on' : 'text-button'} aria-label={filtered ? 'Filters, on' : 'Filters'} title={filtered ? 'Filters are on' : 'Filters'} aria-expanded={panel === 'filters'} onClick={() => setPanel('filters')}><SlidersHorizontal /><span>Filter</span></button></>}{ready && <button ref={anchors.library} className="text-button" aria-label="Library" title="Library" aria-expanded={panel === 'library'} onClick={() => setPanel('library')}><Info /><span>Library</span></button>}<button className="icon-button" aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} title={theme === 'light' ? 'Dark mode' : 'Light mode'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon /> : <Sun />}</button></div>
     </header>
-    {ready && <div className="library-meta"><p aria-live="polite">{loading ? 'Finding images…' : subtitle}{scope}</p><button className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
+    {ready && <div className="library-meta"><p aria-live="polite">{loading ? 'Finding images…' : subtitle}{scope}</p><button ref={anchors.folder} className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
     <main aria-busy={loading}>
-      {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. Check that it is still running in Terminal.</span><button className="text-button" onClick={refreshStatus}>Retry</button></div>}
+      {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. Check that it is still running in Terminal.</span><button className="text-button secondary" onClick={refreshStatus}>Retry</button></div>}
       {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p><FolderChooser status={status} onOpened={applyStatus} /></div>
       : !ready ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
       : mapped ? <Embedding key={root} root={root} filters={filters} highlight={highlight} search={library!.search} scanning={!!scanBusy} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onCarry={carry} onLibrary={() => setPanel('library')} onReset={reset} /> : <>
-      {scan?.state === 'error' && <div className="notice error" role="alert"><span>{scan.error}{library!.counts.images ? ' Showing the images from the last scan.' : ''}</span><button className="text-button" onClick={() => setPanel('folder')}>Choose folder</button></div>}
-      {error && <div className="notice error" role="alert"><span>{error}</span><button className="text-button" onClick={() => setRevision(r => r + 1)}>Retry</button>{searching && <button className="text-button" onClick={() => setPanel('library')}>Search setup</button>}</div>}
+      {scan?.state === 'error' && <div className="notice error" role="alert"><span>{scan.error}{library!.counts.images ? ' Showing the images from the last scan.' : ''}</span><button className="text-button secondary" onClick={() => setPanel('folder')}>Choose folder</button></div>}
+      {error && <div className="notice error" role="alert"><span>{error}</span><button className="text-button secondary" onClick={() => setRevision(r => r + 1)}>Retry</button>{searching && <button className="text-button secondary" onClick={() => setPanel('library')}>Search setup</button>}</div>}
       {loading && !items.length ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
-      : !items.length && !error ? (searching || filtered ? <div className="empty"><h1>No images here</h1><p>Try another search, or widen the folder, type or date filters.</p><button className="text-button" onClick={reset}>Clear search and filters</button></div>
+      : !items.length && !error ? (searching || filtered ? <div className="empty"><h1>No images here</h1><p>Try another search, or widen the folder, type or date filters.</p><button className="text-button secondary" onClick={reset}>Clear search and filters</button></div>
         : gathering ? <div className="empty"><h1>Gathering your images</h1><p>{scan?.changed ? `Reading ${scan.done?.toLocaleString()} of ${plural(scan.changed, 'file')} in ${folder!.name}. Images appear as they are found.` : `Looking through ${folder!.name} and its subfolders.`}</p><div className="empty-progress"><Progress value={scan?.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" /></div></div>
-        : <div className="empty"><h1>No images in this folder</h1><p>{folder!.name} has no JPEG, PNG, HEIC, WebP, GIF, TIFF, BMP or AVIF files. Hidden folders are skipped.</p><button className="text-button" onClick={() => setPanel('folder')}>Choose another folder</button></div>)
-      : <Gallery items={items} onOpen={setSelected} />}
+        : <div className="empty"><h1>No images in this folder</h1><p>{folder!.name} has no JPEG, PNG, HEIC, WebP, GIF, TIFF, BMP or AVIF files. Hidden folders are skipped.</p><button className="text-button secondary" onClick={() => setPanel('folder')}>Choose another folder</button></div>)
+      : <Gallery items={items} sections={!searching} onOpen={setSelected} />}
       {more && !loading && <div className="load-more" ref={sentinel} aria-live="polite">{loadingMore ? 'Loading…' : ''}</div>}
       </>}
     </main>
-    {panel === 'filters' && <FilterPanel filters={filters} onApply={setFilters} onClose={() => setPanel(null)} />}
-    {panel === 'library' && status?.library && <LibraryPanel status={status} onClose={() => setPanel(null)} onRefresh={refreshStatus} />}
-    {panel === 'folder' && status && <FolderPanel status={status} onOpened={applyStatus} onClose={() => setPanel(null)} />}
-    {panel === 'search' && <SearchPanel mode={mode} onMode={setMode} onUpload={() => uploadRef.current?.click()} onClose={() => setPanel(null)} />}
+    {panel === 'filters' && <FilterPanel filters={filters} anchor={anchor('filters')} onApply={setFilters} onClose={() => setPanel(null)} />}
+    {panel === 'library' && status?.library && <LibraryPanel status={status} shown={filtered && !searching && !loading ? total : null} narrowed={filtered || searching} anchor={anchor('library')} onClose={() => setPanel(null)} onRefresh={refreshStatus} />}
+    {panel === 'folder' && status && <FolderPanel status={status} anchor={anchor('folder')} onOpened={applyStatus} onClose={() => setPanel(null)} />}
+    {panel === 'search' && <SearchMenu mode={mode} anchor={anchor('search')} onMode={setMode} onUpload={() => uploadRef.current?.click()} onClose={() => setPanel(null)} />}
     {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setSelected(null)} onSimilar={findSimilar} onFolder={showFolder} />}
     {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setPicked(null)} onSimilar={findSimilar} onFolder={showFolder} />}
     {carried && <img className="carried" src={imageUrl(carried.id)} alt="" style={{ left: carried.x, top: carried.y }} />}

@@ -1,20 +1,55 @@
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, FolderOpen, X } from 'lucide-react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
 import type { Facets, Filters, Range, SearchMode, Status } from './types';
 import { APP_NAME, RANGES, defaults, plural, post, request, typeLabel } from './types';
 import { Progress } from './Progress';
 
-export function Panel({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+// Room kept between a popover and the control above it, and between a popover and the window edge.
+const OFFSET = 8;
+const EDGE = 16;
+
+/** A popover opened from `anchor`: under it, lined up with its right edge, or with its left edge and width for `menu`. */
+function Popover({ label, anchor, menu, className, onClose, children }: { label: string; anchor: HTMLElement | null; menu?: boolean; className: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const node = ref.current!; node.showModal(); return () => node.close(); }, []);
-  return <dialog ref={ref} className="panel" aria-label={title} onCancel={onClose} onClick={e => { if (e.target !== e.currentTarget) return; const r = ref.current!.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); }}><header><h2>{title}</h2><button className="icon-button" aria-label={`Close ${title.toLowerCase()}`} onClick={onClose}><X /></button></header>{children}</dialog>;
+  useLayoutEffect(() => {
+    const node = ref.current!;
+    node.showModal();
+    // The popover takes focus itself, so no control inside it is ringed until the keyboard moves there.
+    node.focus();
+    const place = () => {
+      if (!anchor?.isConnected) return;
+      const r = anchor.getBoundingClientRect();
+      if (menu) node.style.width = `${r.width}px`;
+      const width = node.offsetWidth;
+      const left = Math.max(EDGE, Math.min(innerWidth - width - EDGE, menu ? r.left : r.right - width));
+      Object.assign(node.style, { top: `${r.bottom + OFFSET}px`, left: `${left}px`, right: 'auto', maxHeight: `${innerHeight - r.bottom - OFFSET - EDGE}px` });
+    };
+    place();
+    addEventListener('resize', place);
+    return () => { removeEventListener('resize', place); node.close(); };
+  }, [anchor, menu]);
+  return <dialog ref={ref} tabIndex={-1} className={className} aria-label={label} onCancel={onClose} onClick={e => { if (e.target !== e.currentTarget) return; const r = ref.current!.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); }}>{children}</dialog>;
+}
+
+export function Panel({ title, anchor, onClose, children }: { title: string; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode }) {
+  // The header gains an edge once the body has scrolled under it.
+  const [scrolled, setScrolled] = useState(false);
+  return <Popover label={title} anchor={anchor} className="panel" onClose={onClose}>
+    <header className={scrolled ? 'scrolled' : undefined}><h2>{title}</h2><button className="icon-button" aria-label={`Close ${title.toLowerCase()}`} onClick={onClose}><X /></button></header>
+    <div className="panel-body" onScroll={e => setScrolled(e.currentTarget.scrollTop > 0)}>{children}</div>
+  </Popover>;
+}
+
+/** A section that opens on click, marked with the app's own chevron. */
+export function Disclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
+  return <details className="disclosure"><summary><ChevronRight />{summary}</summary>{children}</details>;
 }
 
 function Select({ label, value, onChange, disabled, children }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; children: React.ReactNode }) {
   return <div className="select"><select aria-label={label} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>{children}</select><ChevronDown /></div>;
 }
 
-export function FilterPanel({ filters, onApply, onClose }: { filters: Filters; onApply: (filters: Filters) => void; onClose: () => void }) {
+export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Filters; anchor: HTMLElement | null; onApply: (filters: Filters) => void; onClose: () => void }) {
   const [draft, setDraft] = useState(filters);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [error, setError] = useState('');
@@ -23,7 +58,7 @@ export function FilterPanel({ filters, onApply, onClose }: { filters: Filters; o
   const folders = facets?.folders ?? [];
   const types = facets?.types ?? [];
   const loading = !facets && !error;
-  return <Panel title="Filters" onClose={onClose}>
+  return <Panel title="Filters" anchor={anchor} onClose={onClose}>
     <fieldset className="field"><legend>Folder</legend>
       <Select label="Folder" value={draft.folder} disabled={loading} onChange={folder => setDraft({ ...draft, folder })}>
         <option value="">{loading ? 'Loading folders…' : 'All folders'}</option>
@@ -47,11 +82,12 @@ export function FilterPanel({ filters, onApply, onClose }: { filters: Filters; o
       <p className="field-note">Photos are dated when they were taken. Images without that record use the date the file was last changed.</p>
     </fieldset>
     {error && <p className="error-copy" role="alert">{error}</p>}
-    <div className="panel-footer"><button className="text-button" onClick={() => setDraft(defaults)}>Reset</button><button className="text-button solid" disabled={invalid} onClick={() => { onApply(draft); onClose(); }}>Apply</button></div>
+    <div className="panel-footer"><button className="text-button secondary" onClick={() => setDraft(defaults)}>Reset</button><button className="text-button primary" disabled={invalid} onClick={() => { onApply(draft); onClose(); }}>Apply</button></div>
   </Panel>;
 }
 
-export function LibraryPanel({ status, onClose, onRefresh }: { status: Status; onClose: () => void; onRefresh: () => void }) {
+/** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known. */
+export function LibraryPanel({ status, shown, narrowed, anchor, onClose, onRefresh }: { status: Status; shown: number | null; narrowed: boolean; anchor: HTMLElement | null; onClose: () => void; onRefresh: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const action = async (url: string) => { setBusy(true); setError(''); try { await post(url); onRefresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
@@ -59,27 +95,35 @@ export function LibraryPanel({ status, onClose, onRefresh }: { status: Status; o
   const { counts, scan, search } = library;
   const scanning = scan.state === 'scanning';
   const indexing = search.state === 'loading' || search.state === 'indexing';
-  const scanLabel = scan.changed ? `Reading images · ${(scan.done ?? 0).toLocaleString()} / ${scan.changed.toLocaleString()}` : 'Looking for images…';
-  return <Panel title="Library" onClose={onClose}>
-    <p>Every image in <span className="path">{status.folder!.label}</span> and its subfolders. Hidden folders are skipped, and your files are never changed.</p>
+  const searchable = search.state === 'ready' && search.indexed >= counts.images;
+  const unreadable = !!library.unreadable.length && <Disclosure summary="Files that could not be read"><ul className="file-list">{library.unreadable.map(file => <li key={file.path}><span><span className="path">{file.path}</span><span>{file.error}</span></span></li>)}</ul>{counts.unreadable > library.unreadable.length && <p>And {plural(counts.unreadable - library.unreadable.length, 'more file')}.</p>}</Disclosure>;
+  const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}` : 'Looking for images…';
+  // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
+  const ledger = [
+    { label: 'Image files', value: counts.files + counts.unreadable, shown: true },
+    { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
+    { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
+    { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
+  ].filter(row => row.shown);
+  const totalLabel = ledger.length < 2 ? 'Images' : narrowed ? 'In the library' : 'In the grid';
+  return <Panel title="Library" anchor={anchor} onClose={onClose}>
+    <p className="path">{status.folder!.label}</p>
+    <p>Subfolders included, hidden ones skipped. Your files are never changed.</p>
     <dl className="counts">
-      <dt>Images</dt><dd>{counts.images.toLocaleString()}</dd>
-      {!!counts.duplicates && <><dt>Duplicate files</dt><dd>{counts.duplicates.toLocaleString()}</dd></>}
-      {!!counts.nearDuplicates && <><dt>Near-duplicates</dt><dd>{counts.nearDuplicates.toLocaleString()}</dd></>}
-      {!!counts.unreadable && <><dt>Unreadable files</dt><dd>{counts.unreadable.toLocaleString()}</dd></>}
+      {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
+      <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
-    {!!counts.duplicates && <p>Identical files appear once. Opening an image lists every place it is saved.</p>}
-    {!!counts.nearDuplicates && <p>Images that look almost the same, like bursts and resized copies, share one tile showing the sharpest. Opening it shows the rest.</p>}
-    {!!library.unreadable.length && <details className="disclosure"><summary>Files that could not be read</summary><ul className="file-list">{library.unreadable.map(file => <li key={file.path}><span className="path">{file.path}</span><span>{file.error}</span></li>)}</ul>{counts.unreadable > library.unreadable.length && <p>And {plural(counts.unreadable - library.unreadable.length, 'more file')}.</p>}</details>}
+    {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
+    {!!counts.nearDuplicates && <p>A stack is fronted by its sharpest image. Open it to see the rest.</p>}
+    {unreadable}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
-    <button className="text-button" disabled={busy || scanning} onClick={() => action('/api/scan')}>{scanning ? scanLabel : 'Rescan folder'}</button>
+    <div className="panel-action"><p>{scanning ? scanLabel : 'Checks every minute.'}</p><button className="text-button secondary" disabled={busy || scanning} onClick={() => action('/api/scan')}>Rescan now</button></div>
     {scan.error && <p className="error-copy">{scan.error}</p>}
-    <hr className="rule" /><h2>Visual search</h2>
-    <p>Find images by what they look like, from a description or another image. Search runs on this computer.</p>
-    <p>{search.state === 'ready' ? `${plural(search.indexed, 'image')} searchable` : indexing ? `${search.state === 'loading' ? 'Loading search model' : 'Preparing images'} · ${search.indexed.toLocaleString()} / ${search.total.toLocaleString()}` : search.downloaded ? 'The search model is on this computer. New images are prepared automatically.' : 'Download the search model once (about 600 MB), then search offline.'}</p>
+    <hr className="rule" /><h3>Visual search</h3>
+    <p>{searchable ? 'Every image can be found by a description or a similar image. Search runs on this computer.' : indexing ? `${search.state === 'loading' ? 'Loading the search model' : 'Preparing images'} · ${search.indexed.toLocaleString()} of ${search.total.toLocaleString()}` : search.downloaded ? `${plural(Math.max(0, counts.images - search.indexed), 'image')} still to prepare. New images are prepared automatically.` : 'Find images by a description or a similar image. The search model downloads once (about 600 MB), then runs on this computer.'}</p>
     {indexing && !!search.total && <Progress value={search.indexed / search.total} label="Preparing images" />}
-    <button className="text-button" disabled={busy || indexing || !counts.images} title={!counts.images ? 'Add images to the folder first' : undefined} onClick={() => action('/api/search/index')}>{search.state === 'ready' ? 'Update visual index' : search.indexed ? 'Finish preparing' : 'Prepare visual search'}</button>
+    {!searchable && !indexing && <button className="text-button primary" disabled={busy || !counts.images} title={!counts.images ? 'Add images to the folder first' : undefined} onClick={() => action('/api/search/index')}>{search.indexed ? 'Finish preparing' : 'Prepare visual search'}</button>}
     {search.error && <p className="error-copy">{search.error}</p>}
     {error && <p className="error-copy" role="alert">{error}</p>}
   </Panel>;
@@ -96,10 +140,10 @@ export function FolderChooser({ status, onOpened }: { status: Status; onOpened: 
   };
   const forget = async (folder: string) => { try { onOpened(await post<Status>('/api/folder/forget', { path: folder })); } catch (e) { setError((e as Error).message); } };
   return <div className="chooser">
-    {status.platform === 'darwin' && <button className="text-button solid" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
+    {status.platform === 'darwin' && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
     <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
       <label htmlFor="folder-path">{status.platform === 'darwin' ? 'Or type its path' : 'Folder path'}</label>
-      <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>
+      <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button secondary" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>
     </form>
     {error && <p className="error-copy" role="alert">{error}</p>}
     {!!status.recent.length && <div className="recent"><h3>Recent</h3><ul>{status.recent.map(folder => <li key={folder.path}>
@@ -109,13 +153,24 @@ export function FolderChooser({ status, onOpened }: { status: Status; onOpened: 
   </div>;
 }
 
-export function FolderPanel({ status, onOpened, onClose }: { status: Status; onOpened: (status: Status) => void; onClose: () => void }) {
-  return <Panel title="Folder" onClose={onClose}>
+export function FolderPanel({ status, anchor, onOpened, onClose }: { status: Status; anchor: HTMLElement | null; onOpened: (status: Status) => void; onClose: () => void }) {
+  return <Panel title="Folder" anchor={anchor} onClose={onClose}>
     {status.folder && <p>Showing <span className="path">{status.folder.label}</span>. {APP_NAME} keeps a separate cache for each folder, so switching back is quick.</p>}
     <FolderChooser status={status} onOpened={next => { onOpened(next); if (next.folder?.id !== status.folder?.id) onClose(); }} />
   </Panel>;
 }
 
-export function SearchPanel({ mode, onMode, onUpload, onClose }: { mode: SearchMode; onMode: (mode: SearchMode) => void; onUpload: () => void; onClose: () => void }) {
-  return <Panel title="Search" onClose={onClose}><div className="field"><div className="mode-options"><button className="text-button" aria-pressed={mode === 'visual'} onClick={() => { onMode('visual'); onClose(); }}>By appearance</button><button className="text-button" aria-pressed={mode === 'name'} onClick={() => { onMode('name'); onClose(); }}>By file name</button></div></div><button className="text-button" onClick={onUpload}>Choose an image to match</button><p>You can also drop or paste an image.</p></Panel>;
+/** How the search bar searches. It opens from the bar itself and is the one place the mode is chosen. */
+export function SearchMenu({ mode, anchor, onMode, onUpload, onClose }: { mode: SearchMode; anchor: HTMLElement | null; onMode: (mode: SearchMode) => void; onUpload: () => void; onClose: () => void }) {
+  const option = (value: SearchMode, label: string) => <button className="text-button menu-item" aria-pressed={mode === value} onClick={() => { onMode(value); onClose(); }}><Check />{label}</button>;
+  return <Popover label="Search options" anchor={anchor} menu className="panel menu" onClose={onClose}>
+    <div role="group" aria-labelledby="search-by">
+      <div className="menu-label" id="search-by">Search by</div>
+      {option('visual', 'Appearance')}
+      {option('name', 'File name')}
+    </div>
+    <hr className="menu-rule" />
+    <button className="text-button menu-item" onClick={() => { onClose(); onUpload(); }}><ImageIcon />Find images like a file…</button>
+    <div className="menu-note">You can also drop or paste an image.</div>
+  </Popover>;
 }

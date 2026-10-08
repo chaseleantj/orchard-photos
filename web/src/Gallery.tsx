@@ -5,8 +5,16 @@ import { dragImage, fileName, imageUrl, plural } from './types';
 
 const BUFFER = 1200;
 const STEP = 400;
+// Rows are filled to the full width at about this height; a month's last row keeps it rather than stretching.
+const ROW = 220;
+// A month heading's height, and the space above and below it. The first heading has no space above.
+const HEADING = 29;
+const ABOVE = 40;
+const BELOW = 12;
+const monthOf = (date: string) => new Date(date).toLocaleString(undefined, { month: 'long', year: 'numeric' });
 
-export default function Gallery({ items, onOpen }: { items: Picture[]; onOpen: (index: number) => void }) {
+/** The images in justified rows, in order, each at its own shape. With `sections`, for date order, each month starts under its own heading. */
+export default function Gallery({ items, sections, onOpen }: { items: Picture[]; sections: boolean; onOpen: (index: number) => void }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   // Visible band in gallery coordinates, snapped to STEP so scrolling re-renders only when it crosses a step.
@@ -32,23 +40,54 @@ export default function Gallery({ items, onOpen }: { items: Picture[]; onOpen: (
     addEventListener('resize', schedule);
     return () => { removeEventListener('scroll', schedule); removeEventListener('resize', schedule); cancelAnimationFrame(frame); };
   }, []);
-  const gap = width < 690 ? 12 : width > 1500 ? 32 : 24;
-  const columns = width < 560 ? 2 : width < 900 ? 3 : width < 1200 ? 4 : 5;
-  const { positions, height } = useMemo(() => {
-    const columnWidth = (width - (columns - 1) * gap) / columns;
-    const heights = Array(columns).fill(0) as number[];
-    const positions = items.map(item => {
-      const column = heights.indexOf(Math.min(...heights));
-      const tile = columnWidth * Math.min(2, Math.max(.55, item.height / item.width));
-      const position = { left: column * (columnWidth + gap), top: heights[column], width: columnWidth, height: tile };
-      heights[column] += tile + gap;
-      return position;
+  // Matches --gap in styles.css, which the loading skeleton uses.
+  const gap = width < 560 ? 4 : 8;
+  const target = width < 560 ? ROW * .55 : width < 900 ? ROW * .8 : ROW;
+  const { positions, headings, height } = useMemo(() => {
+    const positions: React.CSSProperties[] = [];
+    const headings: { label: string; top: number }[] = [];
+    let top = 0;
+    let row: { index: number; ratio: number }[] = [];
+    // The height at which these tiles exactly fill the width.
+    const fill = (tiles: typeof row) => (width - gap * (tiles.length - 1)) / tiles.reduce((sum, tile) => sum + tile.ratio, 0);
+    // Lays out the pending row: scaled to fill the width, or at the target height if it is the last of its run.
+    const flush = (last: boolean) => {
+      if (!row.length) return;
+      const tall = Math.min(last ? target : Infinity, fill(row));
+      let x = 0;
+      row.forEach(({ index, ratio }, place) => {
+        const left = Math.round(x);
+        x += ratio * tall;
+        const full = !last || tall < target;
+        positions[index] = { left, top, height: tall, width: (place === row.length - 1 && full ? width : Math.round(x)) - left };
+        x += gap;
+      });
+      top += tall + gap;
+      row = [];
+    };
+    items.forEach((item, index) => {
+      const month = sections ? monthOf(item.date) : '';
+      if (sections && month !== headings.at(-1)?.label) {
+        flush(true);
+        const at = headings.length ? top - gap + ABOVE : 0;
+        headings.push({ label: month, top: at });
+        top = at + HEADING + BELOW;
+      }
+      // Panoramas and slivers are cropped toward a readable shape.
+      const tile = { index, ratio: Math.min(3, Math.max(.5, item.width / item.height || 1)) };
+      // The row breaks before or after this tile, whichever leaves its height closer to the target.
+      const before = fill(row), after = fill([...row, tile]);
+      if (after > target) row.push(tile);
+      else if (row.length && Math.abs(before - target) < Math.abs(after - target)) { flush(false); row.push(tile); }
+      else { row.push(tile); flush(false); }
     });
-    return { positions, height: Math.max(...heights, 0) };
-  }, [items, width, columns, gap]);
+    flush(true);
+    return { positions, headings, height: Math.max(0, top - gap) };
+  }, [items, sections, width, gap, target]);
   return <div className="gallery" ref={container} style={{ height }} aria-label="Images">
+    {width > 0 && headings.map(({ label, top }) => top + HEADING >= band[0] && top <= band[1] ? <h2 key={top} className="month" style={{ top }}>{label}</h2> : null)}
     {width > 0 && items.map((item, index) => {
-      const { top, height: tile } = positions[index];
+      const { top, height: tile } = positions[index] as { top: number; height: number };
       return top + tile >= band[0] && top <= band[1] ? <Tile key={item.id} item={item} index={index} style={positions[index]} onOpen={onOpen} /> : null;
     })}
   </div>;

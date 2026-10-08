@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
+import { Disclosure } from './Panels';
 import { dateLabel, downloadUrl, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
 
 interface Props {
@@ -30,6 +31,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     const node = dialog.current!;
     const focus = document.activeElement as HTMLElement;
     node.showModal();
+    // The viewer takes focus itself, so the close button is not ringed until the keyboard moves there.
+    node.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { node.close(); document.body.style.overflow = previous; focus?.focus(); };
@@ -68,7 +71,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const otherDate = item.dated === 'taken' ? file && `Modified ${dateLabel(file.modified, true)}` : details?.taken && `Taken ${dateLabel(details.taken, true)}`;
   const parts = folder ? folder.split('/') : [rootName];
   const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
-  return <dialog ref={dialog} className="viewer" aria-label="Image viewer" onCancel={onClose} onKeyDown={e => {
+  return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose} onKeyDown={e => {
     if (e.key === 'ArrowRight' && (index < items.length - 1 || hasMore) && !loadingMore) { e.preventDefault(); onChange(index + 1); }
     if (e.key === 'ArrowLeft' && index > 0 && !loadingMore) { e.preventDefault(); onChange(index - 1); }
     if (e.key === 'ArrowDown' && shown < members.length - 1) { e.preventDefault(); setShown(shown + 1); }
@@ -82,10 +85,10 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         <button className="icon-button" aria-label="Next image" title="Next image" disabled={loadingMore || (index === items.length - 1 && !hasMore)} onClick={() => onChange(index + 1)}><ArrowRight /></button>
       </div><div className="viewer-navigation">
         <button className="icon-button" aria-label={zoom ? 'Fit to screen' : 'View actual size'} title={zoom ? 'Fit to screen' : 'Actual size'} onClick={() => setZoom(!zoom)}>{zoom ? <ZoomOut /> : <ZoomIn />}</button>
-        <button className="icon-button" autoFocus aria-label="Close image" title="Close" onClick={onClose}><X /></button>
+        <button className="icon-button" aria-label="Close image" title="Close" onClick={onClose}><X /></button>
       </div></header>
       <div className={`image-stage ${zoom ? 'zoomed' : ''}`}>
-        {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button" onClick={() => setFailed(false)}>Retry</button></div> : <img key={item.id} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onError={() => setFailed(true)} onClick={() => setZoom(!zoom)} />}
+        {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div> : <img key={item.id} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onError={() => setFailed(true)} onClick={() => setZoom(!zoom)} />}
       </div>
       <aside className="image-details">
         <div className="detail-summary">
@@ -106,12 +109,12 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           <h2>{plural(members.length, 'near-duplicate')}</h2>
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => setShown(place)}><img src={imageUrl(member.id)} alt="" decoding="async" /></button></li>)}</ul>
         </section>}
-        {details && <details className="disclosure"><summary>Details</summary>
+        {details && <Disclosure summary="Details">
           <p className="path">{details.root}/{item.path}</p>
           {otherDate && <p>{otherDate}</p>}
           {details.camera && <p>{details.camera}</p>}
-          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{other.path}</span><button className="text-button" onClick={() => show(other.path)}>{reveal}</button></li>)}</ul></>}
-        </details>}
+          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{other.path}</span><button className="icon-button" aria-label={`${reveal}: ${other.path}`} title={reveal} onClick={() => show(other.path)}><FolderOpen /></button></li>)}</ul></>}
+        </Disclosure>}
       </aside>
     </div>
   </dialog>;
