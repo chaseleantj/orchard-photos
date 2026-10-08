@@ -41,6 +41,8 @@ For frontend development, run `.venv/bin/python -m server.api <folder>` and `npm
 
 Images appear newest first. A photo is dated by when it was taken, from its EXIF data. Images without that record use the date the file last changed.
 
+Each month starts under its own heading. The column of years at the right is a timeline of the whole folder, spaced by how many images each year holds. It marks where you are, names the month under the pointer, and jumps there when you click or drag it. With it focused, the arrow keys move a month, Page Up and Page Down a year, and Home and End go to either end.
+
 Click an image to open it. The viewer shows the file name, date, folder, dimensions, size and type; Details adds the full path, the other date, the camera and any other copies. From there you can find similar images, copy the image (also with Cmd+C), download the original, show it in Finder, or click the folder to show only that folder. Click the image or the zoom button to see it at actual size. Arrow keys move between images and Escape closes the viewer. Identical files appear once, and the viewer lists every place a copy is saved. Images that look almost the same, like bursts, edits and resized copies, share one tile in the grid and the map, fronted by the sharpest and largest. A badge shows how many there are, and the viewer shows all of them; click one or press the up and down arrow keys to switch.
 
 **Filter** narrows the grid by subfolder (subfolders of it included), file type, and date: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.

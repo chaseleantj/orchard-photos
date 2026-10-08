@@ -1,12 +1,13 @@
 """One folder's library: its scan, visual index, map, and the queries the API answers from them."""
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
 import re
 import sqlite3
 import threading
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image, ImageOps
 
@@ -17,6 +18,8 @@ from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayabl
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
+# The most a single request returns. Jumping far down the timeline loads every page above the target in a few of these.
+MAX_PAGE = 2500
 IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 SIMILAR_LIMIT = 100
 # Browsers show these directly; anything else is viewed through a converted JPEG.
@@ -174,7 +177,7 @@ class Library:
             rows = self.library(where, values, collapse=False)
             return {'items': rows, 'total': len(rows), 'offset': 0, 'hasMore': False}
         offset = max(0, int(params.get('offset', '0')))
-        limit = min(200, max(1, int(params.get('limit', str(PAGE_SIZE)))))
+        limit = min(MAX_PAGE, max(1, int(params.get('limit', str(PAGE_SIZE)))))
         visual = bool(image_bytes or reference or (query and params.get('mode') == 'visual'))
         if not visual:
             for word in query.split():
@@ -194,6 +197,27 @@ class Library:
                 # Beyond the closest matches, similarity to a single image is noise.
                 rows = rows[:SIMILAR_LIMIT]
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'hasMore': offset + limit < len(rows)}
+
+    def timeline(self, params):
+        """How many tiles the date-ordered grid shows in each month, newest first, in the viewer's time zone.
+
+        `zone` is an IANA name, so months split exactly where the browser's own calendar splits them, daylight
+        saving included; without one, the fixed `tz` offset in minutes is used."""
+        where, values = self.filters(params)
+        try:
+            zone = ZoneInfo(params['zone']) if params.get('zone') else None
+        except (ZoneInfoNotFoundError, ValueError):
+            zone = None
+        if zone is None:
+            zone = timezone(timedelta(minutes=max(-1440, min(1440, int(params.get('tz') or 0)))))
+        months = []
+        for row in self.library(where, values):
+            month = datetime.fromisoformat(row['date'].replace('Z', '+00:00')).astimezone(zone).strftime('%Y-%m')
+            if months and months[-1]['month'] == month:
+                months[-1]['count'] += 1
+            else:
+                months.append({'month': month, 'count': 1})
+        return {'months': months, 'total': sum(month['count'] for month in months)}
 
     def facets(self):
         """The subfolders and file types present, each with how many distinct images it holds."""

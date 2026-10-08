@@ -20,6 +20,8 @@ export interface Folder { path: string; label: string; name: string; id: string 
 export interface RecentFolder { path: string; label: string; available: boolean }
 export interface Status { app: string; platform: string; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
+/** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
+export interface Timeline { months: { month: string; count: number }[]; total: number }
 export interface Results { items: Picture[]; total: number; offset: number; hasMore: boolean }
 
 export const defaults: Filters = { folder: '', type: '', range: 'all', from: '', to: '' };
@@ -74,6 +76,10 @@ export function savePreferences(preferences: Preferences) {
 export function dateLabel(date: string, full = false) {
   return new Date(date).toLocaleString(undefined, full ? { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' } : { year: 'numeric', month: 'short', day: 'numeric' });
 }
+/** A month as the grid's headings and the timeline name it, like "June 2026". */
+export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+/** A `YYYY-MM` month as a local date on its first day. */
+export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 const TYPES: Record<string, string> = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC' };

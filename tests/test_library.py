@@ -118,6 +118,20 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.library.pictures({'from': '2026-09-21', 'to': '2026-09-21', 'tz': '120'})['total'], 1)
         self.assertEqual(self.library.pictures({'from': '2026-09-20', 'to': '2026-09-20', 'tz': '-600'})['total'], 1)
 
+    def test_timeline_counts_tiles_per_month_in_grid_order(self):
+        self.image(1, modified='2026-09-20T12:00:00Z')
+        self.image(2, modified='2026-09-02T12:00:00Z')
+        self.image(3, modified='2026-07-14T12:00:00Z')
+        self.image(4, modified='2025-12-31T23:30:00Z')
+        timeline = self.library.timeline({})
+        self.assertEqual(timeline, {'months': [{'month': '2026-09', 'count': 2}, {'month': '2026-07', 'count': 1}, {'month': '2025-12', 'count': 1}], 'total': 4})
+        self.assertEqual(timeline['total'], self.library.pictures({})['total'])
+        # Half an hour before New Year in UTC is already January in Berlin, and stays December in New York.
+        self.assertEqual(self.library.timeline({'zone': 'Europe/Berlin'})['months'][-1], {'month': '2026-01', 'count': 1})
+        self.assertEqual(self.library.timeline({'zone': 'America/New_York'})['months'][-1], {'month': '2025-12', 'count': 1})
+        self.assertEqual(self.library.timeline({'zone': 'Nowhere/Invalid', 'tz': '60'})['months'][-1], {'month': '2026-01', 'count': 1})
+        self.assertEqual(self.library.timeline({'type': 'image/png'}), {'months': [], 'total': 0})
+
     def test_invalid_filters_are_rejected(self):
         for params in ({'from': '2026-02-30'}, {'to': 'yesterday'}, {'tz': 'later'},
                        {'from': '2026-09-21', 'to': '2026-09-20'}, {'offset': 'bad'}, {'similar': '../private'}):

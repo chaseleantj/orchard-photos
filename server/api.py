@@ -232,6 +232,8 @@ class Handler(BaseHTTPRequestHandler):
             elif route == ('/api/search/image', True):
                 library = self.app.current()
                 self.json(library.pictures(params, self.body(UPLOAD_LIMIT)))
+            elif route == ('/api/timeline', False):
+                self.json(self.app.current().timeline(params))
             elif route == ('/api/facets', False):
                 self.json(self.app.current().facets())
             elif route == ('/api/layout', False):

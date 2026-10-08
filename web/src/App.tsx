@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, SlidersHorizontal, Moon, Sun, Info, ChevronDown, X, LayoutGrid, ChartScatter, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import Gallery from './Gallery';
+import type { GalleryHandle } from './Gallery';
+import Timeline from './Timeline';
 import Embedding from './Embedding';
 import Viewer from './Viewer';
 import { Progress } from './Progress';
 import { Lockup, Mark } from './Logo';
 import { FilterPanel, FolderChooser, FolderPanel, LibraryPanel, SearchMenu } from './Panels';
 import { APP_NAME, IMAGE_DRAG, defaults, filterParams, imageUrl, isFiltered, plural, rangeLabel, readPreferences, request, savePreferences, typeLabel } from './types';
-import type { Picture, Results, SearchMode, Status, View } from './types';
+import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, View } from './types';
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
 // An image counts as dropped on the search bar anywhere this close to it, so it needs no careful aim.
 const DROP_REACH = 64;
+// A grid this short fits in a few screens and needs no timeline.
+const TIMELINE_MIN = 100;
+// The most images one request returns (MAX_PAGE on the server).
+const MAX_PAGE = 2500;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
 export default function App() {
   const [filters, setFilters] = useState(initial.filters);
@@ -47,6 +53,8 @@ export default function App() {
   const library = status?.library ?? null;
   const ready = !!folder && folder.id === root;
   const searchRef = useRef<HTMLInputElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const galleryRef = useRef<GalleryHandle>(null);
   // Each panel opens under its own control, whatever opened it.
   const anchors = { search: useRef<HTMLFormElement>(null), filters: useRef<HTMLButtonElement>(null), library: useRef<HTMLButtonElement>(null), folder: useRef<HTMLButtonElement>(null) };
   const anchor = (name: PanelName) => anchors[name].current;
@@ -132,6 +140,38 @@ export default function App() {
     }).catch(() => { /* The next scan retries; the loaded grid stays as it was. */ });
     return () => controller.abort();
   }, [live]);
+  // A jump down the timeline loads every page above its target, in as few requests as the server allows.
+  const loadedRef = useRef({ items, more });
+  loadedRef.current = { items, more };
+  const reachTarget = useRef(-1);
+  const reaching = useRef<Promise<void> | null>(null);
+  const loadThrough = useCallback(async () => {
+    const id = requestId.current;
+    // Holding the paging lock for the whole jump keeps infinite scroll from appending underneath it.
+    while (paging.current) await new Promise(done => setTimeout(done, 50));
+    paging.current = true; setLoadingMore(true); setError('');
+    const start = loadedRef.current;
+    let { items: list, more: hasMore } = start;
+    try {
+      while (list.length <= reachTarget.current && hasMore && id === requestId.current) {
+        const data = await fetchResults(list.length, undefined, Math.min(MAX_PAGE, reachTarget.current + 1 - list.length + 80));
+        const seen = new Set(list.map(item => item.id));
+        list = [...list, ...data.items.filter(item => !seen.has(item.id))];
+        hasMore = data.hasMore;
+      }
+    } catch (e) { if (id === requestId.current) setError((e as Error).message); }
+    finally {
+      // The grid lays out once, with every page in hand, rather than once per page.
+      if (id === requestId.current && list !== start.items) { setItems(list); setMore(hasMore); }
+      paging.current = false; setLoadingMore(false);
+    }
+  }, [fetchResults]);
+  // Resolves when the loading it joined has finished, whether or not it reached the index.
+  const reach = useCallback((index: number) => {
+    reachTarget.current = Math.max(reachTarget.current, index);
+    reaching.current ??= loadThrough().finally(() => { reaching.current = null; reachTarget.current = -1; });
+    return reaching.current;
+  }, [loadThrough]);
   const changeSelected = async (index: number) => { if (index < items.length) setSelected(index); else if (await loadMore()) setSelected(index); };
   const reset = () => { clearSearch(); setFilters(defaults); window.scrollTo({ top: 0 }); };
   useEffect(() => { window.scrollTo({ top: 0 }); }, [filters, submitted, mode, similar, upload]);
@@ -163,6 +203,18 @@ export default function App() {
   // A dropped HEIC can be searched but not drawn by most browsers; it then shows as a generic image.
   const [referenceFailed, setReferenceFailed] = useState(false);
   useEffect(() => setReferenceFailed(false), [reference]);
+  // The timeline belongs to the date-ordered grid; it is kept through live refreshes and dropped when the filters change.
+  const [timeline, setTimeline] = useState<{ key: string; data: TimelineData } | null>(null);
+  const timelineKey = JSON.stringify({ root, ...filterParams(filters) });
+  useEffect(() => {
+    if (!ready || mapped || searching) return;
+    const controller = new AbortController();
+    request<TimelineData>(`/api/timeline?${new URLSearchParams({ ...filterParams(filters), zone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`, { signal: controller.signal })
+      .then(data => setTimeline({ key: timelineKey, data }))
+      .catch(e => { if (e.name !== 'AbortError') setTimeline(null); });
+    return () => controller.abort();
+  }, [ready, mapped, searching, timelineKey, revision, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  const timelineShown = !!timeline && timeline.key === timelineKey && !mapped && !searching && !loading && !!items.length && timeline.data.months.length > 1 && timeline.data.total > TIMELINE_MIN;
   const scan = library?.scan;
   const scanBusy = scan?.state === 'scanning';
   // While new results load, the map keeps lighting the previous matches instead of flashing back to everything.
@@ -172,7 +224,7 @@ export default function App() {
   const scope = [filters.folder && `in ${filters.folder}`, filters.type && typeLabel(filters.type), rangeLabel(filters), scanBusy && 'Updating'].filter(Boolean).map(part => ` · ${part}`).join('');
   const gathering = scanBusy && !library?.counts.images;
   return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientX, e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientX, e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
-    <header className="header">
+    <header ref={headerRef} className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
         {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : mode === 'visual' ? 'Search by appearance' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
@@ -182,7 +234,7 @@ export default function App() {
       <div className="header-actions">{ready && <><div className="view-switch" role="group" aria-label="View"><button className="text-button" aria-pressed={!mapped} aria-label="Grid" title="Grid" onClick={() => setView('grid')}><LayoutGrid /><span>Grid</span></button><button className="text-button" aria-pressed={mapped} aria-label="Map" title="Map by appearance" onClick={() => setView('map')}><ChartScatter /><span>Map</span></button></div><button ref={anchors.filters} className={filtered ? 'text-button filter-on' : 'text-button'} aria-label={filtered ? 'Filters, on' : 'Filters'} title={filtered ? 'Filters are on' : 'Filters'} aria-expanded={panel === 'filters'} onClick={() => setPanel('filters')}><SlidersHorizontal /><span>Filter</span></button></>}{ready && <button ref={anchors.library} className="text-button" aria-label="Library" title="Library" aria-expanded={panel === 'library'} onClick={() => setPanel('library')}><Info /><span>Library</span></button>}<button className="icon-button" aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} title={theme === 'light' ? 'Dark mode' : 'Light mode'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon /> : <Sun />}</button></div>
     </header>
     {ready && <div className="library-meta"><p aria-live="polite">{loading ? 'Finding images…' : subtitle}{scope}</p><button ref={anchors.folder} className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
-    <main aria-busy={loading}>
+    <main aria-busy={loading} data-timeline={timelineShown || undefined}>
       {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. Check that it is still running in Terminal.</span><button className="text-button secondary" onClick={refreshStatus}>Retry</button></div>}
       {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p><FolderChooser status={status} onOpened={applyStatus} /></div>
       : !ready ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
@@ -193,7 +245,8 @@ export default function App() {
       : !items.length && !error ? (searching || filtered ? <div className="empty"><h1>No images here</h1><p>Try another search, or widen the folder, type or date filters.</p><button className="text-button secondary" onClick={reset}>Clear search and filters</button></div>
         : gathering ? <div className="empty"><h1>Gathering your images</h1><p>{scan?.changed ? `Reading ${scan.done?.toLocaleString()} of ${plural(scan.changed, 'file')} in ${folder!.name}. Images appear as they are found.` : `Looking through ${folder!.name} and its subfolders.`}</p><div className="empty-progress"><Progress value={scan?.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" /></div></div>
         : <div className="empty"><h1>No images in this folder</h1><p>{folder!.name} has no JPEG, PNG, HEIC, WebP, GIF, TIFF, BMP or AVIF files. Hidden folders are skipped.</p><button className="text-button secondary" onClick={() => setPanel('folder')}>Choose another folder</button></div>)
-      : <Gallery items={items} sections={!searching} onOpen={setSelected} />}
+      : <Gallery ref={galleryRef} items={items} sections={!searching} onOpen={setSelected} />}
+      {timelineShown && <Timeline data={timeline.data} loaded={items.length} gallery={galleryRef} header={headerRef} onReach={reach} />}
       {more && !loading && <div className="load-more" ref={sentinel} aria-live="polite">{loadingMore ? 'Loading…' : ''}</div>}
       </>}
     </main>
