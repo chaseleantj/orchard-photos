@@ -255,8 +255,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(self.app.current().facets())
             elif route == ('/api/layout', False):
                 self.json(self.app.current().layout.status())
-            elif route == ('/api/layout', True):
-                self.json({'started': self.app.current().layout.start()}, 202)
             elif route == ('/api/map', False):
                 self.json(self.app.current().map(params))
             elif re.fullmatch(r'/api/atlas/\d+', url.path) and not post:

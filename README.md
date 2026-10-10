@@ -51,7 +51,7 @@ Click an image to open it. The viewer shows the file name, date, folder, dimensi
 
 **Search** defaults to appearance once visual search is set up, and to file names until then. Type a description and press Enter. You can also paste an image, or drop one anywhere along the top of the window: a file, an image from the grid, or one from the map, where you press and hold an image until it lifts and then drag it up. Or choose **Find similar**. Searching by an image shows its 100 closest matches. The search options button switches to searching file names. Filters still apply to every search.
 
-**Map** lays the whole folder out by similarity, so look-alike images sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. Searching lights up the matches and dims the rest. The first layout takes a few seconds. New images are placed next to their nearest neighbours, so the map stays put. The refresh button at the top left lays it out again, and images glide to their new places.
+**Map** lays the whole folder out by similarity, so look-alike images sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. Searching lights up the matches and dims the rest. The first layout takes a few seconds. New images are placed next to their nearest neighbours, so the map stays put.
 
 **Folder**, at the right of the line under the search bar, switches folders. On a Mac it opens the system folder dialog. You can also type a path or pick a recent folder. Each folder keeps its own cache, so switching back is quick.
 

@@ -221,10 +221,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 @keyframes map-pulse { from { opacity: .3; } to { opacity: 1; } }
 .map-message { position: absolute; inset: 0; min-height: 0; }
 .map-note { position: absolute; left: var(--page); bottom: var(--s6); margin: 0; color: var(--muted); pointer-events: none; }
-.map-controls, .map-refit { position: absolute; display: flex; gap: var(--s1); padding: var(--s1); background: var(--surface); border-radius: var(--surface-radius); box-shadow: var(--shadow); z-index: 3; }
+.map-controls { position: absolute; display: flex; gap: var(--s1); padding: var(--s1); background: var(--surface); border-radius: var(--surface-radius); box-shadow: var(--shadow); z-index: 3; }
 .map-controls { right: var(--page); bottom: var(--s6); flex-direction: column; }
-.map-refit { left: var(--page); top: var(--s2); }
-.map-controls .icon-button:hover, .map-refit .icon-button:hover { background: var(--soft); }
+.map-controls .icon-button:hover { background: var(--soft); }
 .map-progress { position: absolute; left: 0; right: 0; top: 0; z-index: 4; }
 .progress { height: var(--s1); background: var(--soft); border-radius: var(--pill); overflow: hidden; }
 .progress span { display: block; height: 100%; background: var(--ink); border-radius: inherit; transition: width var(--motion) var(--ease); }

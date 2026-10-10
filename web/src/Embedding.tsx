@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Maximize, Minus, Plus, RefreshCw } from 'lucide-react';
+import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
 import { APP_NAME, filterParams, request, storageKey } from './types';
@@ -82,11 +82,6 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
       if (now.state === 'idle') return;
     }
   }, []);
-  const relayout = async () => {
-    setWorking({ state: 'computing', stage: 'Laying out the map' });
-    try { await request('/api/layout', { method: 'POST' }); await follow(); setWorking(null); setRetry(r => r + 1); }
-    catch (e) { setWorking(null); setError((e as Error).message); setPhase('error'); }
-  };
   // A bar only appears for work that outlasts a blink.
   const busy = (phase === 'loading' && !unprepared && !holding) || !!working;
   useEffect(() => { if (!busy) { setSlow(false); return; } const timer = setTimeout(() => setSlow(true), 250); return () => clearTimeout(timer); }, [busy]);
@@ -105,7 +100,7 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
         return;
       }
       setWorking(null);
-      // The icon sheets only change when images are added, so a new filter or refit keeps the decoded ones.
+      // The icon sheets only change when images are added, so a new filter keeps the decoded ones.
       const versions = result.sheets.join();
       let sheets: ImageBitmap[] | null = null;
       if (versions !== shown.current.sheets) {
@@ -120,7 +115,7 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
       if (controller.signal.aborted) return;
       const map = engine.current!;
       if (sheets) map.setSheets(sheets);
-      // The same folder refit, or refreshed by a scan, glides instead of restarting.
+      // The same folder refreshed by a scan glides instead of restarting.
       if (shown.current.key === key) map.morph(result.points, false);
       else map.setPoints(result.points, readCamera(key));
       shown.current = { key, sheets: versions };
@@ -149,7 +144,6 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
     {phase === 'loading' && !unprepared && !holding && <div className="map-placeholder" role="status" aria-label="Placing images">{placeholder.map((p, i) => <span key={i} style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }} />)}</div>}
     {slow && busy && <div className="map-progress"><Progress value={working ? null : sheetsLoaded} label={working?.stage || 'Loading the map'} /></div>}
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}
-    {!unprepared && !holding && phase !== 'error' && <div className="map-refit"><button className="icon-button" aria-label="Refit the map" title="Lay out the map again from every image in the folder" disabled={!!working || phase !== 'ready'} onClick={relayout}><RefreshCw /></button></div>}
     {unprepared && !preparing && (search.state === 'error'
       ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
       : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a 600 MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>Set up visual search</button></div>)}
