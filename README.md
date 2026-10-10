@@ -26,6 +26,8 @@ To use `orchard` as a terminal command from anywhere (with `~/.local/bin` on you
 ln -s "$PWD/orchard" ~/.local/bin/orchard
 ```
 
+To open Orchard from the Dock, Launchpad or Spotlight like any Mac app, run `scripts/install-app` once. It installs `~/Applications/Orchard.app`, which starts the server in the background (logging to `/tmp/orchard.log`) and opens the page, or just opens the page if Orchard is already running.
+
 First-time setup:
 
 ```sh

@@ -1,0 +1,30 @@
+#!/bin/zsh
+# Install ~/Applications/Orchard.app, which starts Orchard in the background and opens it.
+set -e
+root=${0:A:h:h}
+app=~/Applications/Orchard.app
+command="cd '$root' && nohup ./orchard > /tmp/orchard.log 2>&1 &"
+
+mkdir -p ~/Applications
+osacompile -o $app - <<SCRIPT
+on run
+  try
+    do shell script "$command"
+  on error messageText
+    display alert "Orchard could not open" message messageText as critical
+  end try
+end run
+SCRIPT
+
+resources=$app/Contents/Resources
+cp $root/assets/orchard.icns $resources/Orchard.icns
+rm -f $resources/applet.icns
+plist=$app/Contents/Info.plist
+# osacompile's asset-catalog icon overrides CFBundleIconFile unless removed.
+plutil -remove CFBundleIconName $plist 2>/dev/null || true
+plutil -replace CFBundleIconFile -string Orchard.icns $plist
+plutil -replace CFBundleIdentifier -string local.orchard.launcher $plist
+codesign --force --sign - $app
+touch $app
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $app
+print "Installed $app"
