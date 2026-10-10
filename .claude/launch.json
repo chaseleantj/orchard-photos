@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "orchard-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host", "127.0.0.1", "--port", "5181"],
+      "port": 5181
+    }
+  ]
+}
