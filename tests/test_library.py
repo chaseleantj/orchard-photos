@@ -158,7 +158,7 @@ class LibraryTests(unittest.TestCase):
 
     def test_visual_search_before_preparation_explains_itself(self):
         self.image(1)
-        with self.assertRaisesRegex(ValueError, 'not ready'):
+        with self.assertRaisesRegex(ValueError, 'not set up'):
             self.library.pictures({'q': 'sunset', 'mode': 'visual'})
         self.assertEqual(self.library.pictures({'q': 'photo', 'mode': 'name'})['total'], 1)
 
@@ -217,9 +217,17 @@ class LibraryTests(unittest.TestCase):
 
     def test_map_requires_prepared_visual_search(self):
         self.image(1)
-        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0})
-        with self.assertRaisesRegex(ValueError, 'not ready'):
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'state': 'idle'})
+        with self.assertRaisesRegex(ValueError, 'not set up'):
             self.library.map({})
+
+    def test_preparing_asked_for_midway_runs_again_afterwards(self):
+        runs = []
+        # A scan finishing during the first run asks again; that request is folded into a second round.
+        self.library.semantic = SimpleNamespace(index=lambda cancelled: (runs.append(1), len(runs) == 1 and self.library.index()))
+        self.library.groups = SimpleNamespace(update=lambda: False)
+        self.library.index()
+        self.assertEqual(len(runs), 2)
 
     def test_scan_counts_revisions_and_reports_a_missing_folder(self):
         Image.new('RGB', (8, 8)).save(self.folder / 'one.png')

@@ -86,6 +86,22 @@ class App:
         threading.Thread(target=library.scan, daemon=True).start()
         return library
 
+    def prepare(self):
+        """Set up visual search in the background: download the model if needed, then prepare the open folder."""
+        def run():
+            try:
+                self.encoder.load()
+            except RuntimeError:
+                return  # The status reports the failure, and setting up again retries.
+            # The first description searched would otherwise wait while the text half of the model warms up.
+            self.encoder.warm()
+            if self.library:
+                self.library.index()
+        if not self.encoder.loaded:
+            # Reported at once, so the page never shows the setup button again while the thread starts.
+            self.encoder.activity = self.encoder.activity or ('loading' if self.encoder.downloaded() else 'downloading')
+        threading.Thread(target=run, daemon=True).start()
+
     def current(self) -> Library:
         library = self.library
         if library is None:
@@ -110,7 +126,8 @@ class App:
         library = self.library
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
-        result = {'app': APP['name'], 'platform': sys.platform, 'recent': recent, 'folder': None, 'library': None}
+        result = {'app': APP['name'], 'platform': sys.platform, 'recent': recent, 'folder': None, 'library': None,
+                  'model': self.encoder.downloaded() or self.encoder.activity is not None}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
                                 'name': library.folder.name or str(library.folder), 'id': library.directory.name}
@@ -225,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=self.app.current().scan, daemon=True).start()
                 self.json({'started': True}, 202)
             elif route == ('/api/search/index', True):
-                threading.Thread(target=self.app.current().index, daemon=True).start()
+                self.app.prepare()
                 self.json({'started': True}, 202)
             elif route == ('/api/images', False):
                 self.json(self.app.current().pictures(params))

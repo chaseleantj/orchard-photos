@@ -4,8 +4,45 @@
     {
       "name": "orchard-web",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--host", "127.0.0.1", "--port", "5181"],
+      "runtimeArgs": [
+        "vite",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5181"
+      ],
       "port": 5181
+    },
+    {
+      "name": "orchard-fresh",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "server.api",
+        "--port",
+        "4410",
+        "--data-dir",
+        "/tmp/orchard-fresh",
+        "--no-watch"
+      ],
+      "port": 4410
+    },
+    {
+      "name": "orchard-offline",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "server.api",
+        "--port",
+        "4411",
+        "--data-dir",
+        "/tmp/orchard-offline",
+        "--no-watch"
+      ],
+      "env": {
+        "HF_ENDPOINT": "http://127.0.0.1:9"
+      },
+      "port": 4411
     }
   ]
 }

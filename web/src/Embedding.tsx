@@ -4,6 +4,7 @@ import { MapEngine } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
 import { APP_NAME, filterParams, request, storageKey } from './types';
 import { Progress } from './Progress';
+import { searchWork } from './Activity';
 import type { Filters, SearchStatus } from './types';
 
 interface Working { state: string; stage?: string; error?: string }
@@ -28,10 +29,10 @@ function readCamera(key: string): MapCamera | undefined {
 
 interface Props {
   root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
-  onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; onLibrary: () => void; onReset: () => void;
+  onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; left: string; onSetUp: () => void; onReset: () => void;
 }
 
-export default function Embedding({ root, filters, highlight, search, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, onLibrary, onReset }: Props) {
+export default function Embedding({ root, filters, highlight, search, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, left, onSetUp, onReset }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
@@ -48,7 +49,8 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
   const key = JSON.stringify({ root, ...filterParams(filters) });
   const unprepared = search.indexed === 0;
   // With the model on this computer, images still being found or waiting for their turn are indexed without asking.
-  const preparing = search.state === 'loading' || search.state === 'indexing' || (search.downloaded && search.state === 'idle' && (scanning || search.indexed < search.total));
+  const preparing = search.state === 'downloading' || search.state === 'loading' || search.state === 'indexing' || (search.downloaded && search.state === 'idle' && (scanning || search.indexed < search.total));
+  const work = searchWork(search);
   // A folder's first map waits for all of its images, so its first layout is the real one.
   const holding = preparing && !data;
   const byId = useMemo(() => new Map((data?.points ?? []).map(p => [p.id, p])), [data]);
@@ -147,9 +149,13 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
     {phase === 'loading' && !unprepared && !holding && <div className="map-placeholder" role="status" aria-label="Placing images">{placeholder.map((p, i) => <span key={i} style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }} />)}</div>}
     {slow && busy && <div className="map-progress"><Progress value={working ? null : sheetsLoaded} label={working?.stage || 'Loading the map'} /></div>}
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}
-    {!unprepared && phase !== 'error' && <div className="map-refit"><button className="icon-button" aria-label="Refit the map" title="Lay out the map again from every image in the folder" disabled={!!working || phase !== 'ready'} onClick={relayout}><RefreshCw /></button></div>}
-    {unprepared && !preparing && <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Prepare visual search once and similar images will gather here.</p><button className="text-button primary" onClick={onLibrary}>Set up visual search</button></div>}
-    {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1><p>{search.state === 'loading' ? 'Loading the search model.' : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} images ready. The map opens when they all are.`}</p><div className="map-message-progress"><Progress value={search.total ? search.indexed / search.total : null} label="Preparing images" /></div></div>}
+    {!unprepared && !holding && phase !== 'error' && <div className="map-refit"><button className="icon-button" aria-label="Refit the map" title="Lay out the map again from every image in the folder" disabled={!!working || phase !== 'ready'} onClick={relayout}><RefreshCw /></button></div>}
+    {unprepared && !preparing && (search.state === 'error'
+      ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
+      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a 600 MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>Set up visual search</button></div>)}
+    {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
+      <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} images ready. The map opens when they all are.`}{left && ` ${left}.`}</p>
+      <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" /></div></div>}
     {phase === 'error' && <div className="empty map-message" role="alert"><h1>The map didn’t load</h1><p>{error}</p><button className="text-button secondary" onClick={() => setRetry(r => r + 1)}>Retry</button></div>}
     {empty && <div className="empty map-message"><h1>No images here</h1><p>{filtered ? 'Widen the date range, or choose another folder or file type.' : 'This folder has no images yet.'}</p>{(filtered || searching) && <button className="text-button secondary" onClick={onReset}>Clear search and filters</button>}</div>}
     {phase === 'ready' && !working && !!data?.pending && <p className="map-note" aria-live="polite">{data.pending.toLocaleString()} {data.pending === 1 ? 'image is' : 'images are'} still being prepared</p>}

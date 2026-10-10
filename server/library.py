@@ -40,6 +40,7 @@ class Library:
         self.closed = threading.Event()
         self.scan_lock = threading.Lock()
         self.semantic_lock = threading.Lock()
+        self.index_wanted = False
         self.scan_state = {'state': 'ready'}
         # Bumped whenever a scan commits, so open pages know to refresh what they show.
         self.revision = 0
@@ -68,9 +69,8 @@ class Library:
             self.stats['updated'] = datetime.now(timezone.utc).isoformat()
             self.stats_path.write_text(json.dumps(self.stats))
             self.scan_state = {'state': 'ready'}
-            search = self.semantic.status()
             # Once the model is on this computer, new images are indexed and grouped without asking.
-            if search['downloaded'] or search['indexed']:
+            if self.semantic.encoder.downloaded():
                 threading.Thread(target=self.index, daemon=True).start()
         except ScanCancelled:
             self.scan_state = {'state': 'ready'}
@@ -83,16 +83,19 @@ class Library:
             self.scan_lock.release()
 
     def index(self):
-        if not self.semantic_lock.acquire(blocking=False):
-            return
-        try:
-            self.semantic.index(self.closed.is_set)
-            if not self.closed.is_set() and self.groups.update():
-                self.revision += 1
-        except Exception:
-            logger.exception('Grouping near-duplicates failed')
-        finally:
-            self.semantic_lock.release()
+        """Prepare new images for visual search and group near-duplicates. A call made while this runs is folded
+        into another round, so images a scan adds midway are not left waiting for the next scan."""
+        self.index_wanted = True
+        while self.index_wanted and not self.closed.is_set() and self.semantic_lock.acquire(blocking=False):
+            try:
+                self.index_wanted = False
+                self.semantic.index(self.closed.is_set)
+                if not self.closed.is_set() and self.groups.update():
+                    self.revision += 1
+            except Exception:
+                logger.exception('Grouping near-duplicates failed')
+            finally:
+                self.semantic_lock.release()
 
     def connect(self):
         db = sqlite3.connect(self.scanner.db_path, timeout=30)
@@ -109,6 +112,7 @@ class Library:
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
         return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unreadable': unreadable, 'unlistedFolders': self.stats.get('unlisted_folders', 0),
+                'photoLibraries': self.stats.get('photo_libraries', []),
                 'scan': self.scan_state, 'search': self.semantic.status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
 
@@ -164,6 +168,12 @@ class Library:
         with self.connect() as db:
             return [dict(row) for row in db.execute(sql, values)]
 
+    def require_search(self):
+        search = self.semantic.status()
+        if search['indexed'] == 0:
+            raise ValueError('Visual search is still getting ready.' if search['state'] in ('downloading', 'loading', 'indexing')
+                             else 'Visual search is not set up yet.')
+
     def pictures(self, params, image_bytes=None):
         where, values = self.filters(params)
         query = params.get('q', '').strip()[:1000]
@@ -185,8 +195,7 @@ class Library:
                 values.append('%' + word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
             rows = self.library(where, values)
         else:
-            if self.semantic.status()['indexed'] == 0:
-                raise ValueError('Visual search is not ready. Open Library to prepare it, or search by file name.')
+            self.require_search()
             ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
             # The reference comes first, as the stack of its near-duplicates, so the results start from what was asked.
             with self.connect() as db:
@@ -280,8 +289,7 @@ class Library:
         """Every filtered image with a place on the map and an icon slot in the atlas."""
         where, values = self.filters(params)
         rows = self.library(where, values)
-        if self.semantic.status()['indexed'] == 0:
-            raise ValueError('Visual search is not ready. Open Library to prepare it, then return to the map.')
+        self.require_search()
         positions = self.layout.positions()
         if positions is None:
             # First use: fit in the background and let the page follow the progress.

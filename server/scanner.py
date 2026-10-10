@@ -28,6 +28,8 @@ THUMBNAIL_SIZE = 720
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
+# How often the count of files found so far is reported while a folder is listed.
+FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
 EXIF_TAKEN, EXIF_DIGITIZED, EXIF_OFFSET = 36867, 36868, 36881
 EXIF_MAKE, EXIF_MODEL = 271, 272
@@ -51,13 +53,15 @@ def preview_path(directory: Path, image_id: str) -> Path:
     return Path(directory) / 'previews' / f'{image_id}.jpg'
 
 
-def walk(root: Path, skip=frozenset()):
-    """Every image file below root as (relative posix path, stat), plus the folders that could not be listed.
+def walk(root: Path, skip=frozenset(), found=None):
+    """Every image file below root as (relative posix path, stat), the folders that could not be listed, and the
+    Photos libraries passed over. `found` hears the running count of image files while a large tree is listed.
 
-    Hidden entries are skipped. Symlinked folders are followed once each, so a link loop ends instead of recursing,
-    and only after the real folders, so a folder reached both ways is listed under its real path.
+    Hidden entries are skipped. A Photos library is a folder macOS keeps closed to other apps, and its thumbnails
+    would repeat every photo, so it is passed over. Symlinked folders are followed once each, so a link loop ends
+    instead of recursing, and only after the real folders, so a folder reached both ways is listed under its real path.
     """
-    files, unreadable, visited = [], [], set()
+    files, unreadable, libraries, visited = [], [], [], set()
     stack, links = [('', str(root))], []
     while stack or links:
         relative, directory = stack.pop() if stack else links.pop()
@@ -73,15 +77,19 @@ def walk(root: Path, skip=frozenset()):
                         continue
                     child = f'{relative}/{entry.name}' if relative else entry.name
                     try:
-                        if entry.is_dir():
+                        if entry.name.endswith('.photoslibrary'):
+                            libraries.append(child)
+                        elif entry.is_dir():
                             (links if entry.is_symlink() else stack).append((child, entry.path))
                         elif entry.is_file() and os.path.splitext(entry.name)[1].lower() in EXTENSIONS:
                             files.append((child, entry.stat()))
+                            if found and len(files) % FOUND_EVERY == 0:
+                                found(len(files))
                     except OSError:
                         continue
         except OSError:
             unreadable.append(relative)
-    return files, unreadable
+    return files, unreadable, libraries
 
 
 def utc(moment: datetime) -> str:
@@ -175,7 +183,7 @@ class Scanner:
         if self.directory.exists():
             status = self.directory.stat()
             skip.add((status.st_dev, status.st_ino))
-        found, unreadable = walk(self.folder, skip)
+        found, unreadable, libraries = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         if '' in unreadable:
             raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
         with self.connect() as db:
@@ -216,6 +224,7 @@ class Scanner:
             stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
         stats['removed'] = removed
         stats['unlisted_folders'] = len(unreadable)
+        stats['photo_libraries'] = libraries
         return stats
 
     def _examine(self, relative: str) -> dict:

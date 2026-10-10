@@ -46,17 +46,19 @@ class ScannerTests(unittest.TestCase):
         picture(self.root / 'top.PNG')
         picture(self.root / '.hidden/secret.png')
         picture(self.root / '._resource.png')
+        picture(self.root / 'a/Photos Library.photoslibrary/originals/kept-by-photos.jpg')
         (self.root / 'notes.txt').write_text('not an image')
         stats = self.scanner.scan()
         self.assertEqual(set(self.files()), {'a/b/c/deep.jpg', 'top.PNG'})
         self.assertEqual(self.files()['a/b/c/deep.jpg']['folder'], 'a/b/c')
         self.assertEqual((stats['images'], stats['unreadable']), (2, 0))
+        self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
 
     def test_symlink_loops_end_and_real_paths_win(self):
         picture(self.root / 'real/one.png')
         os.symlink(self.root, self.root / 'real/loop')
         os.symlink(self.root / 'real', self.root / 'alias')
-        found, unreadable = walk(self.root)
+        found, unreadable, _ = walk(self.root)
         self.assertEqual([path for path, _ in found], ['real/one.png'])
         self.assertEqual(unreadable, [])
 

@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 from server.scanner import thumbnail_path
-from server.semantic import MODEL, Encoder, SemanticIndex
+from server.semantic import DOWNLOAD_BYTES, FILES, MODEL, REVISION, Encoder, SemanticIndex
 
 
 class SemanticTests(unittest.TestCase):
@@ -40,10 +40,35 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(self.search.search(text="a sunset"), [])
         self.assertFalse((self.directory / "models").exists())
 
-    def test_downloaded_weights_are_recognised(self):
+    def test_downloaded_weights_are_recognised_only_when_complete(self):
+        snapshot = self.encoder.repository / "snapshots" / REVISION
+        snapshot.mkdir(parents=True)
+        for name in FILES[:-1]:
+            (snapshot / name).write_text("{}")
         self.assertFalse(self.encoder.downloaded())
-        (self.directory / "models" / f"models--{MODEL.replace('/', '--')}" / "snapshots" / "abc").mkdir(parents=True)
+        (snapshot / FILES[-1]).write_text("{}")
         self.assertTrue(self.encoder.downloaded())
+
+    def test_download_progress_and_failure_are_reported_between_runs(self):
+        self.add("1")
+        blobs = self.encoder.repository / "blobs"
+        blobs.mkdir(parents=True)
+        (blobs / "weights.incomplete").write_bytes(b"x" * 1000)
+        self.encoder.activity = "downloading"
+        status = self.search.status()
+        self.assertEqual((status["state"], status["received"], status["size"]), ("downloading", 1000, DOWNLOAD_BYTES))
+        self.encoder.activity, self.encoder.failure = None, "The search model could not download."
+        self.assertEqual((self.search.status()["state"], self.search.status()["error"]), ("error", "The search model could not download."))
+
+    def test_a_failed_download_is_kept_for_the_status_and_cleared_on_retry(self):
+        with patch.object(self.encoder, "_fetch", side_effect=RuntimeError("No connection")):
+            with self.assertRaisesRegex(RuntimeError, "No connection"):
+                self.encoder.load()
+        self.assertEqual((self.encoder.failure, self.encoder.activity), ("No connection", None))
+        with patch.object(self.encoder, "_fetch", side_effect=RuntimeError("Still no connection")):
+            with self.assertRaises(RuntimeError):
+                self.encoder.load()
+        self.assertEqual(self.encoder.failure, "Still no connection")
 
     def test_model_failure_is_reported_and_can_be_retried(self):
         self.add("1")

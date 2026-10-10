@@ -6,7 +6,7 @@ import { dateLabel, downloadUrl, fileName, filterParams, folderOf, imageUrl, plu
 
 interface Props {
   items: Picture[]; index: number; total: number; hasMore: boolean; loadingMore: boolean; pageError: string; rootName: string; platform: string; filters: Filters;
-  onChange: (index: number) => void; onClose: () => void; onSimilar: (id: string) => void; onFolder: (folder: string) => void;
+  onChange: (index: number) => void; onClose: () => void; onSimilar: ((id: string) => void) | null; onFolder: (folder: string) => void;
 }
 // The deepest folders name a place; the rest of a long path is in the tooltip and under Details.
 const CRUMBS = 3;
@@ -99,7 +99,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         </div>
         <div className="detail-actions">
-          <button className="icon-button" aria-label="Find similar" title="Find similar" onClick={() => onSimilar(item.id)}><ScanSearch /></button>
+          {onSimilar && <button className="icon-button" aria-label="Find similar" title="Find similar" onClick={() => onSimilar(item.id)}><ScanSearch /></button>}
           <button className="icon-button" aria-label="Copy image" title="Copy image" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}</button>
           <a className="icon-button" href={downloadUrl(item.id, item.path)} download aria-label="Download original" title="Download original"><Download /></a>
           <button className="icon-button" aria-label={reveal} title={reveal} onClick={() => show(item.path)}><FolderOpen /></button>

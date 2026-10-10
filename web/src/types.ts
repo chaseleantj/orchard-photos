@@ -10,15 +10,21 @@ export interface Filters { folder: string; type: string; range: Range; from: str
 export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 export interface FileCopy { path: string; modified: string }
 export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; files: FileCopy[]; preview: boolean }
-export interface SearchStatus { state: 'idle' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; error?: string }
+/** `received` and `size` are bytes, sent while the model downloads. */
+export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
+/** Visual queries can be answered: some images are prepared. */
+export const searchable = (search: SearchStatus) => search.indexed > 0;
+/** Visual search is downloading, starting, or preparing images for the first time. */
+export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unreadable: { path: string; error: string }[]; unlistedFolders: number; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unreadable: { path: string; error: string }[]; unlistedFolders: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 export interface Folder { path: string; label: string; name: string; id: string }
 export interface RecentFolder { path: string; label: string; available: boolean }
-export interface Status { app: string; platform: string; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+/** `model` says the visual search model is downloaded or on its way. */
+export interface Status { app: string; platform: string; model: boolean; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }
@@ -89,6 +95,7 @@ export function sizeLabel(bytes: number) {
   const [value, unit] = bytes < 1e6 ? [bytes / 1e3, 'KB'] : bytes < 1e9 ? [bytes / 1e6, 'MB'] : [bytes / 1e9, 'GB'];
   return `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 1 : 0 })} ${unit}`;
 }
+export const megabytes = (bytes: number) => Math.round(bytes / 1e6).toLocaleString();
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
 
 export const IMAGE_DRAG = 'application/x-library-image';

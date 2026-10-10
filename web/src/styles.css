@@ -60,8 +60,14 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .search input::placeholder { color: var(--muted); }
 .search .icon-button { width: var(--control-nested); height: var(--control-nested); border-radius: var(--pill); }
 .search .icon-button:hover, .search .icon-button[aria-expanded='true'] { background: var(--surface); }
-.library-meta { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); color: var(--muted); }
+.library-meta { display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); color: var(--muted); }
 .library-meta p { margin: 0; }
+/* Background work sits beside the count it is changing: a short bar and what it is doing. */
+.activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
+.activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; }
+.activity-item:hover { background: var(--soft); color: var(--ink); }
+.activity-item > span { overflow: hidden; text-overflow: ellipsis; }
+.activity-item .progress { width: var(--s8); flex-shrink: 0; }
 .gallery { margin: 0 var(--page); position: relative; }
 /* A month heading over each run of images; the grid restarts under it. */
 .month { position: absolute; left: 0; right: 0; margin: 0; font-size: inherit; font-weight: 400; }
@@ -129,7 +135,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .panel-footer { display: flex; justify-content: space-between; align-items: center; }
 .panel p, .panel li { color: var(--muted); }
 .panel p { margin: var(--s3) 0; }
-.error-copy { color: var(--danger); }
+.error-copy, .panel .error-copy { color: var(--danger); }
 .panel .field-note { margin: var(--s2) 0 0; }
 .panel-action { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); margin-top: var(--s4); }
 .panel-action p { margin: 0; }
@@ -165,7 +171,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--s3) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
 .view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }
 .path { color: var(--ink); overflow-wrap: anywhere; }
-.folder-button { max-width: 40%; gap: var(--s2); color: var(--muted); }
+.folder-button { max-width: 40%; margin-left: auto; gap: var(--s2); color: var(--muted); }
 .folder-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .numbers { font-variant-numeric: tabular-nums; }
 .near-duplicates { margin-top: var(--s4); }
@@ -189,6 +195,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .file-list li > span { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
 .chooser { width: 100%; max-width: var(--search-width); display: flex; flex-direction: column; align-items: stretch; gap: var(--s4); text-align: left; }
 .welcome .chooser { margin-top: var(--s4); }
+.check { display: grid; grid-template-columns: auto 1fr; gap: var(--s3); align-items: start; margin-top: var(--s2); cursor: pointer; }
+.check input { width: var(--s4); height: var(--s4); margin: calc((1lh - var(--s4)) / 2) 0 0; accent-color: var(--ink); cursor: pointer; }
+.check .muted { display: block; }
 .path-form label { display: block; color: var(--muted); margin-bottom: var(--s2); }
 .path-row { display: flex; gap: var(--s2); }
 .path-row input { flex: 1; min-width: 0; height: var(--control); border: 1px solid var(--line); border-radius: var(--control-radius); background: transparent; padding: 0 var(--s3); transition: border-color var(--motion) var(--ease); }
@@ -233,6 +242,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }
  .library-meta p { max-width: 58%; }
+ /* One job at a time on a phone, as a bar and its name. */
+ .activity-item:not(:first-of-type), .activity-item:not(.error-copy) > span { display: none; }
+ .library-meta p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
  .folder-button { max-width: 42%; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */

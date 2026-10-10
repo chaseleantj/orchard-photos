@@ -49,7 +49,7 @@ Click an image to open it. The viewer shows the file name, date, folder, dimensi
 
 **Filter** narrows the grid by subfolder (subfolders of it included), file type, and date: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
-**Search** defaults to appearance. Type a description and press Enter. You can also paste an image, or drop one anywhere along the top of the window: a file, an image from the grid, or one from the map, where you press and hold an image until it lifts and then drag it up. Or choose **Find similar**. Searching by an image shows its 100 closest matches. The search options button switches to searching file names. Filters still apply to every search.
+**Search** defaults to appearance once visual search is set up, and to file names until then. Type a description and press Enter. You can also paste an image, or drop one anywhere along the top of the window: a file, an image from the grid, or one from the map, where you press and hold an image until it lifts and then drag it up. Or choose **Find similar**. Searching by an image shows its 100 closest matches. The search options button switches to searching file names. Filters still apply to every search.
 
 **Map** lays the whole folder out by similarity, so look-alike images sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. Searching lights up the matches and dims the rest. The first layout takes a few seconds. New images are placed next to their nearest neighbours, so the map stays put. The refresh button at the top left lays it out again, and images glide to their new places.
 
@@ -57,13 +57,15 @@ Click an image to open it. The viewer shows the file name, date, folder, dimensi
 
 **Library** (the ⓘ button) shows counts, lists files that could not be read and why, and can rescan the folder. Orchard also rescans every minute, so added, changed and removed files show up without asking.
 
-The CLIP model is downloaded once (about 600 MB) from **Library → Prepare visual search** and then runs offline. After that, every folder you open is prepared automatically. Until then, the grid, filters and file-name search work without it.
+Visual search needs the CLIP model, a one-time download of about 600 MB that then runs offline. The first time you choose a folder, **Set up visual search too** is ticked, so the download starts with the scan. You can also set it up later from **Library**, from the map, or by choosing **Appearance** in the search options. After that, every folder you open is prepared automatically. Until then, the grid, filters and file-name search work without it.
+
+Work in the background shows in the line under the search bar, beside the image count: reading new files, downloading the model, and preparing images for visual search, each with a short bar. Click it to open Library, which adds how long is left. Prepared images can be searched while the rest are still being prepared.
 
 ## What it reads
 
 JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers cannot show HEIC and TIFF, so the viewer shows a converted JPEG preview of those, and Download still gives you the original.
 
-Hidden files and folders are skipped, which also skips the `._` files macOS leaves on external drives. Symlinked folders are followed once, so a link loop cannot trap the scan. Damaged, empty and oversized files (over 300 megapixels) are listed in Library with a reason and skipped. If the folder disappears, for example on an unplugged drive, Orchard keeps showing the last scan and says the folder is unavailable.
+Hidden files and folders are skipped, which also skips the `._` files macOS leaves on external drives. Photos libraries are skipped too, since macOS keeps them closed to other apps; Library says when one was found. Export pictures from Photos to a folder to browse them. Symlinked folders are followed once, so a link loop cannot trap the scan. Damaged, empty and oversized files (over 300 megapixels) are listed in Library with a reason and skipped. If the folder disappears, for example on an unplugged drive, Orchard keeps showing the last scan and says the folder is unavailable.
 
 ## Where data lives
 
