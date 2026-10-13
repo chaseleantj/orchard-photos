@@ -372,14 +372,29 @@ def main():
     logging.basicConfig(level=logging.WARNING, format='%(levelname)s %(name)s: %(message)s')
     url = f'http://127.0.0.1:{args.port}'
     folder = str(Path(args.folder).expanduser().absolute()) if args.folder else None
-    if running(url):
+
+    def join_running():
+        """Hand the folder to a copy of this app that already answers at url. Returns whether there was one."""
+        if not running(url):
+            return False
         if error := hand_over(url, folder):
             sys.exit(error)
         print(f'{APP["name"]} is already running at {url}', flush=True)
         if args.open_browser:
             webbrowser.open(url)
+        return True
+
+    if join_running():
         return
-    app = App(args.data_dir)
+    # The port stays fixed: the Dock app, a second launch and the page's saved settings all find the app by it.
+    try:
+        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    except OSError:
+        # Another launch may have started the server since the check above.
+        if join_running():
+            return
+        sys.exit(f'Port {args.port} is used by another program. Quit that program, or start {APP["name"]} on another port with --port.')
+    app = server.app = App(args.data_dir)
     try:
         if folder:
             app.open(folder)
@@ -387,11 +402,6 @@ def main():
             app.open(app.recent()[0])
     except ValueError as error:
         sys.exit(str(error))
-    try:
-        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    except OSError:
-        sys.exit(f'Port {args.port} is in use. Choose another with --port.')
-    server.app = app
     if not args.no_watch:
         def watch():
             while not threading.Event().wait(WATCH_SECONDS):

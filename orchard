@@ -1,25 +1,71 @@
 #!/bin/sh
 # Start Orchard, or point the running one at another folder: orchard [folder]
-# Installs dependencies and builds the page on first run, and again when they change.
+# Installs Python packages on first run, and again when requirements.txt changes.
 set -e
 if [ -d "${1:-}" ]; then folder=$(cd "$1" && pwd -P); else folder=${1:-}; fi
 cd "$(dirname "$(readlink -f "$0")")"
 
 # Linux has no Metal, and pip's default torch there carries gigabytes of CUDA libraries. Without an NVIDIA GPU, prefer the CPU wheel.
 index=
-if [ "$(uname)" = Linux ] && ! command -v nvidia-smi >/dev/null; then index='--extra-index-url https://download.pytorch.org/whl/cpu'; fi
-
-if [ ! -f .venv/.installed ] || [ -n "$(find requirements.txt -newer .venv/.installed)" ]; then
-  echo 'Installing Python packages (first run takes a few minutes)...'
-  [ -x .venv/bin/python ] || python3 -m venv .venv
-  # shellcheck disable=SC2086
-  .venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt $index
-  touch .venv/.installed
+download='about 300 MB'
+if [ "$(uname)" = Linux ]; then
+  if command -v nvidia-smi >/dev/null; then download='about 3 GB'; else index='--extra-index-url https://download.pytorch.org/whl/cpu'; fi
 fi
 
-if [ ! -f dist/index.html ] || [ -n "$(find web public index.html package-lock.json vite.config.ts app.json -newer dist/index.html 2>/dev/null)" ]; then
+installed() { [ -f .venv/.installed ] && [ -z "$(find requirements.txt -newer .venv/.installed)" ]; }
+new_enough() { "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null; }
+
+# Plain python3 is often too old, like the 3.9 Apple ships or the 3.10 on Ubuntu 22.04, so look for a newer one first.
+find_python() {
+  for name in python3.13 python3.12 python3; do
+    if command -v "$name" >/dev/null && new_enough "$name"; then echo "$name"; return; fi
+  done
+  found=$(python3 --version 2>/dev/null) || found='no python3'
+  echo "Orchard needs Python 3.12 or later, and found $found." >&2
+  if [ "$(uname)" = Darwin ]; then
+    echo 'Install it with Homebrew (brew install python) or from https://www.python.org/downloads/, then run Orchard again.' >&2
+  else
+    echo 'Install it with your package manager. On Ubuntu 24.04 and later: sudo apt install python3 python3-venv' >&2
+    echo 'On older Ubuntu, get python3.12 from the deadsnakes PPA: https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa' >&2
+  fi
+  return 1
+}
+
+if ! installed; then
+  # A second launch waits here instead of installing into the same environment at the same time.
+  lock=.venv.lock
+  until mkdir "$lock" 2>/dev/null; do
+    owner=$(cat "$lock/pid" 2>/dev/null) || owner=
+    # Moving the stale lock aside first means only one waiter can clear it.
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && mv "$lock" "$lock.$$" 2>/dev/null; then rm -rf "$lock.$$"; continue; fi
+    [ -n "$waited" ] || echo 'Another Orchard launch is installing Python packages. Waiting for it to finish...'
+    waited=1
+    sleep 2
+  done
+  echo $$ > "$lock/pid"
+  trap 'rm -rf "$lock"' EXIT
+  trap 'exit 1' INT TERM
+  if ! installed; then
+    if ! { [ -x .venv/bin/python ] && new_enough .venv/bin/python; }; then
+      python=$(find_python)
+      version=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+      # Debian and Ubuntu ship the part of venv that installs pip as a separate package.
+      "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt install python$version-venv" >&2; exit 1; }
+      "$python" -m venv --clear .venv
+    fi
+    echo "Installing Python packages. The first run downloads $download, which takes a few minutes."
+    # shellcheck disable=SC2086
+    .venv/bin/pip install --disable-pip-version-check -r requirements.txt $index
+    touch .venv/.installed
+  fi
+  rm -rf "$lock"
+  trap - EXIT INT TERM
+fi
+
+# dist/ is committed, so running Orchard needs no Node. After npm ci, the page is rebuilt here when its sources change.
+if [ -d node_modules ] && { [ ! -f dist/index.html ] || [ -n "$(find web public index.html package-lock.json vite.config.ts app.json -newer dist/index.html)" ]; }; then
   echo 'Building the web page...'
-  if [ ! -d node_modules ] || [ -n "$(find package-lock.json -newer node_modules)" ]; then npm ci --silent; fi
+  if [ -n "$(find package-lock.json -newer node_modules)" ]; then npm ci --silent; fi
   npm run build --silent
 fi
 

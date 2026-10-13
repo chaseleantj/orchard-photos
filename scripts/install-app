@@ -6,32 +6,66 @@ root=${0:A:h:h}
 app=~/Applications/Orchard.app
 port=$(plutil -extract port raw $root/app.json)
 url=http://127.0.0.1:$port
-# Apps start with a bare PATH, so add Homebrew's for python3 and npm. The redirect covers the whole
-# background job, so nothing holds the applet's output open and "do shell script" returns at once.
-start="export PATH=/opt/homebrew/bin:/usr/local/bin:\$PATH; (cd '$root' && exec ./orchard) < /dev/null > /tmp/orchard.log 2>&1 &"
+log=/tmp/orchard.log
+# Apps start with a bare PATH, so reuse this shell's, which finds Python however it was installed, plus Homebrew's
+# for a Python installed later. The redirect covers the whole background job, so "do shell script" returns at once.
+start="export PATH='$PATH:/opt/homebrew/bin:/usr/local/bin'; (cd '$root' && exec ./orchard) < /dev/null > $log 2>&1 & echo \$!"
 stop="lsof -ti tcp:$port -sTCP:LISTEN | xargs kill"
 
 mkdir -p ~/Applications
 # A stay-open applet sits in the Dock while Orchard runs: clicking it brings the page back, and Quit stops the server.
+# launcher is the process id of ./orchard, which becomes the server once installing is done.
 osacompile -o $app - <<SCRIPT
+global launcher
+
 on run
-  try
-    do shell script "$start"
-  on error messageText
-    display alert "Orchard could not open" message messageText as critical
-  end try
+  set launcher to ""
+  openOrchard()
 end run
 
 on reopen
-  try
-    do shell script "curl -sf $url/api/status > /dev/null"
-    open location "$url"
-  on error
-    run
-  end try
+  openOrchard()
 end reopen
 
+on openOrchard()
+  if responding() then
+    open location "$url"
+  else if launcher is not "" then
+    display notification "Orchard is still starting. The page opens when it's ready." with title "Orchard"
+  else
+    -- The same test as installed() in ./orchard: true when it is about to install packages.
+    set firstRun to (do shell script "cd '$root' && test -f .venv/.installed && test -z \"\$(find requirements.txt -newer .venv/.installed)\" || echo yes") is "yes"
+    set launcher to do shell script "$start"
+    if firstRun then display dialog "Setting up Orchard. This takes a few minutes, and the page opens when it's ready." with title "Orchard" buttons {"OK"} default button 1 giving up after 60
+  end if
+end openOrchard
+
+on responding()
+  try
+    do shell script "curl -sf $url/api/status > /dev/null"
+    return true
+  on error
+    return false
+  end try
+end responding
+
+-- When ./orchard exits without a server answering, show why instead of failing silently.
+on idle
+  if launcher is not "" then
+    try
+      do shell script "kill -0 " & launcher
+    on error
+      set launcher to ""
+      if not responding() then display alert "Orchard stopped" message ("The end of its log, $log:" & return & return & (do shell script "tail -n 15 $log")) as critical
+    end try
+  end if
+  return 2
+end idle
+
 on quit
+  try
+    if launcher is not "" then do shell script "pkill -P " & launcher & "; kill " & launcher
+  end try
   try
     do shell script "$stop"
   end try

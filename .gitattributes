@@ -1,0 +1,2 @@
+# Built by npm run build, and committed so running Orchard needs no Node.
+dist/** linguist-generated
