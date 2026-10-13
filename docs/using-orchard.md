@@ -31,7 +31,7 @@ Click an image to open it. The viewer shows the file name, date, folder, size an
 From the viewer, you can:
 
 - Find similar images.
-- Copy the image (Cmd+C).
+- Copy the image (Cmd+C on a Mac, Ctrl+C elsewhere).
 - Download the original.
 - Show it in Finder, or your file manager on Linux.
 - Click its folder to show only images from that folder.

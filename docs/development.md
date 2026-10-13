@@ -4,16 +4,23 @@ This guide is for working on Orchard's code. To understand how the parts fit tog
 
 ## Setup
 
-You need Python 3.12+ and Node 18+. Orchard runs on macOS and Linux. Running `./orchard` once installs everything. To do it by hand:
+Orchard runs on macOS and Linux, and needs Python 3.12+. Running `./orchard` once installs the Python packages. To do it by hand:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+```
+
+On Linux without an NVIDIA GPU, add `--extra-index-url https://download.pytorch.org/whl/cpu` to the `pip install`. Otherwise pip downloads several GB of CUDA libraries. `./orchard` does this for you. Search uses CUDA when it's available, then Apple's GPU, then the CPU.
+
+The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18+:
+
+```bash
 npm ci
 npm run build
 ```
 
-On Linux without an NVIDIA GPU, add `--extra-index-url https://download.pytorch.org/whl/cpu` to the `pip install`. Otherwise pip downloads several GB of CUDA libraries. `./orchard` does this for you. Search uses CUDA when it's available, then Apple's GPU, then the CPU.
+Commit `dist/` with your change. CI fails when it doesn't match the sources. Once `node_modules` exists, `./orchard` also rebuilds the page when its sources change.
 
 ## Running with live reload
 
@@ -51,8 +58,11 @@ The server takes these options:
 | `server/layout.py` | Lays out the map with UMAP. |
 | `server/atlas.py` | Packs map icons into sheets. |
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |
+| `dist/` | The built page. Committed, so running Orchard needs no Node. |
 | `tests/` | Python tests, one file per server module. |
 | `scripts/install-app` | Builds the macOS launcher app. Mac only. |
+| `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
+| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu and macOS. |
 | `app.json` | The app's name, command name and ports. |
 
 ## Tests
@@ -68,6 +78,14 @@ npm run build
 ```
 
 The tests never download CLIP. They replace the model with fixed vectors.
+
+The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard` on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
+
+```bash
+scripts/smoke-test
+```
+
+Add `--visual` to also download the search model and check that a search finds the right image. CI runs the smoke test and the Python tests on Ubuntu and macOS, and checks that `dist/` matches the sources. To run the visual check there, start the workflow by hand with **visual** ticked.
 
 ## Renaming
 

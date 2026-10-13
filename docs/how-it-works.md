@@ -30,7 +30,7 @@ Orchard uses CLIP ([`openai/clip-vit-base-patch32`](https://huggingface.co/opena
 
 After a scan, the server runs each new thumbnail through CLIP and stores the vector. To search, it turns your description (or your reference image) into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
 
-The model is downloaded once from Hugging Face at a pinned revision, and is shared by every folder. It runs on the GPU on Apple Silicon, and on the CPU otherwise.
+The model is downloaded once from Hugging Face at a pinned revision, and is shared by every folder. It runs on an NVIDIA GPU when there is one, then on the GPU of an Apple Silicon Mac, and otherwise on the CPU.
 
 ## Near-duplicates
 
