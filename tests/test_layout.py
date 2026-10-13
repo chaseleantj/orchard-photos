@@ -98,3 +98,20 @@ class LayoutTests(unittest.TestCase):
         exact = np.argsort(-np.where(np.eye(len(matrix), dtype=bool), -np.inf, matrix @ matrix.T), axis=1)[:, :5]
         for nearest, _ in (whole, pieces):
             self.assertEqual([set(row) for row in nearest], [set(row) for row in exact])
+
+    def test_large_folders_search_nearby_clusters_for_the_same_neighbours(self):
+        _, matrix = self.search.embeddings()
+        exact, _ = layout._nearest(matrix, matrix, 15, skip_self=True)
+        with patch.object(layout, "EXACT_LIMIT", 0):
+            clustered, _ = layout._neighbours(matrix, 15)
+            # With one probe most clusters are too small to hold 15 neighbours, so they search the whole folder.
+            with patch.object(layout, "PROBES", 1):
+                isolated, _ = layout._neighbours(matrix, 15)
+        for nearest in (clustered, isolated):
+            self.assertTrue(all(len(set(row)) == 15 and n not in row for n, row in enumerate(nearest)))
+        self.assertGreaterEqual(np.mean([len(set(a) & set(b)) / 15 for a, b in zip(clustered, exact)]), 0.95)
+
+    def test_layout_is_repeatable_when_split_across_threads(self):
+        _, matrix = self.search.embeddings()
+        with patch.object(layout, "EXACT_LIMIT", 0), patch.object(layout, "SHARE", 50):
+            np.testing.assert_array_equal(embed(matrix), embed(matrix))
