@@ -4,11 +4,27 @@ This guide covers everything you can do in Orchard once it's running. To install
 
 ## Opening a folder
 
-Choose a folder with **Folder**, at the right of the line under the search bar. On a Mac, this opens the system folder dialog, and on Linux it does when `zenity` or `kdialog` is installed. You can also type a path, or pick a recent folder. You can also open a folder from the terminal:
+Choose a folder with **Folder**, at the right of the line under the search bar. This opens the system folder dialog. In the browser on Linux, it needs `zenity` or `kdialog`. You can also type a path, or pick a recent folder. You can also open a folder from the terminal:
 
 ```bash
 ./orchard ~/Pictures
 ```
+
+If Orchard is already open, this switches its window to the folder and brings it to the front, instead of opening a second one.
+
+## The window and the browser
+
+Orchard opens in its own window, and closing the window quits it. To use your browser instead, start it with `--browser`:
+
+```bash
+./orchard ~/Pictures --browser
+```
+
+Orchard is then at http://127.0.0.1:4400, and stops when you press Ctrl+C in the terminal.
+
+The window remembers its size and place, and the page remembers settings like the theme. On a Mac, the Dock app and `./orchard` in a terminal each keep their own, because macOS stores them per app.
+
+On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, install it with `sudo apt install python3-gi gir1.2-webkit2-4.1`. Orchard uses these system packages, so they need to match the Python that runs it. That's the case when it's your system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why.
 
 Each folder keeps its own cache, so switching back to a folder you've opened before is quick. If the folder goes away, for example on an unplugged drive, Orchard keeps showing the last scan and tells you the folder is unavailable.
 
@@ -32,7 +48,7 @@ From the viewer, you can:
 
 - Find similar images.
 - Copy the image (Cmd+C on a Mac, Ctrl+C elsewhere).
-- Download the original.
+- Download the original. In the window, this asks where to save it.
 - Show it in Finder, or your file manager on Linux.
 - Click its folder to show only images from that folder.
 - Click the image, or the zoom button, to see it at actual size.

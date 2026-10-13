@@ -11,6 +11,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+On Linux, `./orchard` makes `.venv` with `--system-site-packages`, so the window can use the distribution's GTK bindings (`python3-gi` and `gir1.2-webkit2-4.1`), which pip can't install. The pinned packages in `requirements.txt` install into `.venv`, but pip may reuse a distribution package for one of their unpinned dependencies.
+
 Search runs CLIP with ONNX Runtime on the CPU. To use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
 
 The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18+:
@@ -44,13 +46,15 @@ The server takes these options:
 | `--port` | The port to listen on. Defaults to 4400. |
 | `--data-dir` | Where to keep the cache and model. |
 | `--no-watch` | Only scan when asked, instead of every minute. |
-| `--open-browser` | Open the page in the browser on start. |
+| `--window` | Open in its own window, and quit when it closes. `./orchard` passes this. |
+| `--browser` | Open the page in the browser instead. The last of `--window` and `--browser` wins. |
 
 ## Project layout
 
 | Path | Contents |
 | --- | --- |
 | `server/api.py` | The HTTP server, API routes and command line. |
+| `server/window.py` | The native window, through pywebview, and its folder dialog. |
 | `server/library.py` | One folder's library, and the queries the API answers from it. |
 | `server/scanner.py` | Finds image files, reads metadata and draws thumbnails. |
 | `server/semantic.py` | Downloads and runs CLIP with ONNX Runtime, and stores each folder's vectors. |
@@ -60,7 +64,7 @@ The server takes these options:
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |
 | `dist/` | The built page. Committed, so running Orchard needs no Node. |
 | `tests/` | Python tests, one file per server module. |
-| `scripts/install-app` | Builds the macOS launcher app. Mac only. |
+| `scripts/install-app` | Builds the macOS app that opens Orchard's window from the Dock. Mac only. |
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
 | `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu and macOS. |
 | `app.json` | The app's name, command name and ports. |
@@ -79,7 +83,7 @@ npm run build
 
 The tests never download CLIP. They replace the model with fixed vectors.
 
-The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard` on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
+The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard --browser` on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
 
 ```bash
 scripts/smoke-test
@@ -94,4 +98,6 @@ The app's name, command name and ports live in `app.json`. The window title, wor
 - The logo, in `web/src/Logo.tsx`, `public/` and `docs/`.
 - The package name in `package.json`.
 - The `orchard` launcher file.
+- The Mac app in `scripts/install-app`: its name, bundle identifier, icon and log file.
+- `server/window.py`: the `ORCHARD_BUNDLE` variable the Mac app sets, and the icon path.
 - The docs.

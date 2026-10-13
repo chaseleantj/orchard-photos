@@ -4,3 +4,4 @@ numpy==2.5.3
 onnxruntime==1.31.0
 tokenizers==0.23.3
 huggingface-hub==2.2.0
+pywebview==6.2.1

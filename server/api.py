@@ -19,6 +19,7 @@ import webbrowser
 
 from server.library import IMAGE_ID, Library
 from server.semantic import Encoder
+from server.window import Window, become_app, unavailable
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = json.loads((ROOT / 'app.json').read_text())
@@ -51,6 +52,7 @@ class App:
         self.encoder = Encoder(self.data_dir / 'models')
         self.recent_path = self.data_dir / 'recent.json'
         self.library: Library | None = None
+        self.window: Window | None = None
         self._lock = threading.Lock()
 
     def resolve(self, value) -> Path:
@@ -102,6 +104,20 @@ class App:
             self.encoder.activity = self.encoder.activity or ('loading' if self.encoder.downloaded() else 'downloading')
         threading.Thread(target=run, daemon=True).start()
 
+    def choose(self) -> str | None:
+        """Ask for a folder with the window's dialog, or the system's in the browser. Returns None when cancelled."""
+        start = self.library.folder if self.library else None
+        if self.window:
+            return self.window.choose_folder(start)
+        command = picker_command(start)
+        if not command:
+            raise ValueError('Type the folder path instead.')
+        return choose_folder(command)
+
+    def close(self):
+        if self.library:
+            self.library.close()
+
     def current(self) -> Library:
         library = self.library
         if library is None:
@@ -126,7 +142,7 @@ class App:
         library = self.library
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
-        result = {'app': APP['name'], 'platform': sys.platform, 'picker': picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
+        result = {'app': APP['name'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
                   'model': self.encoder.downloaded() or self.encoder.activity is not None}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
@@ -240,13 +256,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.app.open(self.form().get('path'))
                 self.json(self.app.status())
             elif route == ('/api/folder/choose', True):
-                command = picker_command(self.app.library.folder if self.app.library else None)
-                if not command:
-                    raise ValueError('Type the folder path instead.')
-                chosen = choose_folder(command)
+                chosen = self.app.choose()
                 if chosen:
                     self.app.open(chosen)
                 self.json({**self.app.status(), 'cancelled': not chosen})
+            elif route == ('/api/window/front', True):
+                if self.app.window:
+                    self.app.window.bring_forward()
+                self.json({'window': self.app.window is not None})
             elif route == ('/api/folder/forget', True):
                 self.app.forget(self.form().get('path'))
                 self.json(self.app.status())
@@ -360,14 +377,30 @@ def hand_over(url: str, folder: str | None):
     return None
 
 
-def main():
+def bring_forward(url: str) -> bool:
+    """Ask an already running server to bring its window to the front. Returns whether it has a window."""
+    request = urllib.request.Request(f'{url}/api/window/front', b'{}', {'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response).get('window') is True
+    except (OSError, ValueError):
+        return False
+
+
+def arguments(argv=None):
     parser = argparse.ArgumentParser(prog=APP['slug'], description='Browse and search the images in a folder.')
     parser.add_argument('folder', nargs='?', help='folder to show; defaults to the last one opened')
     parser.add_argument('--port', type=int, default=APP['port'])
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--no-watch', action='store_true', help='scan only on request, not every minute')
-    parser.add_argument('--open-browser', action='store_true')
-    args = parser.parse_args()
+    # The launcher passes --window, so a --browser after it wins.
+    parser.add_argument('--window', dest='show', action='store_const', const='window', help='open in its own window')
+    parser.add_argument('--browser', dest='show', action='store_const', const='browser', help='open in the browser instead')
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = arguments(argv)
     logging.basicConfig(level=logging.WARNING, format='%(levelname)s %(name)s: %(message)s')
     url = f'http://127.0.0.1:{args.port}'
     folder = str(Path(args.folder).expanduser().absolute()) if args.folder else None
@@ -379,12 +412,14 @@ def main():
         if error := hand_over(url, folder):
             sys.exit(error)
         print(f'{APP["name"]} is already running at {url}', flush=True)
-        if args.open_browser:
+        if args.show == 'browser' or args.show == 'window' and not bring_forward(url):
             webbrowser.open(url)
         return True
 
     if join_running():
         return
+    if args.show == 'window':
+        become_app(APP['name'])
     # The port stays fixed: the Dock app, a second launch and the page's saved settings all find the app by it.
     try:
         server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
@@ -393,6 +428,9 @@ def main():
         if join_running():
             return
         sys.exit(f'Port {args.port} is used by another program. Quit that program, or start {APP["name"]} on another port with --port.')
+    if args.show == 'window' and (reason := unavailable()):
+        print(f'{APP["name"]} is opening in the browser, because {reason}', flush=True)
+        args.show = 'browser'
     app = server.app = App(args.data_dir)
     try:
         if folder:
@@ -409,7 +447,19 @@ def main():
         threading.Thread(target=watch, daemon=True).start()
     threading.Thread(target=app.encoder.warm, daemon=True).start()
     print(f'{APP["name"]} is running at {url}', flush=True)
-    if args.open_browser:
+    if args.show == 'window':
+        # The window runs on the main thread, as macOS requires, and closing it quits.
+        app.window = Window(APP['name'], url)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            app.window.run()
+        except KeyboardInterrupt:
+            pass
+        server.shutdown()
+        server.server_close()
+        app.close()
+        return
+    if args.show == 'browser':
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()

@@ -71,8 +71,8 @@ def main():
         png(photos / f'{name}.png', rgb)
     shutil.copy(photos / 'red.png', photos / 'nested' / 'red copy.png')
     url = f'http://127.0.0.1:{args.port}'
-    # BROWSER=true makes the browser that ./orchard opens a no-op.
-    server = subprocess.Popen([str(ROOT / 'orchard'), str(photos), '--port', str(args.port), '--data-dir', str(data), '--no-watch'],
+    # --browser in place of the window, which CI has no screen for, and BROWSER=true makes opening the browser a no-op.
+    server = subprocess.Popen([str(ROOT / 'orchard'), str(photos), '--port', str(args.port), '--data-dir', str(data), '--no-watch', '--browser'],
                               env={**os.environ, 'BROWSER': 'true'})
     try:
         def scanned():

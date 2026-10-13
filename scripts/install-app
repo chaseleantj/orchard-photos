@@ -1,88 +1,61 @@
 #!/bin/zsh
-# Install ~/Applications/Orchard.app, which starts Orchard in the background, opens it, and stops it on Quit.
+# Install ~/Applications/Orchard.app, which opens Orchard's window from the Dock or Spotlight.
 set -e
 [[ $(uname) == Darwin ]] || { print -u2 'scripts/install-app builds a Mac app. On Linux, run ./orchard.'; exit 1; }
 root=${0:A:h:h}
 app=~/Applications/Orchard.app
-port=$(plutil -extract port raw $root/app.json)
-url=http://127.0.0.1:$port
 log=/tmp/orchard.log
+
+# The app's executable is a shell script, so it needs no compiler. The script runs ./orchard, and server/window.py
+# then reruns Python through Contents/MacOS/python, a link to .venv/app-python, which links to Python's own app
+# binary. macOS names an app after the bundle its executable sits in, so the window and its one Dock icon are
+# Orchard's, not Python's.
+rm -rf $app
+mkdir -p $app/Contents/MacOS $app/Contents/Resources
+cp $root/assets/orchard.icns $app/Contents/Resources/Orchard.icns
+cat > $app/Contents/Info.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Orchard</string>
+  <key>CFBundleIdentifier</key><string>local.orchard.launcher</string>
+  <key>CFBundleExecutable</key><string>Orchard</string>
+  <key>CFBundleIconFile</key><string>Orchard.icns</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
 # Apps start with a bare PATH, so reuse this shell's, which finds Python however it was installed, plus Homebrew's
-# for a Python installed later. The redirect covers the whole background job, so "do shell script" returns at once.
-start="export PATH='$PATH:/opt/homebrew/bin:/usr/local/bin'; (cd '$root' && exec ./orchard) < /dev/null > $log 2>&1 & echo \$!"
-stop="lsof -ti tcp:$port -sTCP:LISTEN | xargs kill"
+# for a Python installed later.
+cat > $app/Contents/MacOS/Orchard <<SCRIPT
+#!/bin/sh
+export PATH='$PATH:/opt/homebrew/bin:/usr/local/bin'
+export ORCHARD_BUNDLE="\$(cd "\$(dirname "\$0")/../.." && pwd)"
+cd '$root'
+# The same test as installed() in ./orchard: false when it is about to install packages.
+installed() { test -f .venv/.installed && test -z "\$(find requirements.txt -newer .venv/.installed)"; }
+if ! installed; then
+  osascript -e 'display dialog "Setting up Orchard. This takes about a minute, and the window opens when it is ready." with title "Orchard" buttons {"OK"} default button 1' > /dev/null 2>&1 &
+  dialog=\$!
+  # The dialog closes before the window opens, or macOS shows the two under separate Dock icons.
+  (until installed; do sleep 0.5; done; kill \$dialog 2> /dev/null) &
+  watcher=\$!
+fi
+status=0
+./orchard > $log 2>&1 || status=\$?
+if [ -n "\$dialog" ]; then kill \$watcher \$dialog 2> /dev/null; fi
+[ \$status = 0 ] && exit
+# Orchard stopped without opening, so say why instead of failing silently.
+osascript -e 'on run argv' -e 'display alert "Orchard stopped" message (item 1 of argv) as critical' -e 'end run' "The end of its log, $log:
 
-mkdir -p ~/Applications
-# A stay-open applet sits in the Dock while Orchard runs: clicking it brings the page back, and Quit stops the server.
-# launcher is the process id of ./orchard, which becomes the server once installing is done.
-osacompile -o $app - <<SCRIPT
-global launcher
-
-on run
-  set launcher to ""
-  openOrchard()
-end run
-
-on reopen
-  openOrchard()
-end reopen
-
-on openOrchard()
-  if responding() then
-    open location "$url"
-  else if launcher is not "" then
-    display notification "Orchard is still starting. The page opens when it's ready." with title "Orchard"
-  else
-    -- The same test as installed() in ./orchard: true when it is about to install packages.
-    set firstRun to (do shell script "cd '$root' && test -f .venv/.installed && test -z \"\$(find requirements.txt -newer .venv/.installed)\" || echo yes") is "yes"
-    set launcher to do shell script "$start"
-    if firstRun then display dialog "Setting up Orchard. This takes about a minute, and the page opens when it's ready." with title "Orchard" buttons {"OK"} default button 1 giving up after 60
-  end if
-end openOrchard
-
-on responding()
-  try
-    do shell script "curl -sf $url/api/status > /dev/null"
-    return true
-  on error
-    return false
-  end try
-end responding
-
--- When ./orchard exits without a server answering, show why instead of failing silently.
-on idle
-  if launcher is not "" then
-    try
-      do shell script "kill -0 " & launcher
-    on error
-      set launcher to ""
-      if not responding() then display alert "Orchard stopped" message ("The end of its log, $log:" & return & return & (do shell script "tail -n 15 $log")) as critical
-    end try
-  end if
-  return 2
-end idle
-
-on quit
-  try
-    if launcher is not "" then do shell script "pkill -P " & launcher & "; kill " & launcher
-  end try
-  try
-    do shell script "$stop"
-  end try
-  continue quit
-end quit
+\$(tail -n 15 $log)" > /dev/null
 SCRIPT
-
-resources=$app/Contents/Resources
-cp $root/assets/orchard.icns $resources/Orchard.icns
-rm -f $resources/applet.icns
-plist=$app/Contents/Info.plist
-# osacompile's asset-catalog icon overrides CFBundleIconFile unless removed.
-plutil -remove CFBundleIconName $plist 2>/dev/null || true
-plutil -replace CFBundleIconFile -string Orchard.icns $plist
-plutil -replace CFBundleIdentifier -string local.orchard.launcher $plist
-# osacompile ignores -s when reading the script from stdin.
-plutil -replace OSAAppletStayOpen -bool YES $plist
+chmod +x $app/Contents/MacOS/Orchard
+ln -s $root/.venv/app-python $app/Contents/MacOS/python
+# Signed, so macOS can remember what the user lets it open, like folders on the Desktop.
 codesign --force --sign - $app
 touch $app
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $app
