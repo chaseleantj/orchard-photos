@@ -43,6 +43,21 @@
         "HF_ENDPOINT": "http://127.0.0.1:9"
       },
       "port": 4411
+    },
+    {
+      "name": "orchard-launch-video",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "server.api",
+        "/Users/chaselean/Desktop/apps/orchard-launch-video/library2/Pictures",
+        "--port",
+        "4432",
+        "--data-dir",
+        "/Users/chaselean/Desktop/apps/orchard-launch-video/.orchard-data",
+        "--no-watch"
+      ],
+      "port": 4432
     }
   ]
 }
