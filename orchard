@@ -5,13 +5,6 @@ set -e
 if [ -d "${1:-}" ]; then folder=$(cd "$1" && pwd -P); else folder=${1:-}; fi
 cd "$(dirname "$(readlink -f "$0")")"
 
-# Linux has no Metal, and pip's default torch there carries gigabytes of CUDA libraries. Without an NVIDIA GPU, prefer the CPU wheel.
-index=
-download='about 300 MB'
-if [ "$(uname)" = Linux ]; then
-  if command -v nvidia-smi >/dev/null; then download='about 3 GB'; else index='--extra-index-url https://download.pytorch.org/whl/cpu'; fi
-fi
-
 installed() { [ -f .venv/.installed ] && [ -z "$(find requirements.txt -newer .venv/.installed)" ]; }
 new_enough() { "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null; }
 
@@ -46,16 +39,15 @@ if ! installed; then
   trap 'rm -rf "$lock"' EXIT
   trap 'exit 1' INT TERM
   if ! installed; then
-    if ! { [ -x .venv/bin/python ] && new_enough .venv/bin/python; }; then
-      python=$(find_python)
-      version=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-      # Debian and Ubuntu ship the part of venv that installs pip as a separate package.
-      "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt install python$version-venv" >&2; exit 1; }
-      "$python" -m venv --clear .venv
-    fi
-    echo "Installing Python packages. The first run downloads $download, which takes a few minutes."
-    # shellcheck disable=SC2086
-    .venv/bin/pip install --disable-pip-version-check -r requirements.txt $index
+    python=$(find_python)
+    version=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+    # Debian and Ubuntu ship the part of venv that installs pip as a separate package.
+    "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt install python$version-venv" >&2; exit 1; }
+    # A fresh environment each time, so packages that requirements.txt drops are removed too. pip's cache keeps
+    # unchanged packages from downloading again.
+    "$python" -m venv --clear .venv
+    echo 'Installing Python packages. The first run downloads under 70 MB, which takes about a minute.'
+    .venv/bin/pip install --disable-pip-version-check -r requirements.txt
     touch .venv/.installed
   fi
   rm -rf "$lock"

@@ -3,11 +3,13 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
 
-from server.layout import Layout
+from server import layout
+from server.layout import Layout, embed
 from server.semantic import MODEL, Encoder, SemanticIndex
 
 
@@ -81,3 +83,18 @@ class LayoutTests(unittest.TestCase):
             connection.execute("DELETE FROM images WHERE id >= '00000005'")
         self.fit()
         self.assertEqual(set(self.layout.positions()), {f"{n:08x}" for n in range(5)})
+
+    def test_layout_is_repeatable_and_keeps_identical_images_finite(self):
+        _, matrix = self.search.embeddings()
+        np.testing.assert_array_equal(embed(matrix), embed(matrix))
+        same = np.tile(matrix[:1], (20, 1))
+        self.assertTrue(np.isfinite(embed(same)).all())
+
+    def test_neighbours_are_the_same_whether_found_in_one_block_or_many(self):
+        _, matrix = self.search.embeddings()
+        whole = layout._nearest(matrix, matrix, 5, skip_self=True)
+        with patch.object(layout, "BLOCK", 7 * len(matrix)):
+            pieces = layout._nearest(matrix, matrix, 5, skip_self=True)
+        exact = np.argsort(-np.where(np.eye(len(matrix), dtype=bool), -np.inf, matrix @ matrix.T), axis=1)[:, :5]
+        for nearest, _ in (whole, pieces):
+            self.assertEqual([set(row) for row in nearest], [set(row) for row in exact])

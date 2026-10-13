@@ -5,18 +5,27 @@ from io import BytesIO
 import logging
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import threading
 
 from server.scanner import thumbnail_path
 
+# The embedding space. Stored vectors are keyed by it, so they stay valid for as long as the weights are CLIP's own.
 MODEL = "openai/clip-vit-base-patch32"
+# MODEL's weights exported to ONNX, which give the same vectors as the PyTorch original.
 # A fixed revision, so every install runs the same weights and a finished download can be recognised on disk.
-REVISION = "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268"
-# Only what CLIP needs in PyTorch: the repository also holds TensorFlow and Flax copies of the weights.
-FILES = ["config.json", "preprocessor_config.json", "pytorch_model.bin", "merges.txt", "vocab.json", "tokenizer.json",
-         "tokenizer_config.json", "special_tokens_map.json"]
-DOWNLOAD_BYTES = 608_863_580
+REPOSITORY = "Xenova/clip-vit-base-patch32"
+REVISION = "d15189d7028b43f1d3e65039190477f6af591c2a"
+# Only the full-precision encoders: the repository also holds a combined model and smaller, less faithful copies.
+FILES = ["onnx/vision_model.onnx", "onnx/text_model.onnx", "tokenizer.json"]
+DOWNLOAD_BYTES = 607_968_381
+# CLIP's inputs: square images normalised per channel, and descriptions of up to 77 tokens.
+IMAGE_SIZE = 224
+IMAGE_MEAN = (0.48145466, 0.4578275, 0.40821073)
+IMAGE_STD = (0.26862954, 0.26130258, 0.27577711)
+MAX_TOKENS = 77
+END_OF_TEXT = "<|endoftext|>"
 BATCH_SIZE = 16
 logger = logging.getLogger(__name__)
 
@@ -29,18 +38,17 @@ class Encoder:
 
     def __init__(self, cache: Path):
         self.cache = Path(cache)
-        self.repository = self.cache / f"models--{MODEL.replace('/', '--')}"
+        self.repository = self.cache / f"models--{REPOSITORY.replace('/', '--')}"
         self.lock = threading.RLock()
         self.activity = None
         self.failure = None
-        self._model = None
-        self._processor = None
-        self._torch = None
-        self._device = "cpu"
+        self._vision = None
+        self._text = None
+        self._tokenizer = None
 
     @property
     def loaded(self) -> bool:
-        return self._model is not None
+        return self._vision is not None
 
     def downloaded(self) -> bool:
         """Whether every file is on disk, so indexing needs no download and can start on its own."""
@@ -59,16 +67,18 @@ class Encoder:
         self.activity = "downloading"
         try:
             from huggingface_hub import snapshot_download
-            snapshot_download(MODEL, revision=REVISION, cache_dir=self.cache, allow_patterns=FILES)
+            snapshot_download(REPOSITORY, revision=REVISION, cache_dir=self.cache, allow_patterns=FILES)
         except ImportError as error:
             raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
         except Exception as error:
             raise RuntimeError("The search model could not download. Check your internet connection, then try again.") from error
+        # Earlier versions ran the PyTorch copy of the weights, which nothing reads any more.
+        shutil.rmtree(self.cache / f"models--{MODEL.replace('/', '--')}", ignore_errors=True)
 
     def load(self):
         """Download the weights if they are missing, then load them. Raises RuntimeError with a message to show."""
         with self.lock:
-            if self._model is not None:
+            if self._vision is not None:
                 return
             self.failure = None
             self.cache.mkdir(parents=True, exist_ok=True)
@@ -83,20 +93,24 @@ class Encoder:
                     self._fetch()
                 self.activity = "loading"
                 try:
-                    import torch
-                    from transformers import CLIPModel, CLIPProcessor
+                    import onnxruntime
+                    from tokenizers import Tokenizer
                 except ImportError as error:
                     raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
-                self._torch = torch
-                self._device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+                # CUDA when onnxruntime-gpu is installed. Core ML is left out: measured on Apple Silicon, it ran no faster than the CPU.
+                providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
+                             if name in onnxruntime.get_available_providers()]
+                snapshot = self.repository / "snapshots" / REVISION
                 try:
-                    # Loading only from disk also stops Transformers fetching a converted copy of the weights.
-                    options = {"cache_dir": self.cache, "revision": REVISION, "local_files_only": True}
-                    processor = CLIPProcessor.from_pretrained(MODEL, **options)
-                    model = CLIPModel.from_pretrained(MODEL, use_safetensors=False, **options).to(self._device).eval()
+                    vision = onnxruntime.InferenceSession(str(snapshot / "onnx" / "vision_model.onnx"), providers=providers)
+                    text = onnxruntime.InferenceSession(str(snapshot / "onnx" / "text_model.onnx"), providers=providers)
+                    tokenizer = Tokenizer.from_file(str(snapshot / "tokenizer.json"))
                 except Exception as error:
                     raise RuntimeError("The search model could not load. Retry, or delete the models folder to download it again.") from error
-                self._processor, self._model = processor, model
+                tokenizer.enable_truncation(MAX_TOKENS)
+                # The text model reads each description up to its first end token, so padding with more of them changes nothing.
+                tokenizer.enable_padding(pad_id=tokenizer.token_to_id(END_OF_TEXT), pad_token=END_OF_TEXT)
+                self._vision, self._text, self._tokenizer = vision, text, tokenizer
             except RuntimeError as error:
                 self.failure = str(error)
                 raise
@@ -104,22 +118,17 @@ class Encoder:
                 self.activity = None
 
     def features(self, *, images=None, text=None):
+        import numpy
+
         with self.lock:
             self.load()
-            inputs = self._processor(
-                images=images, text=text, return_tensors="pt",
-                **({"padding": True, "truncation": True, "max_length": 77} if text is not None else {}),
-            ).to(self._device)
-            with self._torch.inference_mode():
-                if images is not None:
-                    features = self._model.get_image_features(**inputs)
-                else:
-                    features = self._model.get_text_features(**inputs)
-                # Transformers 5 returns a model output; 4 returned the projected tensor.
-                if hasattr(features, "pooler_output"):
-                    features = features.pooler_output
-                features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
-            return features.cpu().float().numpy()
+            if images is not None:
+                pixels = numpy.stack([_pixels(image) for image in images])
+                features = self._vision.run(None, {"pixel_values": pixels})[0]
+            else:
+                tokens = numpy.array([encoding.ids for encoding in self._tokenizer.encode_batch(text)], dtype=numpy.int64)
+                features = self._text.run(None, {"input_ids": tokens})[0]
+            return features / numpy.maximum(numpy.linalg.norm(features, axis=-1, keepdims=True), 1e-12)
 
     def warm(self):
         """Load the model ahead of the first query. No-op until the weights have been downloaded."""
@@ -129,6 +138,22 @@ class Encoder:
             self.features(text=["warm up"])
         except Exception:
             logger.exception("Visual search warm-up failed")
+
+
+def _pixels(image):
+    """One RGB image as CLIP's input: resized, centre-cropped and normalised, channels first."""
+    import numpy
+    from PIL import Image
+
+    width, height = image.size
+    # The short side becomes 224 px, and the long side is rounded down the way Transformers does it, so the crop
+    # lands on the same pixels as the PyTorch original.
+    long = int(IMAGE_SIZE * max(width, height) / min(width, height))
+    width, height = (IMAGE_SIZE, long) if width <= height else (long, IMAGE_SIZE)
+    left, top = (width - IMAGE_SIZE) // 2, (height - IMAGE_SIZE) // 2
+    image = image.resize((width, height), Image.Resampling.BICUBIC).crop((left, top, left + IMAGE_SIZE, top + IMAGE_SIZE))
+    pixels = numpy.asarray(image, dtype=numpy.float32) / 255
+    return ((pixels - numpy.array(IMAGE_MEAN, numpy.float32)) / numpy.array(IMAGE_STD, numpy.float32)).transpose(2, 0, 1)
 
 
 class SemanticIndex:

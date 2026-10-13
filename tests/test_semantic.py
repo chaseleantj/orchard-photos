@@ -3,13 +3,14 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import numpy as np
 from PIL import Image
 
 from server.scanner import thumbnail_path
-from server.semantic import DOWNLOAD_BYTES, FILES, MODEL, REVISION, Encoder, SemanticIndex
+from server.semantic import DOWNLOAD_BYTES, FILES, IMAGE_MEAN, IMAGE_SIZE, IMAGE_STD, MODEL, REVISION, Encoder, SemanticIndex, _pixels
 
 
 class SemanticTests(unittest.TestCase):
@@ -42,8 +43,8 @@ class SemanticTests(unittest.TestCase):
 
     def test_downloaded_weights_are_recognised_only_when_complete(self):
         snapshot = self.encoder.repository / "snapshots" / REVISION
-        snapshot.mkdir(parents=True)
         for name in FILES[:-1]:
+            (snapshot / name).parent.mkdir(parents=True, exist_ok=True)
             (snapshot / name).write_text("{}")
         self.assertFalse(self.encoder.downloaded())
         (snapshot / FILES[-1]).write_text("{}")
@@ -60,6 +61,14 @@ class SemanticTests(unittest.TestCase):
         self.encoder.activity, self.encoder.failure = None, "The search model could not download."
         self.assertEqual((self.search.status()["state"], self.search.status()["error"]), ("error", "The search model could not download."))
 
+    def test_a_finished_download_removes_the_old_pytorch_weights(self):
+        old = self.directory / "models" / f"models--{MODEL.replace('/', '--')}" / "blobs"
+        old.mkdir(parents=True)
+        (old / "pytorch_model.bin").write_bytes(b"x")
+        with patch("huggingface_hub.snapshot_download"):
+            self.encoder._fetch()
+        self.assertFalse(old.parent.exists())
+
     def test_a_failed_download_is_kept_for_the_status_and_cleared_on_retry(self):
         with patch.object(self.encoder, "_fetch", side_effect=RuntimeError("No connection")):
             with self.assertRaisesRegex(RuntimeError, "No connection"):
@@ -69,6 +78,25 @@ class SemanticTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.encoder.load()
         self.assertEqual(self.encoder.failure, "Still no connection")
+
+    def test_images_are_resized_and_centre_cropped_like_clip(self):
+        wide = Image.new("RGB", (900, 300), (255, 0, 0))
+        wide.paste((128, 128, 128), (300, 0, 600, 300))
+        pixels = _pixels(wide)
+        self.assertEqual(pixels.shape, (3, IMAGE_SIZE, IMAGE_SIZE))
+        grey = (128 / 255 - np.array(IMAGE_MEAN)) / np.array(IMAGE_STD)
+        np.testing.assert_allclose(pixels[:, 10:-10, 10:-10].mean(axis=(1, 2)), grey, atol=1e-3)
+        self.assertEqual(_pixels(Image.new("RGB", (5, 2000))).shape, (3, IMAGE_SIZE, IMAGE_SIZE))
+
+    def test_features_run_the_matching_encoder_and_return_unit_vectors(self):
+        self.encoder._vision = Mock(**{"run.return_value": [np.array([[3.0, 4.0]], dtype=np.float32)]})
+        self.encoder._text = Mock(**{"run.return_value": [np.array([[0.0, 2.0], [5.0, 0.0]], dtype=np.float32)]})
+        self.encoder._tokenizer = Mock(**{"encode_batch.return_value": [SimpleNamespace(ids=[1, 2, 3]), SimpleNamespace(ids=[1, 3, 3])]})
+        np.testing.assert_allclose(self.encoder.features(images=[Image.new("RGB", (300, 200))]), [[0.6, 0.8]])
+        self.assertEqual(self.encoder._vision.run.call_args.args[1]["pixel_values"].shape, (1, 3, IMAGE_SIZE, IMAGE_SIZE))
+        np.testing.assert_allclose(self.encoder.features(text=["a cat", "a dog"]), [[0, 1], [1, 0]])
+        tokens = self.encoder._text.run.call_args.args[1]["input_ids"]
+        self.assertEqual((tokens.dtype, tokens.tolist()), (np.int64, [[1, 2, 3], [1, 3, 3]]))
 
     def test_model_failure_is_reported_and_can_be_retried(self):
         self.add("1")

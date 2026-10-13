@@ -17,7 +17,7 @@ cd orchard
 ./orchard ~/Pictures
 ```
 
-The first run installs Python packages, which takes a few minutes: about 300 MB to download, and 1.2 GB on disk. On Linux without an NVIDIA GPU, it installs the CPU build of PyTorch, which avoids several GB of CUDA libraries. After that, Orchard opens at http://127.0.0.1:4400. Stop it with Ctrl+C.
+The first run installs Python packages, which takes about a minute: about 45 MB to download and 200 MB on disk on macOS, and about 65 MB and 250 MB on Linux. After that, Orchard opens at http://127.0.0.1:4400. Stop it with Ctrl+C.
 
 Run `./orchard` with no folder to reopen the last one. Running it with a folder while Orchard is already open switches to that folder.
 
@@ -29,7 +29,7 @@ To open Orchard from the Dock or Spotlight like any Mac app, run this once:
 scripts/install-app
 ```
 
-It installs `~/Applications/Orchard.app`, which starts Orchard in the background and opens the page. The first start sets things up, which takes a few minutes. If Orchard can't start, the app shows the end of its log, `/tmp/orchard.log`. Orchard stays in the Dock while it runs. Click the icon to bring the page back, and quit it to stop Orchard.
+It installs `~/Applications/Orchard.app`, which starts Orchard in the background and opens the page. The first start sets things up, which takes about a minute. If Orchard can't start, the app shows the end of its log, `/tmp/orchard.log`. Orchard stays in the Dock while it runs. Click the icon to bring the page back, and quit it to stop Orchard.
 
 The app finds Python the same way your Terminal does when you run `scripts/install-app`. If you install Python somewhere new later, run it again.
 

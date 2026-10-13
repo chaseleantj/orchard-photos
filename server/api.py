@@ -17,7 +17,6 @@ import urllib.error
 import urllib.request
 import webbrowser
 
-from server import layout
 from server.library import IMAGE_ID, Library
 from server.semantic import Encoder
 
@@ -409,7 +408,6 @@ def main():
                     app.library.scan()
         threading.Thread(target=watch, daemon=True).start()
     threading.Thread(target=app.encoder.warm, daemon=True).start()
-    threading.Thread(target=layout.warm, daemon=True).start()
     print(f'{APP["name"]} is running at {url}', flush=True)
     if args.open_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()

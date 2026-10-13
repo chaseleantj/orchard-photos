@@ -11,7 +11,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-On Linux without an NVIDIA GPU, add `--extra-index-url https://download.pytorch.org/whl/cpu` to the `pip install`. Otherwise pip downloads several GB of CUDA libraries. `./orchard` does this for you. Search uses CUDA when it's available, then Apple's GPU, then the CPU.
+Search runs CLIP with ONNX Runtime on the CPU. To use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
 
 The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18+:
 
@@ -53,9 +53,9 @@ The server takes these options:
 | `server/api.py` | The HTTP server, API routes and command line. |
 | `server/library.py` | One folder's library, and the queries the API answers from it. |
 | `server/scanner.py` | Finds image files, reads metadata and draws thumbnails. |
-| `server/semantic.py` | Downloads and runs CLIP, and stores each folder's vectors. |
+| `server/semantic.py` | Downloads and runs CLIP with ONNX Runtime, and stores each folder's vectors. |
 | `server/groups.py` | Groups near-duplicates. |
-| `server/layout.py` | Lays out the map with UMAP. |
+| `server/layout.py` | Lays out the map with UMAP, written in NumPy. |
 | `server/atlas.py` | Packs map icons into sheets. |
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |
 | `dist/` | The built page. Committed, so running Orchard needs no Node. |

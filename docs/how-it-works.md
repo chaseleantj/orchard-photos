@@ -30,7 +30,7 @@ Orchard uses CLIP ([`openai/clip-vit-base-patch32`](https://huggingface.co/opena
 
 After a scan, the server runs each new thumbnail through CLIP and stores the vector. To search, it turns your description (or your reference image) into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
 
-The model is downloaded once from Hugging Face at a pinned revision, and is shared by every folder. It runs on an NVIDIA GPU when there is one, then on the GPU of an Apple Silicon Mac, and otherwise on the CPU.
+Orchard runs CLIP with ONNX Runtime, from an ONNX export of the same weights ([`Xenova/clip-vit-base-patch32`](https://huggingface.co/Xenova/clip-vit-base-patch32)), which gives the same vectors as the original. The model is downloaded once from Hugging Face at a pinned revision, and is shared by every folder. It runs on the CPU, or on an NVIDIA GPU if `onnxruntime-gpu` is installed.
 
 ## Near-duplicates
 
@@ -42,7 +42,7 @@ The image that fronts each group is the sharpest one, measured by the variance o
 
 ## The map
 
-The map uses UMAP to squeeze the CLIP vectors down to two dimensions, so similar images land close together. Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard only fits the layout again once new images make up more than a fifth of the map.
+The map uses UMAP to squeeze the CLIP vectors down to two dimensions, so similar images land close together. UMAP links each image to its 15 nearest neighbours, then arranges the images so linked ones pull together while random pairs push apart. Orchard has its own short version in NumPy, which avoids several hundred MB of dependencies. Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard only fits the layout again once new images make up more than a fifth of the map.
 
 To draw thousands of images quickly, the server packs small icons into atlas sheets of 1,024 icons each. The page loads a handful of sheets instead of one request per image.
 

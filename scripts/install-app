@@ -36,7 +36,7 @@ on openOrchard()
     -- The same test as installed() in ./orchard: true when it is about to install packages.
     set firstRun to (do shell script "cd '$root' && test -f .venv/.installed && test -z \"\$(find requirements.txt -newer .venv/.installed)\" || echo yes") is "yes"
     set launcher to do shell script "$start"
-    if firstRun then display dialog "Setting up Orchard. This takes a few minutes, and the page opens when it's ready." with title "Orchard" buttons {"OK"} default button 1 giving up after 60
+    if firstRun then display dialog "Setting up Orchard. This takes about a minute, and the page opens when it's ready." with title "Orchard" buttons {"OK"} default button 1 giving up after 60
   end if
 end openOrchard
 

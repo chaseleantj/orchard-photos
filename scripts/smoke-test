@@ -20,7 +20,7 @@ import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
 COLOURS = {'red': (220, 30, 30), 'green': (30, 160, 60), 'blue': (30, 60, 220), 'yellow': (240, 210, 30)}
-INSTALL_SECONDS = 1800
+INSTALL_SECONDS = 600
 WORK_SECONDS = 600
 
 
