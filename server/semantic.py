@@ -88,7 +88,7 @@ class Encoder:
                 except ImportError as error:
                     raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
                 self._torch = torch
-                self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+                self._device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
                 try:
                     # Loading only from disk also stops Transformers fetching a converted copy of the weights.
                     options = {"cache_dir": self.cache, "revision": REVISION, "local_files_only": True}

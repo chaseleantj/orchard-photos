@@ -19,12 +19,12 @@ export const settingUp = (search: SearchStatus) => search.state === 'downloading
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unreadable: { path: string; error: string }[]; unlistedFolders: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unlistedFolders: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 export interface Folder { path: string; label: string; name: string; id: string }
 export interface RecentFolder { path: string; label: string; available: boolean }
 /** `model` says the visual search model is downloaded or on its way. */
-export interface Status { app: string; platform: string; model: boolean; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+export interface Status { app: string; platform: string; picker: boolean; model: boolean; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }

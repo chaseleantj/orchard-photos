@@ -1,10 +1,27 @@
-#!/bin/zsh
+#!/bin/sh
 # Start Orchard, or point the running one at another folder: orchard [folder]
+# Installs dependencies and builds the page on first run, and again when they change.
 set -e
-folder=${1:+${1:A}}
-cd "${0:A:h}"
-if [[ ! -x .venv/bin/python || ! -f dist/index.html ]]; then
-  print 'Run the setup steps in README.md first.'
-  exit 1
+if [ -d "${1:-}" ]; then folder=$(cd "$1" && pwd -P); else folder=${1:-}; fi
+cd "$(dirname "$(readlink -f "$0")")"
+
+# Linux has no Metal, and pip's default torch there carries gigabytes of CUDA libraries. Without an NVIDIA GPU, prefer the CPU wheel.
+index=
+if [ "$(uname)" = Linux ] && ! command -v nvidia-smi >/dev/null; then index='--extra-index-url https://download.pytorch.org/whl/cpu'; fi
+
+if [ ! -f .venv/.installed ] || [ -n "$(find requirements.txt -newer .venv/.installed)" ]; then
+  echo 'Installing Python packages (first run takes a few minutes)...'
+  [ -x .venv/bin/python ] || python3 -m venv .venv
+  # shellcheck disable=SC2086
+  .venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt $index
+  touch .venv/.installed
 fi
-exec .venv/bin/python -m server.api --open-browser ${folder:+"$folder"} "${@:2}"
+
+if [ ! -f dist/index.html ] || [ -n "$(find web public index.html package-lock.json vite.config.ts app.json -newer dist/index.html 2>/dev/null)" ]; then
+  echo 'Building the web page...'
+  if [ ! -d node_modules ] || [ -n "$(find package-lock.json -newer node_modules)" ]; then npm ci --silent; fi
+  npm run build --silent
+fi
+
+if [ $# -gt 0 ]; then shift; fi
+exec .venv/bin/python -m server.api --open-browser ${folder:+"$folder"} "$@"

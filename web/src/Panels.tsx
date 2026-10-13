@@ -98,7 +98,6 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const scanning = scan.state === 'scanning';
   const complete = search.state === 'ready' && search.indexed >= counts.images;
   const work = searchWork(search);
-  const unreadable = !!library.unreadable.length && <Disclosure summary="Files that could not be read"><ul className="file-list">{library.unreadable.map(file => <li key={file.path}><span><span className="path">{file.path}</span><span>{file.error}</span></span></li>)}</ul>{counts.unreadable > library.unreadable.length && <p>And {plural(counts.unreadable - library.unreadable.length, 'more file')}.</p>}</Disclosure>;
   const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanLeft ? `. ${scanLeft}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
   const ledger = [
@@ -108,7 +107,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
   ].filter(row => row.shown);
   const totalLabel = ledger.length < 2 ? 'Images' : narrowed ? 'In the library' : 'In the grid';
-  return <Panel title="Library" anchor={anchor} onClose={onClose}>
+  return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <p className="path">{status.folder!.label}</p>
     <p>Subfolders included, hidden ones skipped. Your files are never changed.</p>
     <dl className="counts">
@@ -116,8 +115,6 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
     {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
-    {!!counts.nearDuplicates && <p>A stack is fronted by its sharpest image. Open it to see the rest.</p>}
-    {unreadable}
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped, since macOS keeps {library.photoLibraries.length === 1 ? 'it' : 'them'} closed to other apps. Export photos to a folder to include them.</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
@@ -159,9 +156,9 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
   };
   const forget = async (folder: string) => { try { onOpened(await post<Status>('/api/folder/forget', { path: folder })); } catch (e) { setError((e as Error).message); } };
   return <div className="chooser">
-    {status.platform === 'darwin' && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
+    {status.picker && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
     <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
-      <label htmlFor="folder-path">{status.platform === 'darwin' ? 'Or type its path' : 'Folder path'}</label>
+      <label htmlFor="folder-path">{status.picker ? 'Or type its path' : 'Folder path'}</label>
       <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button secondary" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>
     </form>
     {error && <p className="error-copy" role="alert">{error}</p>}

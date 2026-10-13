@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler
+from server.api import APP, RECENT_LIMIT, App, Handler, picker_command
 
 PORT = APP['port']
 
@@ -129,6 +129,13 @@ class HandlerTests(unittest.TestCase):
                 handler = self.dispatch('/api/folder', {'Host': f'localhost:{PORT}', 'Content-Length': str(len(broken))}, post=True, body=broken)
                 self.assertEqual(handler.json.call_args.args[1], 400)
                 handler.server.app.open.assert_not_called()
+
+    def test_linux_folder_dialog_uses_zenity_then_kdialog_then_none(self):
+        for installed, program in ((['zenity', 'kdialog'], 'zenity'), (['kdialog'], 'kdialog'), ([], None)):
+            with self.subTest(installed=installed), patch('server.api.sys.platform', 'linux'), \
+                    patch('server.api.shutil.which', lambda name: name if name in installed else None):
+                command = picker_command(None)
+                self.assertEqual(command and command[0], program)
 
 
 if __name__ == '__main__':

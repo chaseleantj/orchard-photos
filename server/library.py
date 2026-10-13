@@ -106,12 +106,10 @@ class Library:
         with self.connect() as db:
             images = db.execute('SELECT count(*) FROM images').fetchone()[0]
             files = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
-            unreadable = [dict(row) for row in db.execute(
-                'SELECT path, error FROM files WHERE error IS NOT NULL ORDER BY path LIMIT 50')]
             unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
         return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
-                'unreadable': unreadable, 'unlistedFolders': self.stats.get('unlisted_folders', 0),
+                'unlistedFolders': self.stats.get('unlisted_folders', 0),
                 'photoLibraries': self.stats.get('photo_libraries', []),
                 'scan': self.scan_state, 'search': self.semantic.status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}

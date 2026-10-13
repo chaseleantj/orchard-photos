@@ -1,19 +1,42 @@
 #!/bin/zsh
-# Install ~/Applications/Orchard.app, which starts Orchard in the background and opens it.
+# Install ~/Applications/Orchard.app, which starts Orchard in the background, opens it, and stops it on Quit.
 set -e
+[[ $(uname) == Darwin ]] || { print -u2 'scripts/install-app builds a Mac app. On Linux, run ./orchard.'; exit 1; }
 root=${0:A:h:h}
 app=~/Applications/Orchard.app
-command="cd '$root' && nohup ./orchard > /tmp/orchard.log 2>&1 &"
+port=$(plutil -extract port raw $root/app.json)
+url=http://127.0.0.1:$port
+# Apps start with a bare PATH, so add Homebrew's for python3 and npm. The redirect covers the whole
+# background job, so nothing holds the applet's output open and "do shell script" returns at once.
+start="export PATH=/opt/homebrew/bin:/usr/local/bin:\$PATH; (cd '$root' && exec ./orchard) < /dev/null > /tmp/orchard.log 2>&1 &"
+stop="lsof -ti tcp:$port -sTCP:LISTEN | xargs kill"
 
 mkdir -p ~/Applications
+# A stay-open applet sits in the Dock while Orchard runs: clicking it brings the page back, and Quit stops the server.
 osacompile -o $app - <<SCRIPT
 on run
   try
-    do shell script "$command"
+    do shell script "$start"
   on error messageText
     display alert "Orchard could not open" message messageText as critical
   end try
 end run
+
+on reopen
+  try
+    do shell script "curl -sf $url/api/status > /dev/null"
+    open location "$url"
+  on error
+    run
+  end try
+end reopen
+
+on quit
+  try
+    do shell script "$stop"
+  end try
+  continue quit
+end quit
 SCRIPT
 
 resources=$app/Contents/Resources
@@ -24,6 +47,8 @@ plist=$app/Contents/Info.plist
 plutil -remove CFBundleIconName $plist 2>/dev/null || true
 plutil -replace CFBundleIconFile -string Orchard.icns $plist
 plutil -replace CFBundleIdentifier -string local.orchard.launcher $plist
+# osacompile ignores -s when reading the script from stdin.
+plutil -replace OSAAppletStayOpen -bool YES $plist
 codesign --force --sign - $app
 touch $app
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $app

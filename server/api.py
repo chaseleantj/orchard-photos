@@ -8,6 +8,7 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -126,7 +127,7 @@ class App:
         library = self.library
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
-        result = {'app': APP['name'], 'platform': sys.platform, 'recent': recent, 'folder': None, 'library': None,
+        result = {'app': APP['name'], 'platform': sys.platform, 'picker': picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
                   'model': self.encoder.downloaded() or self.encoder.activity is not None}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
@@ -135,15 +136,26 @@ class App:
         return result
 
 
-def choose_folder(start: Path | None):
-    """Ask with the system folder dialog. Returns None when cancelled. macOS only."""
-    script = ['-e', 'on run argv', '-e', 'set prompt to item 1 of argv']
-    if start:
-        script += ['-e', 'POSIX path of (choose folder with prompt prompt default location (POSIX file (item 2 of argv)))']
-    else:
-        script += ['-e', 'POSIX path of (choose folder with prompt prompt)']
-    script += ['-e', 'end run', 'Choose a folder of images']
-    result = subprocess.run(['osascript', *script, *([str(start)] if start else [])], capture_output=True, text=True)
+def picker_command(start: Path | None) -> list[str] | None:
+    """The command that shows the system folder dialog, or None when this computer has none."""
+    title = 'Choose a folder of images'
+    if sys.platform == 'darwin':
+        script = ['-e', 'on run argv', '-e', 'set prompt to item 1 of argv']
+        if start:
+            script += ['-e', 'POSIX path of (choose folder with prompt prompt default location (POSIX file (item 2 of argv)))']
+        else:
+            script += ['-e', 'POSIX path of (choose folder with prompt prompt)']
+        return ['osascript', *script, '-e', 'end run', title, *([str(start)] if start else [])]
+    if shutil.which('zenity'):
+        return ['zenity', '--file-selection', '--directory', f'--title={title}', *([f'--filename={start}/'] if start else [])]
+    if shutil.which('kdialog'):
+        return ['kdialog', '--title', title, '--getexistingdirectory', *([str(start)] if start else [])]
+    return None
+
+
+def choose_folder(command: list[str]):
+    """Ask with the system folder dialog. Returns None when cancelled."""
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
@@ -229,9 +241,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.app.open(self.form().get('path'))
                 self.json(self.app.status())
             elif route == ('/api/folder/choose', True):
-                if sys.platform != 'darwin':
+                command = picker_command(self.app.library.folder if self.app.library else None)
+                if not command:
                     raise ValueError('Type the folder path instead.')
-                chosen = choose_folder(self.app.library.folder if self.app.library else None)
+                chosen = choose_folder(command)
                 if chosen:
                     self.app.open(chosen)
                 self.json({**self.app.status(), 'cancelled': not chosen})
