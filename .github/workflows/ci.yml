@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      visual:
+        description: Also download the search model (about 600 MB) and test visual search
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      # ./orchard picks python3.13 over python3.12, so each runner gets the one it will actually use.
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: macos-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Cache the search model
+        if: inputs.visual
+        uses: actions/cache@v4
+        with:
+          path: ~/orchard-data/models
+          key: search-model-${{ hashFiles('server/semantic.py') }}
+      # Installs through ./orchard like a first run, so the unit tests below reuse its .venv.
+      - name: Smoke test
+        run: scripts/smoke-test ${{ inputs.visual && '--visual --data-dir ~/orchard-data' || '' }}
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: npm test
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Type check and build
+        run: npm run build
+      - name: Check that the committed dist/ matches the sources
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --short -- dist
+            echo '::error::dist/ is out of date. Run npm run build and commit dist/.'
+            exit 1
+          fi
