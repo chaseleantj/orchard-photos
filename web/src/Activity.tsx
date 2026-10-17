@@ -43,7 +43,7 @@ export function Activity({ library, gathering, hideError, onOpen }: { library: L
   return <div className="activity">
     {/* Announces what is happening when that changes, not every tick of the numbers. */}
     <span className="sr-only" aria-live="polite">{ready ? 'Visual search is ready' : jobs.map(job => job.label).join(', ')}</span>
-    {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Library" onClick={onOpen}>
+    {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
       {!job.error && <Progress value={job.value} label={job.label} />}<span>{job.label}{job.detail && <span className="numbers"> · {job.detail}</span>}</span>
     </button>)}
     {ready && <button className="activity-item" onClick={onOpen}><span>Visual search is ready</span></button>}
