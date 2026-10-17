@@ -1,6 +1,20 @@
+# Dependencies and environments
 node_modules/
 .venv/
 .venv.lock*
 __pycache__/
+
+# Build output. dist/ is committed on purpose, so running Orchard needs no Node.
+build/
 *.tsbuildinfo
+
+# Local agent and editor settings
+.claude/
+.vscode/
+.idea/
+
+# OS files
 .DS_Store
+._*
+Thumbs.db
+desktop.ini
