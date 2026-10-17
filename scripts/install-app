@@ -53,5 +53,8 @@ ln -s $root/.venv/app-python $app/Contents/MacOS/python
 # Signed, so macOS can remember what the user lets it open, like folders on the Desktop.
 codesign --force --sign - $app
 touch $app
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $app
+# Only the installed app is registered, so a test build elsewhere leaves no second Orchard for Spotlight to find.
+if [[ -z $1 ]]; then
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $app
+fi
 print "Installed $app"

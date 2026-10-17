@@ -69,7 +69,7 @@ On a Mac, a folder macOS keeps Orchard out of can't be read at all. See [Orchard
 
 ## Orchard says macOS is blocking access
 
-The first time Orchard opens your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow it. If you chose **Don't Allow**, Orchard says macOS is blocking access to the folder. The Mac app from `scripts/install-app` instead stops with "Operation not permitted" in its log.
+The first time Orchard opens your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow it. If you chose **Don't Allow**, Orchard says macOS is blocking access to the folder. If the clone itself is in one of those folders, the Mac app from `scripts/install-app` instead stops with "Operation not permitted" in its log.
 
 To allow it, open **System Settings › Privacy & Security › Files & Folders**, and turn on the folder for Orchard, or for the app you started Orchard from, like Terminal. If it isn't listed there, add it to **Full Disk Access** instead. Then choose **Rescan now** in Info, or open Orchard again. Each update of the downloaded app counts as a new app to macOS, so it may ask again.
 
