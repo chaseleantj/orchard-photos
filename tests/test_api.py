@@ -90,6 +90,13 @@ class AppTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Choose a folder'):
             self.app.current()
 
+    def test_the_version_is_app_json_s_and_npm_s_files_agree(self):
+        self.assertEqual(self.app.status()['version'], APP['version'])
+        root = Path(__file__).resolve().parent.parent
+        package = json.loads((root / 'package.json').read_text(encoding='utf-8'))
+        lock = json.loads((root / 'package-lock.json').read_text(encoding='utf-8'))
+        self.assertEqual((package['version'], lock['version'], lock['packages']['']['version']), (APP['version'],) * 3)
+
 
 class HandlerTests(unittest.TestCase):
     def dispatch(self, path, headers=None, post=False, body=b''):

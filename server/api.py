@@ -149,7 +149,7 @@ class App:
         library = self.library
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
-        result = {'app': APP['name'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
+        result = {'app': APP['name'], 'version': APP['version'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
                   'model': {'present': self.encoder.downloaded() or self.encoder.activity is not None,
                             'size': self.encoder.size}}
         if library:
@@ -435,6 +435,7 @@ def bring_forward(url: str) -> bool:
 
 def arguments(argv=None):
     parser = argparse.ArgumentParser(prog=APP['slug'], description='Browse and search the images in a folder.')
+    parser.add_argument('--version', action='version', version=f'{APP["name"]} {APP["version"]}')
     parser.add_argument('folder', nargs='?', help='folder to show; defaults to the last one opened')
     parser.add_argument('--port', type=int, default=APP['port'])
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
