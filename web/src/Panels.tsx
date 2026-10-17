@@ -130,6 +130,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       <p className="error-copy" role="alert">{search.error}</p>
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>
     </> : complete ? <p>Every image can be found by a description or a similar image. Search runs on this computer.</p>
+    : search.downloaded && !counts.images && !scanning ? <p>Visual search is set up. Images added to this folder are prepared automatically.</p>
     : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} to prepare once reading finishes.</p>
     : search.downloaded ? <>
       <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} still to prepare. New images are prepared automatically.</p>
