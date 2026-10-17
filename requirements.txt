@@ -2,8 +2,7 @@ Pillow==12.3.0
 pillow-heif==1.8.0
 numpy==2.5.3
 onnxruntime==1.31.0; sys_platform != "win32" or platform_machine != "AMD64"
-# On Windows x64, ONNX Runtime's DirectML build, which also runs on the GPU. It takes onnxruntime's place, and lags it
-# by several versions.
+# On Windows x64, ONNX Runtime's DirectML build takes onnxruntime's place. It lags onnxruntime by several versions.
 onnxruntime-directml==1.24.4; sys_platform == "win32" and platform_machine == "AMD64"
 tokenizers==0.23.3
 huggingface-hub==2.2.0

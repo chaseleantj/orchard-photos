@@ -4,12 +4,12 @@ import type { LibraryStatus, Scan, SearchStatus } from './types';
 import { megabytes } from './types';
 
 /** One piece of background work: what it is, how far along in words, and how far as a fraction when known. */
-export interface Work { key: string; label: string; detail: string; value: number | null; error?: boolean }
+interface Work { key: string; label: string; detail: string; value: number | null; error?: boolean }
 
 // How long "Visual search is ready" stays after setting up finishes.
 const DONE_FOR = 6000;
 
-export function scanWork(scan: Scan): Work | null {
+function scanWork(scan: Scan): Work | null {
   if (scan.state !== 'scanning' || !scan.changed) return null;
   return { key: 'scan', label: 'Reading images', detail: `${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}`, value: (scan.done ?? 0) / scan.changed };
 }
@@ -23,7 +23,7 @@ export function searchWork(search: SearchStatus): Work | null {
   return null;
 }
 
-export const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}` : work.label;
+const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}` : work.label;
 
 /** Background work, in the line under the search bar. Each item opens Library, where the details are. A first scan
  *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen. */

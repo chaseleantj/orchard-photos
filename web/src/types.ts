@@ -8,7 +8,7 @@ export interface Filters { folder: string; type: string; range: Range; from: str
 /** One image, described by its newest file that passes the filters. `dated` says where its date came from.
  *  In the grid it fronts its `group` of near-duplicates, `members` images in all, counting itself. */
 export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
-export interface FileCopy { path: string; modified: string }
+interface FileCopy { path: string; modified: string }
 export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; files: FileCopy[]; preview: boolean }
 /** `received` and `size` are bytes, sent while the model downloads. */
 export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
@@ -22,7 +22,7 @@ export interface LibraryStatus {
   unlistedFolders: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 export interface Folder { path: string; label: string; name: string; id: string }
-export interface RecentFolder { path: string; label: string; available: boolean }
+interface RecentFolder { path: string; label: string; available: boolean }
 /** The visual search model, shared by every folder. `present` says it is downloaded or on its way, and `size` is its
  *  download in bytes. */
 export interface Model { present: boolean; size: number }
@@ -38,7 +38,7 @@ export const defaults: Filters = { folder: '', type: '', range: 'all', from: '',
 export const RANGES: { range: Range; label: string; days?: number }[] = [{ range: 'today', label: 'Today', days: 1 }, { range: '7d', label: 'Past 7 days', days: 7 }, { range: '28d', label: 'Past 28 days', days: 28 }, { range: 'year', label: 'Past year', days: 365 }, { range: 'all', label: 'All' }, { range: 'custom', label: 'Custom range' }];
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 /** The dates a filter selects. Presets are relative to now, so they stay correct when the app is left open. */
-export function dateBounds({ range, from, to }: Filters) {
+function dateBounds({ range, from, to }: Filters) {
   const days = RANGES.find(r => r.range === range)?.days;
   if (!days) return range === 'custom' ? { from, to } : { from: '', to: '' };
   const start = new Date(); start.setDate(start.getDate() - days + 1);
@@ -65,7 +65,7 @@ export const downloadUrl = (id: string, path: string) => `/api/images/${id}/orig
 /** Browser storage keys, namespaced by the app so two local apps never read each other's settings. */
 export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
-export interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
+interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
 export function readPreferences(): Preferences {
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {

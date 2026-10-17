@@ -29,8 +29,7 @@ WATCH_SECONDS = 60
 UPLOAD_LIMIT = 20 * 1024 * 1024
 FORM_LIMIT = 64 * 1024
 IMMUTABLE = 'private, max-age=31536000, immutable'
-# How long Show in folder waits to hear whether xdg-open failed. Finding no app takes it about a second, as it tries
-# each browser it knows first; one still running after this found an app.
+# How long Show in folder waits to hear whether xdg-open found no app. One still running after this found one.
 OPENER_SECONDS = 3
 
 
@@ -39,7 +38,7 @@ def default_data_dir() -> Path:
     if sys.platform == 'darwin':
         return Path.home() / 'Library' / 'Application Support' / APP['slug']
     if sys.platform == 'win32':
-        # Local rather than roaming, since the model is too large to follow the user between computers.
+        # Local, not roaming, since the model is too large to follow the user between computers.
         return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / APP['slug']
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / APP['slug']
 
@@ -108,7 +107,7 @@ class App:
             if self.library:
                 self.library.index()
         if not self.encoder.loaded:
-            # Reported at once, so the page never shows the setup button again while the thread starts.
+            # Set now, so the page doesn't offer setup again while the thread starts.
             self.encoder.activity = self.encoder.activity or ('loading' if self.encoder.downloaded() else 'downloading')
         threading.Thread(target=run, daemon=True).start()
 
@@ -187,7 +186,7 @@ def choose_folder(command: list[str]):
 
 def wsl_explorer() -> str | None:
     """Under WSL, which has no file manager or browser of its own, the path of Windows' Explorer, which can show a file
-    or open an address in Windows instead. None elsewhere, or when WSL can't start Windows programs."""
+    or open an address instead. None elsewhere, or when WSL can't start Windows programs."""
     try:
         if 'microsoft' not in Path('/proc/sys/kernel/osrelease').read_text().lower():
             return None
@@ -220,7 +219,7 @@ def reveal(path: Path):
 def open_browser(url: str):
     """Open url in the default browser, or say to open it by hand when there is none."""
     if explorer := wsl_explorer():
-        # Windows' default browser. Python's own search ends in xdg-open, which opens nothing under WSL.
+        # Python's own search ends in xdg-open, which opens nothing under WSL.
         subprocess.Popen([explorer, url])
     elif not webbrowser.open(url):
         print(f'No web browser was found. Open {url} in one.', flush=True)
@@ -341,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.file(path, cache='no-cache')
                 else:
                     self.file(ROOT / 'dist/index.html', cache='no-cache')
-        # The page went away mid-response. Windows reports it as ConnectionAbortedError, others as a broken pipe or reset.
+        # The page went away mid-response.
         except ConnectionError:
             pass
         except (ValueError, RuntimeError) as error:
@@ -399,8 +398,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class Server(ThreadingHTTPServer):
-    # On Windows, SO_REUSEADDR lets a second program bind a port that is already taken, so a clash would go unnoticed.
-    # Windows reuses a recently closed port without it.
+    # On Windows, SO_REUSEADDR lets a second program bind a port that is taken, so a clash would go unnoticed.
     allow_reuse_address = sys.platform != 'win32'
 
 
@@ -441,7 +439,7 @@ def arguments(argv=None):
     parser.add_argument('--port', type=int, default=APP['port'])
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--no-watch', action='store_true', help='scan only on request, not every minute')
-    # The launcher passes --window, so a --browser after it wins.
+    # The launcher passes --window first, so a --browser after it wins.
     parser.add_argument('--window', dest='show', action='store_const', const='window', help='open in its own window')
     parser.add_argument('--browser', dest='show', action='store_const', const='browser', help='open in the browser instead')
     return parser.parse_args(argv)
@@ -468,7 +466,7 @@ def main(argv=None):
         return
     if args.show == 'window':
         become_app(APP['name'])
-    # The port stays fixed: the Dock app, a second launch and the page's saved settings all find the app by it.
+    # The port stays fixed, since a second launch and the page's saved settings find the app by it.
     try:
         server = Server(('127.0.0.1', args.port), Handler)
     except OSError as error:
@@ -476,7 +474,7 @@ def main(argv=None):
         if join_running():
             return
         if error.errno in (errno.EACCES, getattr(errno, 'WSAEACCES', errno.EACCES)):
-            # Windows reserves ranges of ports for Hyper-V and WSL, and other systems keep ports below 1024 for root.
+            # Windows reserves port ranges for Hyper-V and WSL, and other systems keep ports below 1024 for root.
             reserved = ' See the reserved ranges with: netsh int ipv4 show excludedportrange protocol=tcp' if sys.platform == 'win32' else ''
             sys.exit(f'Port {args.port} is reserved by the system. Start {APP["name"]} on another port with --port.{reserved}')
         sys.exit(f'Port {args.port} is used by another program. Quit that program, or start {APP["name"]} on another port with --port.')
@@ -498,8 +496,7 @@ def main(argv=None):
                     app.library.scan()
         threading.Thread(target=watch, daemon=True).start()
     if app.encoder.downloaded():
-        # Load the model ahead of the first search, then index. A scan that finishes first indexes on its own, unless
-        # Core ML failed meanwhile and the CPU's image encoder was still downloading.
+        # Load the model before the first search, then index.
         app.prepare()
     print(f'{APP["name"]} is running at {url}', flush=True)
     if args.show == 'window':

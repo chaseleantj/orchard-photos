@@ -14,13 +14,15 @@ import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, Vi
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
-// An image counts as dropped on the search bar anywhere across the top of the window down to this far below the
-// bar, so it needs no careful aim. Nothing else up there takes drops.
+// An image dropped anywhere across the top of the window, down to this far below the search bar, counts as dropped on it.
 const DROP_REACH = 96;
 // A grid this short fits in a few screens and needs no timeline.
 const TIMELINE_MIN = 100;
-// The most images one request returns (MAX_PAGE on the server).
+// PAGE_SIZE and MAX_PAGE on the server.
+const PAGE_SIZE = 80;
 const MAX_PAGE = 2500;
+// UPLOAD_LIMIT on the server.
+const UPLOAD_LIMIT = 20 * 1024 * 1024;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
 export default function App() {
   const [filters, setFilters] = useState(initial.filters);
@@ -37,8 +39,7 @@ export default function App() {
   const visualReady = !!search && searchable(search);
   // Until visual search can answer, typed queries search file names.
   const effectiveMode: SearchMode = visualReady ? mode : 'name';
-  // A query keeps the mode it was asked in, so images being prepared never change its results underneath it. The
-  // mode only changes what a typed query finds, so switching it with nothing typed reloads nothing.
+  // A query keeps the mode it was asked in, so images being prepared never change its results underneath it.
   const [askedMode, setAskedMode] = useState<SearchMode | null>(null);
   // A failure stays in the status line until Library, which explains it, has been opened, or setup is tried again.
   const [seenError, setSeenError] = useState('');
@@ -117,7 +118,7 @@ export default function App() {
     setRoot(id);
   }, [status, root, clearSearch]);
 
-  const fetchResults = useCallback(async (offset: number, signal?: AbortSignal, limit = 80) => {
+  const fetchResults = useCallback(async (offset: number, signal?: AbortSignal, limit = PAGE_SIZE) => {
     const params = new URLSearchParams({ ...filterParams(filters), q: submitted, mode: queryMode, similar, offset: String(offset), limit: String(limit) });
     if (upload) return request<Results>(`/api/search/image?${params}`, { method: 'POST', body: upload, headers: { 'Content-Type': upload.type || 'application/octet-stream' }, signal });
     return request<Results>(`/api/images?${params}`, { signal });
@@ -151,7 +152,7 @@ export default function App() {
   useEffect(() => {
     if (!live) return;
     const controller = new AbortController(); const id = requestId.current; const { fetchResults: fetchFresh, count } = liveRef.current;
-    fetchFresh(0, controller.signal, Math.min(200, Math.max(80, count))).then(data => {
+    fetchFresh(0, controller.signal, Math.min(200, Math.max(PAGE_SIZE, count))).then(data => {
       if (id !== requestId.current) return;
       setItems(old => { const fresh = new Set(data.items.map(item => item.id)); const merged = [...data.items, ...old.slice(data.items.length).filter(item => !fresh.has(item.id))]; setMore(data.total > merged.length); return merged; });
       setTotal(data.total);
@@ -172,7 +173,7 @@ export default function App() {
     let { items: list, more: hasMore } = start;
     try {
       while (list.length <= reachTarget.current && hasMore && id === requestId.current) {
-        const data = await fetchResults(list.length, undefined, Math.min(MAX_PAGE, reachTarget.current + 1 - list.length + 80));
+        const data = await fetchResults(list.length, undefined, Math.min(MAX_PAGE, reachTarget.current + 1 - list.length + PAGE_SIZE));
         const seen = new Set(list.map(item => item.id));
         list = [...list, ...data.items.filter(item => !seen.has(item.id))];
         hasMore = data.hasMore;
@@ -197,7 +198,7 @@ export default function App() {
   const findSimilar = useCallback((id: string) => { clearSearch(); setPicked(null); setSelected(null); setView('grid'); setSimilar(id); setMode('visual'); }, [clearSearch]);
   const useImage = useCallback((file: File) => {
     if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) { setError('Choose an image file to search.'); return; }
-    if (file.size > 20 * 1024 * 1024) { setError('Choose an image smaller than 20 MB.'); return; }
+    if (file.size > UPLOAD_LIMIT) { setError('Choose an image smaller than 20 MB.'); return; }
     clearSearch(); setPanel(null); setUpload(file); setMode('visual'); setSelected(null); setPicked(null); setView('grid');
   }, [clearSearch]);
   // A lifted map image follows the pointer until it is let go, and finds similar images if that is on the search bar.

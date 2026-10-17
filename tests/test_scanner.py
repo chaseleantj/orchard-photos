@@ -6,7 +6,6 @@ import sys
 import tempfile
 import unittest
 import warnings
-from unittest.mock import Mock, patch
 
 from PIL import Image
 

@@ -32,7 +32,7 @@ function Popover({ label, anchor, menu, className, onClose, children }: { label:
   return <dialog ref={ref} tabIndex={-1} className={className} aria-label={label} onCancel={onClose} onClick={e => { if (e.target !== e.currentTarget) return; const r = ref.current!.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); }}>{children}</dialog>;
 }
 
-export function Panel({ title, anchor, onClose, children }: { title: string; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode }) {
+function Panel({ title, anchor, onClose, children }: { title: string; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode }) {
   // The header gains an edge once the body has scrolled under it.
   const [scrolled, setScrolled] = useState(false);
   return <Popover label={title} anchor={anchor} className="panel" onClose={onClose}>

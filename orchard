@@ -9,8 +9,7 @@ installed() { [ -f .venv/.installed ] && [ -z "$(find requirements.txt -newer .v
 # ONNX Runtime has no packages for Python 3.15 yet. Keep these versions in step with orchard.cmd.
 supported() { "$1" -c 'import sys; sys.exit(not (3, 12) <= sys.version_info < (3, 15))' 2>/dev/null; }
 
-# Plain python3 is often too old, like the 3.9 Apple ships or the 3.10 on Ubuntu 22.04, or too new, so look for a
-# supported one first.
+# Plain python3 is often too old, like Apple's 3.9, or too new, so look for a supported one first.
 find_python() {
   for name in python3.13 python3.12 python3.14 python3; do
     if command -v "$name" >/dev/null && supported "$name"; then echo "$name"; return; fi
@@ -31,7 +30,7 @@ if ! installed; then
   lock=.venv.lock
   until mkdir "$lock" 2>/dev/null; do
     owner=$(cat "$lock/pid" 2>/dev/null) || owner=
-    # Moving the stale lock aside first means only one waiter can clear it.
+    # Moving a stale lock aside first means only one waiter clears it.
     if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && mv "$lock" "$lock.$$" 2>/dev/null; then rm -rf "$lock.$$"; continue; fi
     [ -n "$waited" ] || echo 'Another Orchard launch is installing Python packages. Waiting for it to finish...'
     waited=1
@@ -45,9 +44,8 @@ if ! installed; then
     version=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
     # Debian and Ubuntu ship the part of venv that installs pip as a separate package.
     "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt update && sudo apt install python$version-venv" >&2; exit 1; }
-    # A fresh environment each time, so packages that requirements.txt drops are removed too. pip's cache keeps
-    # unchanged packages from downloading again.
-    # On Linux the window uses the distribution's GTK bindings for Python, which pip can't install.
+    # A fresh environment each time, so dropped packages go too. pip's cache keeps the rest from downloading again.
+    # On Linux, the window uses the distribution's GTK bindings for Python, which pip can't install.
     if [ "$(uname)" = Linux ]; then system=--system-site-packages; else system=; fi
     "$python" -m venv --clear $system .venv
     echo 'Installing Python packages. The first run downloads under 70 MB, which takes about a minute.'
@@ -58,7 +56,7 @@ if ! installed; then
   trap - EXIT INT TERM
 fi
 
-# dist/ is committed, so running Orchard needs no Node. After npm ci, the page is rebuilt here when its sources change.
+# dist/ is committed, so running Orchard needs no Node. After npm ci, the page is rebuilt when its sources change.
 if [ -d node_modules ] && { [ ! -f dist/index.html ] || [ -n "$(find web public index.html package-lock.json vite.config.ts app.json -newer dist/index.html)" ]; }; then
   echo 'Building the web page...'
   if [ -n "$(find package-lock.json -newer node_modules)" ]; then npm ci --silent; fi

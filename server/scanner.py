@@ -1,7 +1,6 @@
-"""Find the image files under one folder and keep a content-addressed index of them: metadata and thumbnails.
+"""Find the image files under one folder, and index them by content: metadata and thumbnails.
 
-Originals are only ever read. Identical files share one image entry, so thumbnails and embeddings survive renames
-and moves, and duplicates are indexed once.
+Originals are only ever read. Identical files share one image, so thumbnails and vectors survive renames and moves.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -23,8 +22,8 @@ except ImportError:
 
 EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
 THUMBNAIL_SIZE = 720
-# Anything larger is refused as a possible decompression bomb; this still admits 300-megapixel panoramas.
-# Pillow only warns between one and two times its limit, so the scanner checks the size itself.
+# Anything larger is refused as a possible decompression bomb. Pillow only warns between one and two times its
+# limit, so the scanner checks the size itself.
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
@@ -46,11 +45,11 @@ class ScanCancelled(Exception):
 
 def walk(root: Path, skip=frozenset(), found=None):
     """Every image file below root as (relative posix path, stat), the folders that could not be listed, and the
-    Photos libraries passed over. `found` hears the running count of image files while a large tree is listed.
+    Photos libraries passed over. `found` hears the running count of image files.
 
-    Hidden entries are skipped. A Photos library is a folder macOS keeps closed to other apps, and its thumbnails
-    would repeat every photo, so it is passed over. Symlinked folders are followed once each, so a link loop ends
-    instead of recursing, and only after the real folders, so a folder reached both ways is listed under its real path.
+    Hidden entries are skipped, and so are Photos libraries, which macOS keeps closed to other apps. Symlinked folders
+    are followed once each, after the real folders, so a link loop ends and a folder reached both ways keeps its real
+    path.
     """
     files, unreadable, libraries, visited = [], [], [], set()
     stack, links = [('', str(root))], []
@@ -102,7 +101,7 @@ def exif_details(image):
             offset = str(detail.get(EXIF_OFFSET) or '').strip('\x00 ')
             if offset:
                 moment = datetime.fromisoformat(moment.isoformat() + offset)
-            # Without an offset, EXIF time is the camera's local time; read it as this computer's zone.
+            # Without an offset, EXIF time is the camera's local time, read as this computer's zone.
             taken = utc(moment)
         except ValueError:
             pass
@@ -225,7 +224,7 @@ class Scanner:
                 if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                     width, height = height, width
                 taken, camera = exif_details(image)
-                # JPEG can decode straight to a smaller scale, which makes large photos much faster to thumbnail.
+                # JPEG can decode straight to a smaller scale, which is much faster for large photos.
                 image.draft('RGB', (THUMBNAIL_SIZE, THUMBNAIL_SIZE))
                 display = ImageOps.exif_transpose(image)
                 display.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
@@ -239,10 +238,8 @@ class Scanner:
             return {'error': failure(error)}
 
     def _remove_missing(self, present: set, unreadable: list) -> int:
-        """Forget files that are gone, and the images and thumbnails nothing refers to any more.
-
-        Files inside a folder that could not be listed are kept: the folder may only be locked for now.
-        """
+        """Forget files that are gone, and the images and thumbnails nothing refers to. Files inside a folder that
+        could not be listed are kept, since it may only be locked for now."""
         blocked = tuple(f'{folder}/' for folder in unreadable if folder)
         with connect(self.directory, rows=True) as db:
             gone = [path for (path,) in db.execute('SELECT path FROM files')

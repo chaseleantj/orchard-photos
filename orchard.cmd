@@ -17,9 +17,8 @@ fc /b "%ROOT%requirements.txt" "%VENV%\.installed" >nul 2>&1
 exit /b
 
 :install
-rem A second launch waits here instead of installing into the same environment at the same time. The lock is an
-rem open file, which Windows closes however this launch ends, so a stale lock can't remain. 3>&2 keeps stderr for
-rem the install while 2>nul hides the message when the lock is taken.
+rem A second launch waits here instead of installing at the same time. The lock is an open file, which Windows
+rem closes however this launch ends. 3>&2 keeps stderr for the install, while 2>nul hides the error when it is taken.
 set "FAILED="
 3>&2 2>nul (9>"%ROOT%.venv.lock" (call :locked 2>&3 || set "FAILED=1")) || (
   rem With no lock file, nobody holds it: this folder can't be written to.
@@ -36,8 +35,7 @@ exit /b 0
 :locked
 call :installed && exit /b 0
 call :find_python || exit /b 1
-rem A fresh environment each time, so packages that requirements.txt drops are removed too. pip's cache keeps
-rem unchanged packages from downloading again.
+rem A fresh environment each time, so dropped packages go too. pip's cache keeps the rest from downloading again.
 %PYTHON% -m venv --clear "%VENV%" || (
   echo Orchard could not make its Python environment in "%VENV%". If Orchard is open, close it and try again.
   exit /b 1
@@ -49,7 +47,7 @@ exit /b
 
 :find_python
 rem ONNX Runtime has no packages for Python 3.15 yet. Keep these versions in step with orchard.
-rem Python's newer install manager would otherwise download a missing version, out of sight, when asked for it.
+rem Otherwise Python's install manager quietly downloads a missing version when asked for it.
 set "PYTHON_MANAGER_AUTOMATIC_INSTALL=false"
 for %%v in (3.13 3.12 3.14) do py -%%v -c "" <nul >nul 2>&1 && (set "PYTHON=py -%%v" & exit /b 0)
 python -c "import sys; sys.exit(not (3, 12) <= sys.version_info < (3, 15))" <nul >nul 2>&1 && (set "PYTHON=python" & exit /b 0)

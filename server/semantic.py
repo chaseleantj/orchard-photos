@@ -11,52 +11,46 @@ import threading
 
 from server.cache import connect, thumbnail_path
 
-# The embedding space. Stored vectors are keyed by it, so vectors from any other model are never compared with its own.
+# The embedding space. Vectors are stored under this key, so vectors from another model are never mixed with its own.
 MODEL = "google/siglip2-base-patch16-256"
-# MODEL's weights exported to ONNX. A fixed revision, so every install runs the same weights and a finished download can be recognised on disk.
+# MODEL exported to ONNX, at a fixed revision so every install runs the same weights.
 REPOSITORY = "onnx-community/siglip2-base-patch16-256-ONNX"
 REVISION = "d1114256522a37ffa257a0a58017348ab0058db2"
-# The image encoder at full precision, which gives the same vectors as the PyTorch original, and the text encoder in
-# int8, which ranks searches as well as full precision does at a quarter of the download.
+# The image encoder at full precision, and the text encoder in int8, which ranks searches as well at a quarter the size.
 VISION = "onnx/vision_model.onnx"
 TEXT = "onnx/text_model_int8.onnx"
 TOKENIZER = "tokenizer.json"
-# On Apple Silicon, the image encoder runs on the GPU through Core ML instead, about 7 times faster than the CPU. It is
-# REPOSITORY's fp16 copy, rewritten by scripts/build-coreml-model so Core ML can compile it, with the batch fixed at
-# BATCH_SIZE. Its vectors match VISION's on the CPU to a cosine of 0.9997 or more, so they are stored under the same MODEL.
-# Other computers keep VISION, since fp16 is slower than fp32 on a CPU.
+# On Apple Silicon, the image encoder runs through Core ML: REPOSITORY's fp16 copy, rewritten by
+# scripts/build-coreml-model so Core ML can compile it. Its vectors match VISION's, so they share MODEL.
 CORE_ML_REPOSITORY = "ChaseLean/siglip2-base-patch16-256-coreml-fp16"
-CORE_ML_REVISION = "ca75720483cf3daae26c091ab23f12e1e8a6cdb1"  # The commit of CORE_ML_REPOSITORY that holds CORE_ML_VISION.
+CORE_ML_REVISION = "ca75720483cf3daae26c091ab23f12e1e8a6cdb1"
 CORE_ML_VISION = "vision_model_fp16_coreml.onnx"
 CORE_ML_SHA256 = "87aa52ceed129728ae749782dfafb7cb4e92060f9018776040071b6d85caebc9"
-# The GPU, asked for by name: left to choose, Core ML picks the Neural Engine, which is half as fast here.
+# Asks for the GPU by name, since left to choose, Core ML picks the slower Neural Engine.
 CORE_ML_OPTIONS = {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"}
-# On Windows x64, onnxruntime-directml takes onnxruntime's place and runs VISION on any DirectX 12 GPU, from NVIDIA,
-# AMD or Intel: on an Intel Iris Xe, about 1.6 times faster than the CPU, with the same vectors. The text encoder stays
-# on the CPU.
+# On Windows x64, onnxruntime-directml runs VISION on any DirectX 12 GPU.
 DIRECTML = "DmlExecutionProvider"
-# Before using a GPU, its vector for a fixed test image must match the one VISION gives on the CPU, stored next to
-# this file by scripts/build-coreml-model, at least this closely. Otherwise the CPU runs VISION.
+# A GPU is used only if its vector for a fixed test image matches the CPU's, stored here, at least this closely.
 PARITY_VECTOR = Path(__file__).with_name("parity-vector.npy")
 PARITY_COSINE = 0.999
 SIZES = {VISION: 371_992_072, TEXT: 283_438_275, TOKENIZER: 34_363_039, CORE_ML_VISION: 186_092_579}
-# SigLIP 2's inputs: images squashed to a square with no crop, and lowercased descriptions of exactly 64 tokens, since
-# the text encoder reads the last position. The tokenizer pads, but the lowercasing it was trained with is left to us.
+# SigLIP 2 reads images squashed to a square with no crop, and lowercased descriptions padded to exactly MAX_TOKENS,
+# since the text encoder reads the last position.
 IMAGE_SIZE = 256
 IMAGE_MEAN = IMAGE_STD = 0.5
 MAX_TOKENS = 64
 PAD = "<pad>"
-BATCH_SIZE = 16
+BATCH_SIZE = 16  # Also the Core ML model's fixed batch.
+DEPENDENCIES_MISSING = "Visual search needs its Python dependencies. Run the setup command and retry."
 logger = logging.getLogger(__name__)
 
 
 class Encoder:
     """Downloads the model once, loads it on first use, and turns images and text into unit vectors.
 
-    `activity` says what it is doing for the status line ("downloading" or "loading"), and `failure` why the last
-    attempt failed. Both belong to the encoder, so they are the same whichever folder is open. `core_ml` says whether
-    the image encoder runs through Core ML. It turns off for good once Core ML fails, and stays off on a Mac where
-    an earlier failure left only the CPU's files."""
+    `activity` says what it is doing ("downloading" or "loading"), and `failure` why the last attempt failed, for
+    whichever folder is open. `core_ml` says whether the image encoder runs through Core ML. It turns off once Core ML
+    fails, and stays off on a Mac where that left only the CPU's files."""
 
     def __init__(self, cache: Path):
         self.cache = Path(cache)
@@ -91,15 +85,15 @@ class Encoder:
         return self._complete(_files(self.core_ml))
 
     def received(self) -> int:
-        """Bytes downloaded so far, partial files included. A finished file is measured at its snapshot path, since on
-        Windows, without symlinks, the hub moves it there out of the blobs folder."""
+        """Bytes downloaded so far, partial files included. Finished files are measured at their snapshot path, where
+        Windows, without symlinks, moves them."""
         files = _files(self.core_ml)
         partial = [blob for repository in {repository for repository, _, _ in files}
                    for blob in (self._folder(repository) / "blobs").glob("*.incomplete")]
         total = 0
         for path in [self._path(*file) for file in files] + partial:
             try:
-                # A path's own size: on Windows, a directory listing's stays at 0 while the file is open for writing.
+                # Not the listing's size, which Windows keeps at 0 while the file is open for writing.
                 total += path.stat().st_size
             except OSError:
                 pass  # Not downloaded yet, or finished and moved since the listing.
@@ -111,7 +105,7 @@ class Encoder:
             from huggingface_hub import hf_hub_download, snapshot_download
             from huggingface_hub.errors import HFValidationError, RemoteEntryNotFoundError, RepositoryNotFoundError, RevisionNotFoundError
         except ImportError as error:
-            raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
+            raise RuntimeError(DEPENDENCIES_MISSING) from error
         try:
             if self.core_ml and not self._complete(_files(True)[:1]):
                 try:
@@ -128,8 +122,8 @@ class Encoder:
 
     @staticmethod
     def _verified(path: Path) -> bool:
-        """Whether a downloaded Core ML model is the one built from REPOSITORY. One that isn't is deleted, and the CPU
-        runs VISION instead, since downloading it again would give the same file."""
+        """Whether a downloaded Core ML model is the expected file. One that isn't is deleted, and the CPU runs VISION,
+        since downloading it again would give the same file."""
         with path.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         if digest == CORE_ML_SHA256:
@@ -147,7 +141,6 @@ class Encoder:
                 return
             self.failure = None
             self.cache.mkdir(parents=True, exist_ok=True)
-            # Keep all downloaded weights and ancillary caches in the app's data folder.
             os.environ["HF_HOME"] = str(self.cache)
             os.environ["HF_HUB_CACHE"] = str(self.cache)
             os.environ["HF_XET_CACHE"] = str(self.cache / "xet")
@@ -162,24 +155,14 @@ class Encoder:
                     from tokenizers import Tokenizer
                 except ImportError as error:
                     raise RuntimeError(_missing(error)) from error
-                vision = None
-                if self.core_ml:
-                    vision = _gpu_session(onnxruntime, "Core ML", self._path(*_files(True)[0]),
-                                          [("CoreMLExecutionProvider", CORE_ML_OPTIONS), "CPUExecutionProvider"])
-                    self.core_ml = vision is not None
+                vision = self._gpu_vision(onnxruntime)
                 if vision is None and not self.downloaded():
-                    self._fetch()  # Core ML failed, and the CPU's own image encoder isn't here yet.
+                    self._fetch()  # Core ML failed, and the CPU's image encoder isn't here yet.
                     self.activity = "loading"
                 # CUDA when onnxruntime-gpu is installed.
                 providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
                              if name in onnxruntime.get_available_providers()]
                 vision_file, text_file, tokenizer_file = (self._path(*file) for file in _files(self.core_ml))
-                if vision is None and DIRECTML in onnxruntime.get_available_providers():
-                    # DirectML can't reuse memory patterns or run nodes in parallel, as ONNX Runtime's documentation says.
-                    options = onnxruntime.SessionOptions()
-                    options.enable_mem_pattern = False
-                    options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
-                    vision = _gpu_session(onnxruntime, "DirectML", vision_file, [DIRECTML, "CPUExecutionProvider"], options)
                 try:
                     vision = vision or onnxruntime.InferenceSession(str(vision_file), providers=providers)
                     text = onnxruntime.InferenceSession(str(text_file), providers=providers)
@@ -194,6 +177,22 @@ class Encoder:
                 raise
             finally:
                 self.activity = None
+
+    def _gpu_vision(self, onnxruntime):
+        """The image encoder on the GPU: through Core ML on Apple Silicon, or DirectML on Windows x64. None when
+        neither is available or passes the parity check, so the CPU runs it."""
+        if self.core_ml:
+            session = _gpu_session(onnxruntime, "Core ML", self._path(*_files(True)[0]),
+                                   [("CoreMLExecutionProvider", CORE_ML_OPTIONS), "CPUExecutionProvider"])
+            self.core_ml = session is not None
+            return session
+        if DIRECTML in onnxruntime.get_available_providers():
+            # DirectML can't reuse memory patterns or run nodes in parallel.
+            options = onnxruntime.SessionOptions()
+            options.enable_mem_pattern = False
+            options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+            return _gpu_session(onnxruntime, "DirectML", self._path(*_files(False)[0]), [DIRECTML, "CPUExecutionProvider"], options)
+        return None
 
     def features(self, *, images=None, text=None):
         import numpy
@@ -225,8 +224,7 @@ def _files(core_ml):
 
 
 def _gpu_session(onnxruntime, engine, path, providers, options=None):
-    """The image encoder on the GPU through `engine`, or None when it can't load it or gives the wrong vector for the
-    test image, so the CPU runs it instead."""
+    """The image encoder through `engine`, or None when it can't load or gives the wrong vector for the test image."""
     import numpy
 
     try:
@@ -254,7 +252,7 @@ def core_ml_available() -> bool:
 
 def _run(session, pixels):
     """The image encoder's vectors for a stack of pixels. A model with a fixed batch, like the Core ML one, gets each
-    chunk padded to it with blank images, whose vectors are dropped."""
+    chunk padded with blank images, whose vectors are dropped."""
     import numpy
 
     batch = session.get_inputs()[0].shape[0]
@@ -275,14 +273,13 @@ def _unit(features):
 
 
 def _missing(error: ImportError) -> str:
-    """What to install when ONNX Runtime or the tokenizer can't be imported.
-
-    On Windows, ONNX Runtime also needs Microsoft's C++ runtime, which Python doesn't include."""
+    """What to install when ONNX Runtime or the tokenizer can't be imported. On Windows, ONNX Runtime also needs
+    Microsoft's C++ runtime, which Python doesn't include."""
     if sys.platform == "win32" and "DLL load failed" in str(error):
         machine = "arm64" if platform.machine().lower() == "arm64" else "x64"
         return ("Visual search needs the Microsoft Visual C++ Redistributable. Install it with: "
                 f"winget install Microsoft.VCRedist.2015+.{machine}, then restart Orchard.")
-    return "Visual search needs its Python dependencies. Run the setup command and retry."
+    return DEPENDENCIES_MISSING
 
 
 def _pixels(image):
@@ -296,8 +293,7 @@ def _pixels(image):
 
 
 def parity_pixels():
-    """The test image a GPU must get right: smooth colour gradients and ripples, made without any decoder so it is
-    exactly the same everywhere."""
+    """The test image a GPU must get right, drawn without a decoder so it is the same everywhere."""
     import numpy
 
     y, x = numpy.mgrid[0:IMAGE_SIZE, 0:IMAGE_SIZE].astype(numpy.float32) / IMAGE_SIZE
@@ -314,7 +310,7 @@ class SemanticIndex:
         self._state_lock = threading.Lock()
         self._state = "idle"
         self._error = None
-        # Images the last run could not read, so they don't keep the folder from being ready.
+        # Images the last run couldn't read, which don't keep the folder from being ready.
         self._unreadable = frozenset()
         self._matrix = None
         with connect(self.directory) as connection:
@@ -341,8 +337,7 @@ class SemanticIndex:
                 SELECT COUNT(*) FROM semantic_embeddings e
                 JOIN images i ON i.id = e.image_id WHERE e.model = ?
             """, (MODEL,)).fetchone()[0] if exists else 0
-            # Ready is never stored, since a scan can add images after a run finishes: it means every image has a
-            # vector, or could not be read.
+            # Derived, not stored, since a scan can add images after a run: every image has a vector or can't be read.
             ready = total > 0 and (indexed == total or self._only_unreadable_pending(connection, total - indexed))
         with self._state_lock:
             state, error = self._state, self._error
@@ -394,8 +389,7 @@ class SemanticIndex:
             return image.convert("RGB")
 
     def index(self, cancelled=lambda: False):
-        """Incrementally embed new images, until none are left, including any a scan adds meanwhile. Safe to call from a
-        background worker."""
+        """Embed new images until none are left, including any a scan adds meanwhile."""
         if not self._index_lock.acquire(blocking=False):
             return
         try:
@@ -449,8 +443,8 @@ class SemanticIndex:
         import numpy
 
         with connect(self.directory) as connection:
-            # INSERT OR REPLACE assigns a new rowid, so (count, max rowid) changes on any write.
-            # Images can be removed without touching embeddings, so key on both tables.
+            # Any write changes (count, max rowid), as INSERT OR REPLACE assigns a new rowid. Images can be removed
+            # without touching embeddings, so both tables count.
             version = connection.execute("""
                 SELECT (SELECT COUNT(*) FROM semantic_embeddings), (SELECT MAX(rowid) FROM semantic_embeddings),
                        (SELECT COUNT(*) FROM images), (SELECT MAX(rowid) FROM images)

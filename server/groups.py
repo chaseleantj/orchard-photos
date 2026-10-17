@@ -1,9 +1,8 @@
 """Near-duplicate groups: images that look almost the same share one tile, fronted by the best of them.
 
-Bursts, edits and resized copies differ byte for byte, so the scanner keeps them apart, but their embeddings barely
-differ. Crops differ more, so copies a website or export tool cut from one picture are recognised by their file names
-too. Each group gathers around one centre and every member must match it, so a slow series, like a crystal
-photographed every day, cannot chain into one long group.
+Bursts, edits and resized copies are different files, but their vectors barely differ. Crops differ more, so copies
+cut from one picture are also recognised by their file names. Every member of a group must match its centre, so a
+slow series, like a plant photographed every day, can't chain into one long group.
 """
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -16,18 +15,16 @@ from PIL import Image
 from server.cache import connect, thumbnail_path
 from server.scanner import WORKERS
 
-# Cosine similarity between image embeddings. Re-encoded and resized copies and the closest frames of a burst score
-# above it; most bursts score from 0.86, and different shots of one subject, like one plant on two days, 0.74 to
-# 0.93. Versions of one design, like an illustration with the book in another colour, reach 0.98, so the cut sits high.
+# The cosine similarity two images need to group. Copies and the closest frames of a burst score above it, but
+# versions of one design, like an illustration in another colour, score nearly as high, so it sits close to 1.
 THRESHOLD = 0.9775
-# Files in one folder whose names differ only by a size or copy suffix, like photo-800x400.jpg and photo (1).jpg,
-# need only look related: nearly every crop and small copy of one picture scores above it, while most numbered files
-# that are different pictures, like slide (4).jpg and slide (21).jpg, score below.
+# What files in one folder whose names differ only by a size or copy suffix, like photo-800x400.jpg and
+# photo (1).jpg, need instead. Crops of one picture score above it, and numbered files of different pictures below.
 RELATED_THRESHOLD = 0.72
 EXTENSION = re.compile(r'\.(jpe?g|jpe|png|gif|webp|bmp|tiff?|hei[cf]|avif)$', re.I)
 SUFFIX = re.compile(r'(-\d+x\d+|@\d+x|-scaled|\.bk| \(\d+\)| copy( \d+)?|-e\d{10,})$', re.I)
 CHUNK = 2048
-# Sharpness is measured at one size, so a small copy does not look crisper just for having fewer pixels.
+# Sharpness is measured at one size, so a small copy doesn't look crisper for having fewer pixels.
 SHARPNESS_EDGE = 512
 
 
@@ -41,11 +38,8 @@ def stem(path: str) -> str:
 
 def gather(matrix, related=()) -> numpy.ndarray:
     """For each row of unit vectors, the row of its group's centre. `related` lists sets of rows whose file names
-    mark them as versions of one picture.
-
-    The images with the most near-duplicates claim their unclaimed neighbours first, so centres sit in the middle
-    of a burst rather than at its edge.
-    """
+    mark them as versions of one picture. The images with the most near-duplicates claim their neighbours first, so
+    centres sit in the middle of a burst rather than at its edge."""
     rows, columns = [], []
     for start in range(0, len(matrix), CHUNK):
         row, column = numpy.nonzero(matrix[start:start + CHUNK] @ matrix.T >= THRESHOLD)
@@ -57,7 +51,7 @@ def gather(matrix, related=()) -> numpy.ndarray:
         rows.append(members[row])
         columns.append(members[column])
     rows, columns = numpy.concatenate(rows), numpy.concatenate(columns)
-    # Group each image's neighbours into one contiguous run; a pair found by both rules is harmless.
+    # Each image's neighbours in one contiguous run. A pair found by both rules is harmless.
     order = numpy.argsort(rows, kind='stable')
     rows, columns = rows[order], columns[order]
     counts = numpy.bincount(rows, minlength=len(matrix))
@@ -92,7 +86,7 @@ class Groups:
         self._lock = threading.Lock()
         self._grouped = None
         with connect(self.directory) as connection:
-            # Only images with near-duplicates have a row; every other image is a group of one.
+            # Only images with near-duplicates have a row. Every other image is a group of one.
             connection.execute('''
                 CREATE TABLE IF NOT EXISTS image_groups (
                     image_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, score REAL NOT NULL
@@ -100,8 +94,8 @@ class Groups:
             ''')
 
     def _score(self, image_id: str, pixels: int) -> float:
-        """How good a cover the image makes. Sharpness picks the best frame of a burst; between copies of one
-        picture, which are about equally sharp at a fixed size, the larger one wins."""
+        """How good a cover the image makes. Sharpness picks the best frame of a burst, and between copies of one
+        picture, which are about equally sharp, the larger one wins."""
         try:
             crisp = sharpness(thumbnail_path(self.directory, image_id))
         except (OSError, ValueError):
@@ -119,7 +113,7 @@ class Groups:
         """Regroup if the embeddings changed since the last grouping. Returns whether any group changed."""
         with self._lock:
             ids, matrix = self.semantic.embeddings()
-            # The index hands back the same matrix until an embedding is added or an image removed.
+            # The index returns the same matrix until a vector is added or an image removed.
             if matrix is self._grouped:
                 return False
             with connect(self.directory) as connection:

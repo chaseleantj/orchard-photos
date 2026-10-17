@@ -6,10 +6,8 @@ root=${0:A:h:h}
 app=~/Applications/Orchard.app
 log=/tmp/orchard.log
 
-# The app's executable is a shell script, so it needs no compiler. The script runs ./orchard, and server/window.py
-# then reruns Python through Contents/MacOS/python, a link to .venv/app-python, which links to Python's own app
-# binary. macOS names an app after the bundle its executable sits in, so the window and its one Dock icon are
-# Orchard's, not Python's.
+# The app's executable is a shell script that runs ./orchard. server/window.py then reruns Python through
+# Contents/MacOS/python, a link to Python's own app binary, so macOS shows the window as Orchard's, not Python's.
 rm -rf $app
 mkdir -p $app/Contents/MacOS $app/Contents/Resources
 cp $root/assets/orchard.icns $app/Contents/Resources/Orchard.icns
@@ -28,8 +26,7 @@ cat > $app/Contents/Info.plist <<'PLIST'
 </plist>
 PLIST
 
-# Apps start with a bare PATH, so reuse this shell's, which finds Python however it was installed, plus Homebrew's
-# for a Python installed later.
+# Apps start with a bare PATH, so reuse this shell's, plus Homebrew's for a Python installed later.
 cat > $app/Contents/MacOS/Orchard <<SCRIPT
 #!/bin/sh
 export PATH='$PATH:/opt/homebrew/bin:/usr/local/bin'

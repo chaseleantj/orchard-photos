@@ -75,7 +75,7 @@ class Atlas:
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, size * 4 - 1, size * 4 - 1), RADIUS * 4, fill=255)
         icon = icon.convert("RGBA")
         icon.putalpha(mask.resize((size, size), Image.LANCZOS))
-        # A faint neutral hairline keeps white images visible on a light page and dark ones on a dark page.
+        # A faint hairline keeps white images visible on a light page, and dark ones on a dark page.
         edge = Image.new("RGBA", (size * 4, size * 4), (0, 0, 0, 0))
         ImageDraw.Draw(edge).rounded_rectangle((0, 0, size * 4 - 1, size * 4 - 1), RADIUS * 4, outline=(128, 128, 120, 70), width=4)
         return Image.alpha_composite(icon, edge.resize((size, size), Image.LANCZOS))

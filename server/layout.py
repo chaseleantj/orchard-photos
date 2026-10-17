@@ -1,11 +1,11 @@
-"""The map's layout: a UMAP of the image embeddings, so look-alikes sit together.
+"""The map's layout: a UMAP of the image vectors, so look-alikes sit together.
 
 UMAP (McInnes, Healy and Melville, 2018) links each image to its nearest neighbours, then arranges the images in two
-dimensions so linked images pull together while random pairs push apart. It is written here in NumPy, which keeps
-umap-learn and the compiler and science libraries it pulls in out of the install.
+dimensions so linked images pull together while random pairs push apart. It is written in NumPy, which keeps
+umap-learn and its dependencies out of the install.
 
-Positions persist. Images that arrive later are placed among their nearest fitted neighbours instead of refitting,
-which keeps the map from rearranging each time a few photos are added.
+Positions persist. Images that arrive later are placed among their nearest fitted neighbours, so the map doesn't
+rearrange each time a few photos are added.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -21,18 +21,15 @@ NEIGHBOURS = 15
 CURVE_A, CURVE_B = 1.1214, 1.0575
 EPOCHS = 500
 NEGATIVE_SAMPLES = 5
-# An epoch's links are split among up to THREADS threads, at least SHARE links apiece, since smaller shares cost more
-# to hand out than they save.
+# The fewest links a thread takes in an epoch. Smaller shares cost more to hand out than they save.
 SHARE = 20_000
 PLACE_NEIGHBOURS = 5
 REFIT_SHARE = 0.2
-# Similarities scored per block, about 50 MB with argpartition's indices, so the THREADS blocks in flight stay
-# small however large the folder.
+# Similarities scored per block, which keeps memory bounded however large the folder.
 BLOCK = 1 << 22
 THREADS = 4
-# Above EXACT_LIMIT images, neighbours are searched among nearby clusters instead of the whole folder. Each image's
-# cluster is compared with every cluster that its members have among their PROBES closest, which finds about
-# 99.5% of the true neighbours on real libraries. The clusters are fitted to a sample of SAMPLE_PER_CLUSTER images each.
+# Above EXACT_LIMIT images, neighbours are searched only in nearby clusters: each cluster is compared with every
+# cluster its members have among their PROBES closest. Clusters are fitted to SAMPLE_PER_CLUSTER images each.
 EXACT_LIMIT = 10_000
 PROBES = 6
 SAMPLE_PER_CLUSTER = 64
@@ -41,9 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 def _top(queries, candidates, k, own=None):
-    """The k candidates most similar to each query, as (indices, similarities), in no particular order.
-
-    own holds each query's own row among the candidates, which is left out of its neighbours."""
+    """The k candidates most similar to each query, as (indices, similarities), in no particular order. `own` holds
+    each query's own row among the candidates, which is left out."""
     similarity = queries @ candidates.T
     if own is not None:
         similarity[numpy.arange(len(own)), own] = -numpy.inf
@@ -53,9 +49,8 @@ def _top(queries, candidates, k, own=None):
 
 
 def _nearest(queries, candidates, k, skip_self=False):
-    """The k candidates most similar to each query, as (indices, similarities), in no particular order.
-
-    With skip_self, queries are the candidates themselves and each image is left out of its own neighbours."""
+    """The k candidates most similar to each query, as (indices, similarities), in no particular order. With
+    `skip_self`, the queries are the candidates, and each is left out of its own neighbours."""
     rows = max(1, BLOCK // len(candidates))
 
     def block(start):
@@ -83,11 +78,9 @@ def _centres(matrix, count):
 
 
 def _neighbours(matrix, k):
-    """Each image's k most similar other images, as (indices, similarities), in no particular order.
-
-    Small folders are searched exactly. Large ones are split into about sqrt(n) clusters and each image is compared
-    only with the clusters around its own, so the cost grows about as n^1.5 rather than n^2 when the clusters are
-    even."""
+    """Each image's k most similar other images, as (indices, similarities), in no particular order. Small folders
+    are searched exactly. Large ones are split into about sqrt(n) clusters, and each image is compared only with the
+    clusters around its own, so the cost grows about as n^1.5 rather than n^2."""
     count = len(matrix)
     if count <= EXACT_LIMIT:
         return _nearest(matrix, matrix, k, skip_self=True)
@@ -121,7 +114,7 @@ def _graph(matrix, k):
     count = len(matrix)
     nearest, similarity = _neighbours(matrix, k)
     distance = numpy.maximum(1 - similarity.astype(numpy.float64), 0)
-    # Each image's weights fall off from its closest neighbour at a rate chosen so they sum to log2(k), found by
+    # Each image's weights fall off from its closest neighbour at the rate that makes them sum to log2(k), found by
     # bisection and never steeper than a thousandth of the typical distance.
     gaps = distance - distance.min(axis=1, keepdims=True)
     low, high = numpy.zeros((count, 1)), numpy.full((count, 1), numpy.inf)
@@ -153,8 +146,8 @@ def _forces(x, y, a, b, generator):
     ndx, ndy = x[heads] - x[other], y[heads] - y[other]
     squared = ndx * ndx + ndy * ndy
     push = 2 * CURVE_B / ((0.001 + squared) * (CURVE_A * squared ** CURVE_B + 1))
-    # Each sample's move is clipped to 4 so near-coincident points can't fling each other away, and a pull is two
-    # samples. The 0.001 keeps a push finite.
+    # Moves are clipped so near-coincident points can't fling each other away. A pull is two samples, so its clip is
+    # twice a push's. The 0.001 keeps a push finite.
     moves = []
     for d, nd in ((dx, ndx), (dy, ndy)):
         pulled = numpy.clip(pull * d, -8, 8)
@@ -172,16 +165,15 @@ def embed(matrix):
     # Each link is sampled in proportion to its weight, so links too weak to come up once in the run are dropped.
     kept = weight >= weight.max() / EPOCHS
     first, second, frequency = first[kept], second[kept], weight[kept] / weight.max()
-    # Start from the two main directions of variation, which spreads the folder's broad themes apart, at UMAP's
-    # starting size of 10 either way, plus a whisker of noise so identical vectors can separate.
+    # Start from the two main directions of variation, which spreads broad themes apart, at UMAP's starting size of
+    # 10 either way, with a little noise so identical vectors can separate.
     centred = matrix - matrix.mean(axis=0)
     start = centred @ numpy.linalg.eigh(centred.T @ centred)[1][:, -2:]
     start = 10 * start / (numpy.abs(start).max() or 1.0)
     generator = numpy.random.default_rng(0)
     start += generator.normal(scale=1e-4, size=start.shape)
     x, y = (numpy.ascontiguousarray(axis, dtype=numpy.float32) for axis in start.T)
-    # Each thread works through its share of the due links with its own random stream, so the result doesn't depend
-    # on which thread finishes first.
+    # Each thread has its own random stream, so the result doesn't depend on which thread finishes first.
     generators = generator.spawn(THREADS)
     with ThreadPoolExecutor(THREADS) as pool:
         for epoch in range(EPOCHS):

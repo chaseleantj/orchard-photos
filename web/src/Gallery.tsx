@@ -12,7 +12,6 @@ const HEADING = 21;
 const ABOVE = 40;
 const BELOW = 12;
 
-/** The images in justified rows, in order, each at its own shape. With `sections`, for date order, each month starts under its own heading. */
 /** Where things are in the grid, for the timeline. Offsets are in page coordinates. */
 export interface GalleryHandle {
   /** The index of the first image whose row reaches below `y`. */
@@ -21,6 +20,7 @@ export interface GalleryHandle {
   offsetOf: (index: number) => number;
 }
 
+/** The images in justified rows, each at its own shape. With `sections`, for date order, each month starts under its own heading. */
 export default function Gallery({ items, sections, onOpen, ref }: { items: Picture[]; sections: boolean; onOpen: (index: number) => void; ref?: React.Ref<GalleryHandle> }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

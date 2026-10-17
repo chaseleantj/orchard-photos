@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Install and start Orchard through ./orchard on a few generated images, and check the API lists them.
 
-Runs on any Python 3, so it can also show what ./orchard says when Python is too old. --visual also downloads the
-search model (about 500 MB on an Apple Silicon Mac, 690 MB elsewhere) and runs a search; pass a lasting --data-dir to keep the model between runs."""
+Runs on any Python 3, so it also shows what ./orchard says when Python is too old. --visual also downloads the search
+model and runs a search. Pass a lasting --data-dir to keep the model between runs."""
 import argparse
 import json
 import os
@@ -72,8 +72,8 @@ def main():
         png(photos / f'{name}.png', rgb)
     shutil.copy(photos / 'red.png', photos / 'nested' / 'red copy.png')
     url = f'http://127.0.0.1:{args.port}'
-    # --browser in place of the window, which CI has no screen for, and BROWSER makes opening the browser a no-op. With
-    # no input, the Windows launcher's pause after a failure returns at once.
+    # --browser, since CI has no screen, and BROWSER makes opening it a no-op. With no input, the Windows launcher's
+    # pause after a failure returns at once.
     server = subprocess.Popen([str(LAUNCHER), str(photos), '--port', str(args.port), '--data-dir', str(data), '--no-watch', '--browser'],
                               env={**os.environ, 'BROWSER': 'cmd /c rem' if sys.platform == 'win32' else 'true'}, stdin=subprocess.DEVNULL)
     try:

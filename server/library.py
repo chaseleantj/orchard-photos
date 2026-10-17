@@ -17,14 +17,24 @@ from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayabl
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
-# The most a single request returns. Jumping far down the timeline loads every page above the target in a few of these.
+# The most one request returns, so a jump far down the timeline loads the pages above it in a few requests.
 MAX_PAGE = 2500
 IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 SIMILAR_LIMIT = 100
-# Browsers show these directly; anything else is viewed through a converted JPEG.
+# Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
 PREVIEW_EDGE = 4096
+# The most a viewer's time zone can be from UTC, in minutes.
+MAX_OFFSET = 1440
 logger = logging.getLogger(__name__)
+
+
+def utc_offset(params) -> int:
+    """The viewer's offset from UTC in minutes, from the `tz` parameter."""
+    try:
+        return max(-MAX_OFFSET, min(MAX_OFFSET, int(params.get('tz') or 0)))
+    except ValueError:
+        raise ValueError('Use a valid date range.')
 
 
 class Library:
@@ -47,7 +57,7 @@ class Library:
         self.semantic_lock = threading.Lock()
         self.index_wanted = False
         self.scan_state = {'state': 'ready'}
-        # Bumped whenever a scan commits, so open pages know to refresh what they show.
+        # Bumped whenever a scan commits, so open pages know to refresh.
         self.revision = 0
         self.stats_path = self.directory / 'scan-status.json'
         try:
@@ -131,11 +141,8 @@ class Library:
         if params.get('type'):
             where.append('i.mime=?')
             values.append(params['type'])
-        # Dates are the viewer's local days: shift the stored UTC timestamp by their offset before comparing.
-        try:
-            offset = max(-1440, min(1440, int(params.get('tz') or 0)))
-        except ValueError:
-            raise ValueError('Use a valid date range.')
+        # Dates are the viewer's local days, so the stored UTC times are shifted by their offset before comparing.
+        offset = utc_offset(params)
         for key, operator in [('from', '>='), ('to', '<=')]:
             if params.get(key):
                 date = params[key]
@@ -148,11 +155,11 @@ class Library:
             raise ValueError('The end date must follow the start date.')
         return where, values
 
-    def library(self, where, values, collapse=True):
+    def tiles(self, where, values, collapse=True):
         """One row per near-duplicate group, fronted by its best matching image and described by that image's newest
         matching file, newest first. Without collapsing, every matching image of the groups, best first."""
         condition = ' AND '.join(where)
-        # Photos are dated when they were taken; anything without EXIF falls back to the file's modification time.
+        # Photos are dated when they were taken, and anything without EXIF by when its file was modified.
         matching = f'''WITH matching AS (
             SELECT f.path, f.image_id, f.modified, coalesce(i.taken, f.modified) AS date,
                    coalesce(g.group_id, f.image_id) AS grp, coalesce(g.score, 0) AS score,
@@ -169,7 +176,7 @@ class Library:
         sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
                          p.path,p.copies,p.grp AS "group",p.members
                   FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
-        # Grouping needs every matching row anyway, so a page is sliced from the whole list rather than counted twice.
+        # Grouping needs every matching row anyway, so pages are sliced from the whole list.
         with connect(self.directory, rows=True) as db:
             return [dict(row) for row in db.execute(sql, values)]
 
@@ -189,7 +196,7 @@ class Library:
         if group:
             where.append('coalesce(g.group_id, f.image_id)=?')
             values.append(group)
-            rows = self.library(where, values, collapse=False)
+            rows = self.tiles(where, values, collapse=False)
             return {'items': rows, 'total': len(rows), 'offset': 0, 'hasMore': False}
         offset = max(0, int(params.get('offset', '0')))
         limit = min(MAX_PAGE, max(1, int(params.get('limit', str(PAGE_SIZE)))))
@@ -198,14 +205,14 @@ class Library:
             for word in query.split():
                 where.append("f.path LIKE ? ESCAPE '\\'")
                 values.append('%' + word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
-            rows = self.library(where, values)
+            rows = self.tiles(where, values)
         else:
             self.require_search()
             ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
-            # The reference comes first, as the stack of its near-duplicates, so the results start from what was asked.
+            # The reference and its near-duplicates come first.
             with connect(self.directory, rows=True) as db:
                 own = db.execute('SELECT coalesce((SELECT group_id FROM image_groups WHERE image_id=?), ?)', (reference, reference)).fetchone()[0]
-            rows = [row for row in self.library(where, values) if row['id'] in ranking]
+            rows = [row for row in self.tiles(where, values) if row['id'] in ranking]
             rows.sort(key=lambda row: (row['group'] == own, ranking[row['id']]), reverse=True)
             if reference or image_bytes:
                 # Beyond the closest matches, similarity to a single image is noise.
@@ -213,19 +220,17 @@ class Library:
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'hasMore': offset + limit < len(rows)}
 
     def timeline(self, params):
-        """How many tiles the date-ordered grid shows in each month, newest first, in the viewer's time zone.
-
-        `zone` is an IANA name, so months split exactly where the browser's own calendar splits them, daylight
-        saving included; without one, the fixed `tz` offset in minutes is used."""
+        """How many tiles the date-ordered grid shows in each month, newest first, in the viewer's time zone: the
+        IANA `zone`, so months split where the browser's calendar does, or else the fixed `tz` offset in minutes."""
         where, values = self.filters(params)
         try:
             zone = ZoneInfo(params['zone']) if params.get('zone') else None
         except (ZoneInfoNotFoundError, ValueError):
             zone = None
         if zone is None:
-            zone = timezone(timedelta(minutes=max(-1440, min(1440, int(params.get('tz') or 0)))))
+            zone = timezone(timedelta(minutes=utc_offset(params)))
         months = []
-        for row in self.library(where, values):
+        for row in self.tiles(where, values):
             month = datetime.fromisoformat(row['date'].replace('Z', '+00:00')).astimezone(zone).strftime('%Y-%m')
             if months and months[-1]['month'] == month:
                 months[-1]['count'] += 1
@@ -241,7 +246,7 @@ class Library:
                 'SELECT mime, count(*) AS count FROM images GROUP BY mime ORDER BY count DESC, mime')]
         folders: dict[str, set] = {}
         for folder, image_id in pairs:
-            # A folder counts everything beneath it.
+            # A folder counts the images in its subfolders too.
             parts = folder.split('/') if folder else []
             for depth in range(1, len(parts) + 1):
                 folders.setdefault('/'.join(parts[:depth]), set()).add(image_id)
@@ -258,7 +263,7 @@ class Library:
         return {**dict(image), 'root': str(self.folder), 'files': files, 'preview': image['mime'] not in WEB_TYPES}
 
     def original(self, image_id, relative=None):
-        """The file on disk for an image: the named copy if given (and it holds this image), else the first."""
+        """The file on disk for an image: the named copy if given and it holds this image, else the first."""
         with connect(self.directory, rows=True) as db:
             if relative is not None:
                 row = db.execute('SELECT path FROM files WHERE image_id=? AND path=?', (image_id, relative)).fetchone()
@@ -293,11 +298,11 @@ class Library:
     def map(self, params):
         """Every filtered image with a place on the map and an icon slot in the atlas."""
         where, values = self.filters(params)
-        rows = self.library(where, values)
+        rows = self.tiles(where, values)
         self.require_search()
         positions = self.layout.positions()
         if positions is None:
-            # First use: fit in the background and let the page follow the progress.
+            # The first fit runs in the background, and the page follows its progress.
             self.layout.start()
             return {'points': [], 'pending': 0, 'sheets': [], 'layout': self.layout.status()}
         slots = self.atlas.ensure()

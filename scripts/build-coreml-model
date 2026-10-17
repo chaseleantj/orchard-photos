@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """Build the image encoder Orchard runs through Core ML on Apple Silicon, and print its SHA-256.
 
-It takes the fp16 image encoder from the pinned revision of server/semantic.py's REPOSITORY and rewrites it so ONNX
-Runtime's Core ML converter compiles it quickly and keeps it small. The math is unchanged:
-- The patch embedding's Conv says auto_pad=VALID, which the converter rejects. It becomes the explicit zero pads that
-  VALID means.
+It takes the fp16 image encoder from server/semantic.py's REPOSITORY at REVISION, and rewrites it so ONNX Runtime's
+Core ML converter compiles it quickly. The math is unchanged:
+- The patch embedding's Conv says auto_pad=VALID, which the converter rejects, so it gets the explicit zero pads.
 - Every 2-D MatMul weight is stored as 1 x K x N, which broadcasts to the same product. Otherwise the converter
-  writes the weights out as text, and the model takes a minute to compile and 6 GB of memory.
-- The batch is fixed at BATCH_SIZE, since Core ML can't plan the model with a variable one.
+  writes the weights out as text, and compiling takes a minute and 6 GB of memory.
+- The batch is fixed at BATCH_SIZE, since Core ML can't plan a variable one.
 
-The result is the file to upload to CORE_ML_REPOSITORY. With --parity, it also writes the parity vector: the unit
-vector the full-precision image encoder gives on the CPU for the fixed test image, which Orchard checks Core ML
-against. That needs the full-precision encoder too, about 372 MB more.
+The result is the file to upload to CORE_ML_REPOSITORY. With --parity, it also writes the parity vector: the vector
+the full-precision image encoder gives on the CPU for the test image, which Orchard checks GPUs against.
 
-Needs the app's packages and the onnx package, which the app doesn't use. The SHA-256 depends on onnx's version, so
-install the one below:
+Needs the onnx package, which the app doesn't use. The SHA-256 depends on onnx's version, so install this one:
 
     .venv/bin/pip install onnx==1.23.2
     .venv/bin/python scripts/build-coreml-model OUTPUT_FOLDER
