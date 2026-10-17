@@ -18,8 +18,10 @@ import urllib.error
 import urllib.request
 import webbrowser
 
+from server.diagnostics import LAST_ERROR, report
 from server.library import IMAGE_ID, Library
 from server.semantic import Encoder
+from server.updates import Updates
 from server.window import Window, become_app, unavailable
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,6 +59,7 @@ class App:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.encoder = Encoder(self.data_dir / 'models')
         self.recent_path = self.data_dir / 'recent.json'
+        self.updates = Updates(self.data_dir / 'updates.json', APP['version'], f'{APP["name"]}/{APP["version"]}')
         self.library: Library | None = None
         self.window: Window | None = None
         self._lock = threading.Lock()
@@ -292,6 +295,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if route == ('/api/status', False):
                 self.json(self.app.status())
+            elif route == ('/api/diagnostics', False):
+                self.json({'report': report(self.app, f'{APP["name"]} {APP["version"]}')})
+            elif route == ('/api/updates', False):
+                self.json(self.app.updates.status())
+            elif route == ('/api/updates', True):
+                self.app.updates.turn(self.form().get('enabled') is True)
+                self.json(self.app.updates.status())
             elif route == ('/api/folder', True):
                 self.app.open(self.form().get('path'))
                 self.json(self.app.status())
@@ -449,6 +459,7 @@ def arguments(argv=None):
 def main(argv=None):
     args = arguments(argv)
     logging.basicConfig(level=logging.WARNING, format='%(levelname)s %(name)s: %(message)s')
+    logging.getLogger().addHandler(LAST_ERROR)
     url = f'http://127.0.0.1:{args.port}'
     folder = str(Path(args.folder).expanduser().absolute()) if args.folder else None
 

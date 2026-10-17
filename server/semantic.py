@@ -30,6 +30,9 @@ CORE_ML_SHA256 = "87aa52ceed129728ae749782dfafb7cb4e92060f9018776040071b6d85caeb
 CORE_ML_OPTIONS = {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"}
 # On Windows x64, onnxruntime-directml runs VISION on any DirectX 12 GPU.
 DIRECTML = "DmlExecutionProvider"
+CUDA = "CUDAExecutionProvider"
+# What each ONNX Runtime provider that can run VISION is called in diagnostics.
+ENGINES = {"CoreMLExecutionProvider": "Core ML", DIRECTML: "DirectML", CUDA: "CUDA", "CPUExecutionProvider": "CPU"}
 # A GPU is used only if its vector for a fixed test image matches the CPU's, stored here, at least this closely.
 PARITY_VECTOR = Path(__file__).with_name("parity-vector.npy")
 PARITY_COSINE = 0.999
@@ -79,6 +82,14 @@ class Encoder:
     def size(self) -> int:
         """Bytes to download, which depend on the image encoder this computer runs."""
         return sum(SIZES[name] for _, _, name in _files(self.core_ml))
+
+    @property
+    def engine(self) -> str | None:
+        """What runs the image encoder, named as in ENGINES. None until the model loads."""
+        if self._vision is None:
+            return None
+        provider = self._vision.get_providers()[0]
+        return ENGINES.get(provider, provider)
 
     def downloaded(self) -> bool:
         """Whether every file is on disk, so indexing needs no download and can start on its own."""
@@ -160,7 +171,7 @@ class Encoder:
                     self._fetch()  # Core ML failed, and the CPU's image encoder isn't here yet.
                     self.activity = "loading"
                 # CUDA when onnxruntime-gpu is installed.
-                providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
+                providers = [name for name in (CUDA, "CPUExecutionProvider")
                              if name in onnxruntime.get_available_providers()]
                 vision_file, text_file, tokenizer_file = (self._path(*file) for file in _files(self.core_ml))
                 try:
@@ -249,6 +260,16 @@ def core_ml_available() -> bool:
     except ImportError:
         return False
     return "CoreMLExecutionProvider" in onnxruntime.get_available_providers()
+
+
+def preferred_engine() -> str:
+    """The engine that loading tries first for the image encoder. Another one in `Encoder.engine` means it fell back."""
+    if core_ml_available():
+        return "Core ML"
+    import onnxruntime
+
+    available = onnxruntime.get_available_providers()
+    return next((ENGINES[name] for name in (DIRECTML, CUDA) if name in available), "CPU")
 
 
 def _run(session, pixels):

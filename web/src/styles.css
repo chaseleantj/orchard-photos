@@ -16,7 +16,7 @@
 :root[data-theme='dark'] { --bg: #171816; --surface: #21221f; --soft: #292a26; --ink: #ebebe5; --muted: #a6a89e; --line: #44453e; --focus: #b1bea5; --danger: #ef9c88; --shadow: 0 8px 40px #00000040; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button, a { touch-action: manipulation; }
 button { border: 0; background: none; cursor: pointer; }
@@ -203,6 +203,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .path-row input { flex: 1; min-width: 0; height: var(--control); border: 1px solid var(--line); border-radius: var(--control-radius); background: transparent; padding: 0 var(--s3); transition: border-color var(--motion) var(--ease); }
 .path-row input:hover { border-color: var(--muted); }
 .path-row input::placeholder { color: var(--muted); }
+/* The diagnostics, shown to copy by hand where the clipboard was refused. */
+.report { display: block; width: 100%; margin-top: var(--s3); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--control-radius); background: transparent; resize: none; }
 .recent h3 { font-size: inherit; font-weight: 400; color: var(--muted); margin: var(--s2) 0; }
 .recent ul { list-style: none; margin: 0; padding: 0; }
 .recent li { display: flex; align-items: center; gap: var(--s1); }

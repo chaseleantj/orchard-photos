@@ -29,7 +29,9 @@ interface RecentFolder { path: string; label: string; available: boolean }
 export interface Model { present: boolean; size: number }
 /** What setting up visual search is called, the same wherever it is offered. */
 export const SET_UP = 'Set up visual search';
-export interface Status { app: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+export interface Status { app: string; version: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+/** The opt-in check for a newer release, and the release it found, if any. */
+export interface Updates { enabled: boolean; update: { version: string; url: string } | null }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }
