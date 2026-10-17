@@ -101,7 +101,7 @@ On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the sm
 The Mac DMG and the Windows zip carry their own Python, with the packages installed, so they need no Python or terminal. `scripts/build-app` builds the one for the computer it runs on, an Apple Silicon Mac or Windows x64, into `build/`. Run it with Python 3.13, the version inside the app, since pip installs the packages for the Python that runs it:
 
 ```bash
-python3.13 scripts/build-app --version 0.1.0
+python3.13 scripts/build-app
 ```
 
 - **macOS** gives `build/Orchard-mac-arm64.dmg`, holding `Orchard.app`. Its executable is a small launcher, compiled from `scripts/app/macos-launcher.c` with the Xcode command line tools. It runs python-build-standalone's Python from inside `Contents/MacOS`, so its window shows under Orchard's name and icon. A compiled launcher, unlike a script, lets macOS ask to allow Desktop and Documents and remember the answer. The app is signed ad hoc, so macOS asks once for Open Anyway, and each new build counts as a new app that asks for folders again.

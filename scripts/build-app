@@ -108,7 +108,7 @@ def oldest_macos(site_packages: Path) -> str:
     return '{}.{}'.format(*max(versions))
 
 
-def build_mac(build: Path, version: str) -> Path:
+def build_mac(build: Path) -> Path:
     app = build / f'{APP["name"]}.app'
     contents = app / 'Contents'
     resources = contents / 'Resources'
@@ -138,7 +138,7 @@ def build_mac(build: Path, version: str) -> Path:
     plist = {
         'CFBundleName': APP['name'], 'CFBundleDisplayName': APP['name'], 'CFBundleIdentifier': IDENTIFIER,
         'CFBundleExecutable': APP['name'], 'CFBundleIconFile': f'{APP["name"]}.icns', 'CFBundlePackageType': 'APPL',
-        'CFBundleShortVersionString': version, 'CFBundleVersion': version,
+        'CFBundleShortVersionString': APP['version'], 'CFBundleVersion': APP['version'],
         'LSMinimumSystemVersion': oldest, 'LSArchitecturePriority': ['arm64'],
         'NSHighResolutionCapable': True,
     }
@@ -180,7 +180,6 @@ def build_windows(build: Path) -> Path:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='0.0.0', help="the version the Mac app shows, like 0.1.0")
     parser.add_argument('--out', type=Path, default=ROOT / 'build', help='where to build; the downloads are kept there for next time')
     args = parser.parse_args()
     if sys.platform not in RUNTIMES or platform.machine() != MACHINES[sys.platform]:
@@ -190,7 +189,7 @@ def main():
     build = args.out.resolve()
     # Only what an earlier build made, in case --out names a folder with other files in it.
     remove(build, ['dmg', APP['name'], f'{APP["name"]}.app', *ARTIFACTS.values()])
-    artifact = build_mac(build, args.version) if sys.platform == 'darwin' else build_windows(build)
+    artifact = build_mac(build) if sys.platform == 'darwin' else build_windows(build)
     print(f'Built {artifact}, {artifact.stat().st_size / 1e6:.0f} MB')
 
 

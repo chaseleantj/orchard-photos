@@ -35,9 +35,14 @@ jobs:
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.13'
+      # The version is app.json's, so a tag must name it.
+      - name: Check the tag matches app.json
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(python -c "import json; print(json.load(open('app.json'))['version'])")
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::The tag is $GITHUB_REF_NAME, but app.json's version is $version."; exit 1; }
       - name: Build
-        # A tag like v0.1.0 makes the version 0.1.0.
-        run: python scripts/build-app --version "$( [ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}" || echo 0.0.0 )"
+        run: python scripts/build-app
       - name: Open the DMG and copy the app out
         if: runner.os == 'macOS'
         run: |
