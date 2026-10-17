@@ -34,7 +34,7 @@ static class Launcher
         int status;
         // Shared, since a second launch writes here too, while it hands its folder to the first and quits.
         using (var writer = new StreamWriter(new FileStream(log, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)))
-        using (var python = new Process { StartInfo = start })
+        using (var server = new Process { StartInfo = start })
         {
             writer.AutoFlush = true;
             DataReceivedEventHandler write = (sender, line) =>
@@ -47,13 +47,13 @@ static class Launcher
                     if (tail.Count > TailLines) tail.Dequeue();
                 }
             };
-            python.OutputDataReceived += write;
-            python.ErrorDataReceived += write;
-            python.Start();
-            python.BeginOutputReadLine();
-            python.BeginErrorReadLine();
-            python.WaitForExit();
-            status = python.ExitCode;
+            server.OutputDataReceived += write;
+            server.ErrorDataReceived += write;
+            server.Start();
+            server.BeginOutputReadLine();
+            server.BeginErrorReadLine();
+            server.WaitForExit();
+            status = server.ExitCode;
         }
         // A service, like a CI runner, has no one to close the message.
         if (status != 0 && Environment.UserInteractive)
