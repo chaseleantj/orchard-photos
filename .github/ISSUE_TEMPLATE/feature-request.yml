@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest something Orchard could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The task or problem, rather than the feature. For example, "I keep RAW and JPEG copies of each photo, and want to see one of them."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine Orchard could do it, if you have an idea.
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else
+      description: Other apps that do this well, screenshots, or how many photos you have.

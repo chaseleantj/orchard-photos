@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in Orchard doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. [Questions and problems](https://github.com/chaseleantj/orchard-photos/blob/main/docs/using-orchard.md#questions-and-problems) covers the common ones, so check there first.
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - macOS, Apple Silicon
+        - macOS, Intel
+        - Windows, x64
+        - Windows, Arm
+        - Linux
+        - WSL
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: System version
+      placeholder: macOS 15.5, Windows 11 24H2, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Orchard version
+      description: Run `git rev-parse --short HEAD` in Orchard's folder.
+      placeholder: b38f839
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you did, step by step.
+      placeholder: |
+        1. Ran ./orchard ~/Pictures
+        2. Typed "dog on a beach" in the search bar
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: What the terminal printed. The Mac app writes it to `/tmp/orchard.log`.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: A Copy diagnostics button is coming to Info. Until then, leave this empty.
+      render: text
