@@ -1,6 +1,6 @@
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard" height="56"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard Photos" height="56"></picture>
 
-Orchard is a private photo browser for a folder on your computer. Point it at a folder and it shows every image inside, subfolders included, as one scrollable library. You can filter by folder, type and date, and search by what the pictures look like. Everything runs locally, nothing is uploaded, and your files are never changed.
+Orchard Photos is a private, local photo browser with AI search. Point it at a folder on your computer and it shows every image inside, subfolders included, as one scrollable library. You can filter by folder, type and date, and search by describing a picture or showing a similar one. Everything runs on your computer, nothing is uploaded, and your files are never changed.
 
 - **Timeline.** Images are sorted newest first by the date they were taken, with a year scrubber to jump around.
 - **Visual search.** Describe a picture ("dog on a beach"), or paste or drop an image to find similar ones.
@@ -12,8 +12,8 @@ Orchard is a private photo browser for a folder on your computer. Point it at a 
 You need macOS, Linux or Windows, and Python 3.12, 3.13 or 3.14. Python 3.15 doesn't work yet, because ONNX Runtime, which runs visual search, has no packages for it. If your Python doesn't fit, `./orchard` says which version it found and how to get a supported one. On Debian and Ubuntu, install the packages [below](#linux-packages) first. For Windows, see [Windows](#windows) below.
 
 ```bash
-git clone https://github.com/chaseleantj/orchard.git
-cd orchard
+git clone https://github.com/chaseleantj/orchard-photos.git
+cd orchard-photos
 ./orchard ~/Pictures
 ```
 
@@ -74,7 +74,7 @@ The cache (thumbnails, the search index and the model) lives in `~/Library/Appli
 
 Quit Orchard, then delete whichever of these you have:
 
-- The `orchard` folder you cloned or downloaded. Its `.venv` folder holds the Python packages.
+- The `orchard-photos` folder you cloned, or the folder you downloaded. Its `.venv` folder holds the Python packages.
 - `~/Applications/Orchard.app`, if you ran `scripts/install-app`.
 - The cache and search model, in `~/Library/Application Support/orchard/` on macOS, `~/.local/share/orchard/` on Linux and `%LOCALAPPDATA%\orchard\` on Windows, and any folder you gave with `--data-dir`.
 - `/tmp/orchard.log`, the Mac app's log. macOS clears it when you restart.
