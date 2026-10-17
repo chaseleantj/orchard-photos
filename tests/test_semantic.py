@@ -20,7 +20,11 @@ class SemanticTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
-        # Tests choose the engine themselves, so they behave the same on every computer.
+        # Tests choose the engine themselves, so they behave the same on every computer. The Core ML revision names
+        # a folder, so they use one of their own that any file system accepts, whatever the real one is.
+        revision = patch("server.semantic.CORE_ML_REVISION", "0123456789abcdef0123456789abcdef01234567")
+        revision.start()
+        self.addCleanup(revision.stop)
         with patch("server.semantic.core_ml_available", return_value=False):
             self.encoder = Encoder(self.directory / "models")
         self.search = SemanticIndex(self.directory, self.encoder)
