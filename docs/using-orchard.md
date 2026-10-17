@@ -101,7 +101,7 @@ Preparing takes a moment per image, and how long a whole folder takes depends mo
 | Windows laptop, on its GPU | About 40 minutes |
 | 4-core laptop, on its CPU | About an hour |
 
-Before that, Orchard reads each new file and draws its thumbnail, which took about 40 seconds per 1,000 photos on the laptop. You can browse while both run. The newest images are prepared first, so you can search recent photos while the rest are still being prepared.
+Before that, Orchard reads each new file and draws its thumbnail, which took about 40 seconds per 1,000 photos on the laptop. You can browse while both run. The newest images are prepared first, so you can search recent photos while the rest are still being prepared. If you quit Orchard, or the computer sleeps, it carries on where it stopped.
 
 ## Background work and Info
 
@@ -185,12 +185,6 @@ The download comes from huggingface.co. Behind a proxy, set `HTTPS_PROXY` before
 
 If the model downloaded but won't load, delete the `models` folder, and Orchard downloads it again. To skip the download on a computer that's offline, copy the `models` folder from another computer of the same kind, like another Apple Silicon Mac.
 
-### Indexing is slow
-
-Preparing images for search takes a few minutes on an Apple Silicon Mac, but can take hours on a laptop for a large folder. The [rough times](#setting-up-visual-search) are above. Info shows how long is left.
-
-You can search the newest photos first, since they're prepared first. If you quit Orchard, or the computer sleeps, it carries on from where it stopped next time.
-
 ### Which GPU Orchard uses
 
 Orchard runs the image half of the model on the GPU where it can:
@@ -217,7 +211,7 @@ On a Mac, the first time you open your Desktop, Documents, Downloads or an exter
 
 ### Photos on external, network and cloud drives
 
-Orchard works with any folder your computer can open. Its cache stays on your computer, so if a drive is unplugged, Orchard keeps showing the last scan. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
+Its cache stays on your computer, so if a drive is unplugged, Orchard keeps showing the last scan. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
 
 The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos.
 
@@ -264,7 +258,7 @@ Quit Orchard, then delete Orchard's own folder and its data folder:
 - **Windows:** the cloned or unzipped folder, and `%LOCALAPPDATA%\orchard\`.
 - **Linux and WSL:** the cloned folder, and `~/.local/share/orchard/`.
 
-The window's saved page settings, like the theme, are kept by the system's web view, in `~/Library/WebKit/org.python.python/` on a Mac and `%APPDATA%\pywebview\` on Windows. They're a few kilobytes, and other Python apps can share these folders, so only delete them if nothing else uses them. pip also keeps the packages it downloaded in its own cache, shared with other projects. `python3 -m pip cache purge` clears it.
+The window's saved settings, like the theme, stay in the web view's storage, `~/Library/WebKit/org.python.python/` on a Mac or `%APPDATA%\pywebview\` on Windows. Other Python apps can share these, so check before deleting them. `python3 -m pip cache purge` clears pip's download cache, which other projects share.
 
 ### Reporting a problem
 
