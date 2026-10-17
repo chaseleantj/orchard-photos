@@ -196,17 +196,28 @@ class LibraryTests(unittest.TestCase):
         waiting = self.image(3, 'a/three.jpg')
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 2})
         self.library.layout = SimpleNamespace(positions=lambda: {first: (0.1234567, -0.5), other: (1.0, 0.25)})
-        self.library.atlas = SimpleNamespace(ensure=lambda: {first: 0, other: 1, waiting: 2}, versions=lambda: ['v1'])
+        self.library.atlas = SimpleNamespace(ensure=lambda order=(): {first: 0, other: 1, waiting: 2}, versions=lambda: ['v1'])
         result = self.library.map({'folder': 'a'})
         self.assertEqual([point['id'] for point in result['points']], [first])
         self.assertEqual((result['points'][0]['x'], result['points'][0]['y'], result['points'][0]['slot']), (0.1235, -0.5, 0))
         self.assertEqual((result['pending'], result['sheets']), (1, ['v1']))
         self.assertEqual({point['id'] for point in self.library.map({})['points']}, {first, other})
 
+    def test_map_shows_only_the_newest_images_beyond_its_limit(self):
+        ids = [self.image(number, modified=f'2026-09-{number:02d}T12:00:00Z') for number in range(1, 4)]
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 3})
+        self.library.layout = SimpleNamespace(positions=lambda: {image_id: (0.0, 0.0) for image_id in ids})
+        asked = []
+        self.library.atlas = SimpleNamespace(ensure=lambda order=(): asked.append(order) or {image_id: n for n, image_id in enumerate(ids)}, versions=lambda: ['v1'])
+        with patch('server.library.MAP_LIMIT', 2):
+            result = self.library.map({})
+        self.assertEqual(([point['id'] for point in result['points']], result['omitted']), ([ids[2], ids[1]], 1))
+        self.assertEqual(asked, [[ids[2], ids[1], ids[0]]])
+
     def test_map_waits_for_its_first_fit_then_serves_positions(self):
         first = self.image(1)
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 1})
-        self.library.atlas = SimpleNamespace(ensure=lambda: {first: 0}, versions=lambda: ['v1'])
+        self.library.atlas = SimpleNamespace(ensure=lambda order=(): {first: 0}, versions=lambda: ['v1'])
         positions = [None, {first: (0.5, -0.5)}]
         self.library.layout = Mock(positions=lambda: positions.pop(0), status=lambda: {'state': 'computing', 'stage': 'Laying out the map'})
         waiting = self.library.map({})

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { MapEngine } from './mapEngine';
+import { MapEngine, PER_SHEET } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
 import { APP_NAME, SET_UP, filterParams, megabytes, request, storageKey } from './types';
 import { Progress } from './Progress';
@@ -8,7 +8,7 @@ import { searchWork } from './Activity';
 import type { Filters, Model, SearchStatus } from './types';
 
 interface Working { state: string; stage?: string; error?: string }
-interface MapData { points: MapPoint[]; pending: number; sheets: string[]; layout: Working }
+interface MapData { points: MapPoint[]; pending: number; omitted: number; sheets: string[]; layout: Working }
 type Phase = 'loading' | 'ready' | 'error';
 
 const STORAGE = storageKey('map');
@@ -100,16 +100,18 @@ export default function Embedding({ root, filters, highlight, search, model, sca
         return;
       }
       setWorking(null);
-      // The icon sheets only change when images are added, so a new filter keeps the decoded ones.
-      const versions = result.sheets.join();
+      // Only the sheets holding the shown images are decoded, and a filter that needs the same ones keeps them.
+      const needed = [...new Set(result.points.map(p => Math.floor(p.slot / PER_SHEET)))].sort((a, b) => a - b);
+      const versions = needed.map(n => `${n}:${result.sheets[n]}`).join();
       let sheets: ImageBitmap[] | null = null;
       if (versions !== shown.current.sheets) {
         let loaded = 0;
-        sheets = await Promise.all(result.sheets.map((version, n) => new Promise<ImageBitmap>((resolve, reject) => {
+        sheets = [];
+        await Promise.all(needed.map(n => new Promise<void>((resolve, reject) => {
           const image = new Image();
           // Bitmaps stay decoded; a plain image can be evicted from the browser's cache and re-decoded mid-zoom.
-          image.onload = () => { setSheetsLoaded(++loaded / result.sheets.length); createImageBitmap(image).then(resolve, reject); }; image.onerror = () => reject(new Error('The map images could not load. Retry, or rescan the folder.'));
-          image.src = `/api/atlas/${n}?v=${version}`;
+          image.onload = () => { setSheetsLoaded(++loaded / needed.length); createImageBitmap(image).then(bitmap => { sheets![n] = bitmap; resolve(); }, reject); }; image.onerror = () => reject(new Error('The map images could not load. Retry, or rescan the folder.'));
+          image.src = `/api/atlas/${n}?v=${result.sheets[n]}`;
         })));
       }
       if (controller.signal.aborted) return;
@@ -153,6 +155,7 @@ export default function Embedding({ root, filters, highlight, search, model, sca
     {phase === 'error' && <div className="empty map-message" role="alert"><h1>The map didn’t load</h1><p>{error}</p><button className="text-button secondary" onClick={() => setRetry(r => r + 1)}>Retry</button></div>}
     {empty && <div className="empty map-message"><h1>No images here</h1><p>{filtered ? 'Widen the date range, or choose another folder or file type.' : 'This folder has no images yet.'}</p>{(filtered || searching) && <button className="text-button secondary" onClick={onReset}>Clear search and filters</button>}</div>}
     {phase === 'ready' && !working && !!data?.pending && <p className="map-note" aria-live="polite">{data.pending.toLocaleString()} {data.pending === 1 ? 'image is' : 'images are'} still being prepared</p>}
+    {phase === 'ready' && !working && !data?.pending && !!data?.omitted && <p className="map-note">The map shows the newest {data.points.length.toLocaleString()} images. Filter by date or folder to see the other {data.omitted.toLocaleString()}.</p>}
     {phase === 'ready' && !empty && <div className="map-controls" role="group" aria-label="Map view">
       <button className="icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => engine.current?.zoomBy(1.7)}><Plus /></button>
       <button className="icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => engine.current?.zoomBy(1 / 1.7)}><Minus /></button>

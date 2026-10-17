@@ -15,7 +15,8 @@ export interface MapCallbacks {
 }
 
 // These mirror server/atlas.py: 64px cells holding a 60px icon, 32 per row.
-const CELL = 64, INSET = 2, INNER = CELL - 2 * INSET, COLUMNS = 32, PER_SHEET = COLUMNS * COLUMNS;
+const CELL = 64, INSET = 2, INNER = CELL - 2 * INSET, COLUMNS = 32;
+export const PER_SHEET = COLUMNS * COLUMNS;
 const CORNER = 7 / INNER;
 const DIMMED = 0.22;
 // Holding still on an image this long lifts it, so it can be carried to the search bar; a quicker drag pans.
@@ -111,6 +112,7 @@ export class MapEngine {
     this.invalidate();
   }
 
+  /** Icon sheets by number. Sheets no point uses can be missing. */
   setSheets(sheets: ImageBitmap[]) { this.sheets.forEach(sheet => sheet.close()); this.sheets = sheets; this.invalidate(); }
 
   setPoints(points: MapPoint[], restore?: MapCamera) {

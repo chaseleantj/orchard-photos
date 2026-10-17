@@ -39,8 +39,9 @@ class Atlas:
             result.append(f"{stat.st_mtime_ns:x}-{stat.st_size:x}")
         return result
 
-    def ensure(self) -> dict[str, int]:
-        """Give every image a slot, drawing icons for the new ones. Returns image id -> slot."""
+    def ensure(self, order=()) -> dict[str, int]:
+        """Give every image a slot, drawing icons for the new ones. Returns image id -> slot. New images listed in
+        `order` take their slots in that order, so a map of some of them needs only the sheets they fill."""
         with self._lock, connect(self.directory) as connection:
             slots = dict(connection.execute("SELECT image_id, slot FROM atlas_slots"))
             missing = connection.execute("""
@@ -48,6 +49,8 @@ class Atlas:
             """).fetchall()
             if not missing:
                 return slots
+            place = {image_id: rank for rank, image_id in enumerate(order)}
+            missing.sort(key=lambda row: place.get(row[0], len(place)))
             first = max(slots.values(), default=-1) + 1
             assigned = {image_id: first + offset for offset, (image_id,) in enumerate(missing)}
             with ThreadPoolExecutor(max_workers=4) as pool:

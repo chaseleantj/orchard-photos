@@ -21,6 +21,8 @@ PAGE_SIZE = 80
 MAX_PAGE = 2500
 IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 SIMILAR_LIMIT = 100
+# The most images the map shows, the newest. Each is a decoded icon in the page, and drawn every frame.
+MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
 PREVIEW_EDGE = 4096
@@ -309,7 +311,7 @@ class Library:
         return preview
 
     def map(self, params):
-        """Every filtered image with a place on the map and an icon slot in the atlas."""
+        """The newest MAP_LIMIT filtered images with a place on the map and an icon slot in the atlas."""
         where, values = self.filters(params)
         rows = self.tiles(where, values)
         self.require_search()
@@ -318,10 +320,12 @@ class Library:
             # The first fit runs in the background, and the page follows its progress.
             self.layout.start()
             return {'points': [], 'pending': 0, 'sheets': [], 'layout': self.layout.status()}
-        slots = self.atlas.ensure()
+        shown = rows[:MAP_LIMIT]
+        slots = self.atlas.ensure([row['id'] for row in rows])
         points = []
-        for row in rows:
+        for row in shown:
             if row['id'] in positions and row['id'] in slots:
                 x, y = positions[row['id']]
                 points.append({**dict(row), 'x': round(x, 4), 'y': round(y, 4), 'slot': slots[row['id']]})
-        return {'points': points, 'pending': len(rows) - len(points), 'sheets': self.atlas.versions(), 'layout': {'state': 'ready'}}
+        return {'points': points, 'pending': len(shown) - len(points), 'omitted': len(rows) - len(shown),
+                'sheets': self.atlas.versions(), 'layout': {'state': 'ready'}}

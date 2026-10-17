@@ -49,3 +49,8 @@ class AtlasTests(unittest.TestCase):
         with self.assertLogs("server.atlas", level="WARNING"):
             self.assertEqual(self.atlas.ensure(), {"a": 0})
         self.assertEqual(len(self.atlas.versions()), 1)
+
+    def test_new_images_take_slots_in_the_order_asked(self):
+        for name in "abc":
+            self.add(name, (0, 0, 0))
+        self.assertEqual(self.atlas.ensure(["c", "a"]), {"c": 0, "a": 1, "b": 2})
