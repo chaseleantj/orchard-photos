@@ -13,8 +13,8 @@ import shutil
 import subprocess
 import sys
 import threading
-from urllib.parse import parse_qs, quote, urlparse
 import urllib.error
+from urllib.parse import parse_qs, quote, urlparse
 import urllib.request
 import webbrowser
 
@@ -80,7 +80,7 @@ class App:
         try:
             path = path.resolve(strict=True)
         except (OSError, RuntimeError):
-            raise ValueError(f'{text} does not exist.')
+            raise ValueError(f'{text} does not exist.') from None
         if not path.is_dir():
             raise ValueError(f'{text} is a file. Choose the folder that contains it.')
         if not os.access(path, os.R_OK | os.X_OK):
@@ -285,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data = json.loads(self.body(FORM_LIMIT))
         except ValueError:
-            raise ValueError('The request could not be read.')
+            raise ValueError('The request could not be read.') from None
         if not isinstance(data, dict):
             raise ValueError('The request could not be read.')
         return data

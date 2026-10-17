@@ -3,7 +3,7 @@
 Originals are only ever read. Identical files share one image, so thumbnails and vectors survive renames and moves.
 """
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import logging
 import os
@@ -82,7 +82,7 @@ def walk(root: Path, skip=frozenset(), found=None):
 
 
 def utc(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return moment.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def exif_details(image):
@@ -190,7 +190,7 @@ class Scanner:
                             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
                                        (result['id'], result['width'], result['height'], result['mime'],
                                         status.st_size, result['taken'], result['camera']))
-                        modified = utc(datetime.fromtimestamp(status.st_mtime_ns / 1e9, timezone.utc))
+                        modified = utc(datetime.fromtimestamp(status.st_mtime_ns / 1e9, UTC))
                         db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
                                    (path, path.rpartition('/')[0], result.get('id') if 'error' not in result else None,
                                     status.st_size, status.st_mtime_ns, modified, result.get('error')))

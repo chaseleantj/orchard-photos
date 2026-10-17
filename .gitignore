@@ -18,3 +18,7 @@ build/
 ._*
 Thumbs.db
 desktop.ini
+
+# Playwright output
+test-results/
+playwright-report/

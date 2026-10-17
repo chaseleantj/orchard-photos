@@ -5,8 +5,8 @@ import unittest
 import numpy as np
 from PIL import Image, ImageFilter
 
-from server.groups import THRESHOLD, Groups, gather, sharpness, stem
 from server.cache import connect, thumbnail_path
+from server.groups import THRESHOLD, Groups, gather, sharpness, stem
 from server.scanner import Scanner
 from server.semantic import MODEL, Encoder, SemanticIndex
 

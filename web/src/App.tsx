@@ -197,7 +197,7 @@ export default function App() {
   useEffect(() => { window.scrollTo({ top: 0 }); }, [filters, submitted, queryMode, similar, upload]);
   // Image searches are answered by a ranked grid, wherever they start.
   const findSimilar = useCallback((id: string) => { clearSearch(); setPicked(null); setSelected(null); setView('grid'); setSimilar(id); setMode('visual'); }, [clearSearch]);
-  const useImage = useCallback((file: File) => {
+  const searchWithImage = useCallback((file: File) => {
     if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) { setError('Choose an image file to search.'); return; }
     if (file.size > UPLOAD_LIMIT) { setError(`Choose an image smaller than ${UPLOAD_LIMIT / 1024 / 1024} MB.`); return; }
     clearSearch(); setPanel(null); setUpload(file); setMode('visual'); setSelected(null); setPicked(null); setView('grid');
@@ -212,11 +212,11 @@ export default function App() {
 
   const showFolder = (path: string) => { setSelected(null); setPicked(null); clearSearch(); setView('grid'); setFilters(f => ({ ...f, folder: path })); };
   useEffect(() => {
-    const paste = (e: ClipboardEvent) => { const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/')); if (file && ready) { e.preventDefault(); useImage(file); } };
+    const paste = (e: ClipboardEvent) => { const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/')); if (file && ready) { e.preventDefault(); searchWithImage(file); } };
     const keyboard = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); if (selected === null && !picked && !panel) searchRef.current?.focus(); } };
     window.addEventListener('paste', paste); window.addEventListener('keydown', keyboard);
     return () => { window.removeEventListener('paste', paste); window.removeEventListener('keydown', keyboard); };
-  }, [useImage, panel, selected, picked, ready]);
+  }, [searchWithImage, panel, selected, picked, ready]);
   const filtered = isFiltered(filters);
   const searching = !!submitted || !!similar || !!upload;
   // An image search that failed because visual search is not set up offers to set it up instead of retrying.
@@ -253,7 +253,7 @@ export default function App() {
   const scanLeft = useRemaining(scanBusy && scan?.changed ? `scan:${root}` : '', scan?.done ?? 0, scan?.changed ?? 0);
   const searchLeft = useRemaining(search?.state === 'downloading' ? 'download' : search?.state === 'indexing' ? `index:${root}` : '', search?.state === 'downloading' ? search.received ?? 0 : search?.indexed ?? 0, search?.state === 'downloading' ? search.size ?? 0 : search?.total ?? 0);
   useEffect(() => { if (search?.state !== 'error') setSeenError(''); else if (panel === 'library') setSeenError(search.error ?? ''); }, [search?.state, search?.error, panel]);
-  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) useImage(file); }}>
+  return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) searchWithImage(file); }}>
     <header ref={headerRef} className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setAskedMode(effectiveMode); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
@@ -288,6 +288,6 @@ export default function App() {
     {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setSelected(null)} onSimilar={visualReady ? findSimilar : null} onFolder={showFolder} />}
     {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} onClose={() => setPicked(null)} onSimilar={visualReady ? findSimilar : null} onFolder={showFolder} />}
     {carried && <img className="carried" src={imageUrl(carried.id)} alt="" style={{ left: carried.x, top: carried.y }} />}
-    <input className="sr-only" ref={uploadRef} type="file" accept="image/*,.heic,.heif" aria-label="Image to match" tabIndex={-1} onChange={e => { if (e.target.files?.[0]) useImage(e.target.files[0]); e.target.value = ''; }} />
+    <input className="sr-only" ref={uploadRef} type="file" accept="image/*,.heic,.heif" aria-label="Image to match" tabIndex={-1} onChange={e => { if (e.target.files?.[0]) searchWithImage(e.target.files[0]); e.target.value = ''; }} />
   </div>;
 }

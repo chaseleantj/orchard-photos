@@ -179,7 +179,7 @@ def embed(matrix):
         for epoch in range(EPOCHS):
             due = numpy.flatnonzero(numpy.floor((epoch + 1) * frequency) > numpy.floor(epoch * frequency))
             shares = numpy.array_split(due, max(1, min(THREADS, len(due) // SHARE)))
-            moves = list(pool.map(lambda share, generator: _forces(x, y, first[share], second[share], generator),
+            moves = list(pool.map(lambda share, generator: _forces(x, y, first[share], second[share], generator),  # noqa: B023
                                   shares, generators))
             # Steps shrink as the run settles.
             step = 1 - epoch / EPOCHS
