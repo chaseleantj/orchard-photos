@@ -55,6 +55,6 @@ body:
     id: output
     attributes:
       label: Terminal output
-      description: What the terminal printed. The Mac app writes it to `/tmp/orchard.log`.
+      description: What the terminal printed. The Mac app writes it to `~/Library/Logs/Orchard.log`.
       render: text
   # INTEGRATION: when Info gains Copy diagnostics, add a Diagnostics field asking for its output.

@@ -81,5 +81,5 @@ Install Orchard on each computer. Each one keeps its own cache and prepares its 
 
 ## Reporting a problem
 
-[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. Include what the terminal printed. The Mac app writes the same output to `/tmp/orchard.log`.
+[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. Include what the terminal printed. The Mac app writes the same output to `~/Library/Logs/Orchard.log`.
 <!-- INTEGRATION: when Info gains Copy diagnostics, say to paste its output here. -->

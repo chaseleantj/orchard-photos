@@ -143,6 +143,6 @@ The app's name, command name and ports live in `app.json`, which the window titl
 - The logo, in `web/src/Logo.tsx`, `public/` and `docs/`, and the app icons in `assets/`.
 - The package name in `package.json`.
 - The `orchard` and `orchard.cmd` launchers.
-- The Mac app in `scripts/install-app`: its name, bundle identifier, icon and log file.
+- The Mac app in `scripts/install-app`: its name, bundle identifier and icon.
 - `server/window.py`: the `ORCHARD_BUNDLE` variable the Mac app sets, and the icon paths.
 - The docs.

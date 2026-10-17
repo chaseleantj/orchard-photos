@@ -1,15 +1,19 @@
 #!/bin/zsh
-# Install ~/Applications/Orchard.app, which opens Orchard's window from the Dock or Spotlight.
+# Install Orchard.app, which opens this clone's window from the Dock or Spotlight: scripts/install-app [folder]
+# The app goes into ~/Applications, or into folder when one is given.
 set -e
 [[ $(uname) == Darwin ]] || { print -u2 'scripts/install-app builds a Mac app. On Linux, run ./orchard.'; exit 1; }
+command -v clang > /dev/null || { print -u2 'scripts/install-app compiles the app with clang. Install the command line tools with xcode-select --install, then run it again.'; exit 1; }
 root=${0:A:h:h}
-app=~/Applications/Orchard.app
-log=/tmp/orchard.log
+app=${${1:-~/Applications}:A}/Orchard.app
 
-# The app's executable is a shell script that runs ./orchard. server/window.py then reruns Python through
-# Contents/MacOS/python, a link to Python's own app binary, so macOS shows the window as Orchard's, not Python's.
+# The app's executable is the compiled launcher the downloadable app uses, so macOS asks to allow the clone's folder,
+# like one on the Desktop, and remembers the answer. A script there would be refused without asking. It runs
+# Contents/Resources/start, which runs ./orchard. server/window.py then reruns Python through Contents/MacOS/python, a
+# link to Python's own app binary, so macOS shows the window as Orchard's, not Python's.
 rm -rf $app
 mkdir -p $app/Contents/MacOS $app/Contents/Resources
+clang -O2 -DSTART_SCRIPT -o $app/Contents/MacOS/Orchard $root/scripts/app/macos-launcher.c
 cp $root/assets/orchard.icns $app/Contents/Resources/Orchard.icns
 cat > $app/Contents/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,8 +31,7 @@ cat > $app/Contents/Info.plist <<'PLIST'
 PLIST
 
 # Apps start with a bare PATH, so reuse this shell's, plus Homebrew's for a Python installed later.
-cat > $app/Contents/MacOS/Orchard <<SCRIPT
-#!/bin/sh
+cat > $app/Contents/Resources/start <<SCRIPT
 export PATH='$PATH:/opt/homebrew/bin:/usr/local/bin'
 export ORCHARD_BUNDLE="\$(cd "\$(dirname "\$0")/../.." && pwd)"
 cd '$root'
@@ -42,15 +45,10 @@ if ! installed; then
   watcher=\$!
 fi
 status=0
-./orchard > $log 2>&1 || status=\$?
+./orchard "\$@" || status=\$?
 if [ -n "\$dialog" ]; then kill \$watcher \$dialog 2> /dev/null; fi
-[ \$status = 0 ] && exit
-# Orchard stopped without opening, so say why instead of failing silently.
-osascript -e 'on run argv' -e 'display alert "Orchard stopped" message (item 1 of argv) as critical' -e 'end run' "The end of its log, $log:
-
-\$(tail -n 15 $log)" > /dev/null
+exit \$status
 SCRIPT
-chmod +x $app/Contents/MacOS/Orchard
 ln -s $root/.venv/app-python $app/Contents/MacOS/python
 # Signed, so macOS can remember what the user lets it open, like folders on the Desktop.
 codesign --force --sign - $app
