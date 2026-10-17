@@ -274,6 +274,14 @@ class LibraryTests(unittest.TestCase):
         self.assertIn('not available', self.library.scan_state['error'])
         self.assertEqual(self.library.status()['counts']['images'], 1)
 
+    def test_pages_follow_the_revision_a_scan_commits(self):
+        Image.new('RGB', (8, 8), 'red').save(self.folder / 'one.png')
+        self.library.scan()
+        self.assertEqual(self.library.pictures({})['total'], 1)
+        Image.new('RGB', (8, 8), 'blue').save(self.folder / 'two.png')
+        self.library.scan()
+        self.assertEqual(self.library.pictures({'offset': '1'})['total'], 2)
+
     def test_a_closed_library_stops_scanning(self):
         for number in range(3):
             Image.new('RGB', (8, 8), (number, 0, 0)).save(self.folder / f'{number}.png')
