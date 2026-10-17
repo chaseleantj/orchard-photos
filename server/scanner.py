@@ -21,6 +21,12 @@ except ImportError:
     pass
 
 EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
+# Photos and videos in formats the scanner can't read. They are only counted, so a folder of them doesn't look empty
+# for no reason.
+RAW = {'.3fr', '.arw', '.cr2', '.cr3', '.crw', '.dcr', '.dng', '.erf', '.fff', '.iiq', '.kdc', '.mef', '.mos', '.mrw',
+       '.nef', '.nrw', '.orf', '.pef', '.raf', '.raw', '.rw2', '.rwl', '.sr2', '.srf', '.srw', '.x3f'}
+VIDEO = {'.3gp', '.avi', '.flv', '.m2ts', '.m4v', '.mkv', '.mov', '.mp4', '.mpeg', '.mpg', '.mts', '.webm', '.wmv'}
+SKIPPED = {**dict.fromkeys(RAW, 'raw'), **dict.fromkeys(VIDEO, 'video')}
 THUMBNAIL_SIZE = 720
 # Anything larger is refused as a possible decompression bomb. Pillow only warns between one and two times its
 # limit, so the scanner checks the size itself.
@@ -44,14 +50,16 @@ class ScanCancelled(Exception):
 
 
 def walk(root: Path, skip=frozenset(), found=None):
-    """Every image file below root as (relative posix path, stat), the folders that could not be listed, and the
-    Photos libraries passed over. `found` hears the running count of image files.
+    """Every image file below root as (relative posix path, stat), the folders that could not be listed, the Photos
+    libraries passed over, and how many RAW and video files were skipped. `found` hears the running count of image
+    files.
 
     Hidden entries are skipped, and so are Photos libraries, which macOS keeps closed to other apps. Symlinked folders
     are followed once each, after the real folders, so a link loop ends and a folder reached both ways keeps its real
     path.
     """
     files, unreadable, libraries, visited = [], [], [], set()
+    skipped = dict.fromkeys(('raw', 'video'), 0)
     stack, links = [('', str(root))], []
     while stack or links:
         relative, directory = stack.pop() if stack else links.pop()
@@ -71,15 +79,19 @@ def walk(root: Path, skip=frozenset(), found=None):
                             libraries.append(child)
                         elif entry.is_dir():
                             (links if entry.is_symlink() else stack).append((child, entry.path))
-                        elif entry.is_file() and os.path.splitext(entry.name)[1].lower() in EXTENSIONS:
-                            files.append((child, entry.stat()))
-                            if found and len(files) % FOUND_EVERY == 0:
-                                found(len(files))
+                        elif entry.is_file():
+                            extension = os.path.splitext(entry.name)[1].lower()
+                            if extension in EXTENSIONS:
+                                files.append((child, entry.stat()))
+                                if found and len(files) % FOUND_EVERY == 0:
+                                    found(len(files))
+                            elif extension in SKIPPED:
+                                skipped[SKIPPED[extension]] += 1
                     except OSError:
                         continue
         except OSError:
             unreadable.append(relative)
-    return files, unreadable, libraries
+    return files, unreadable, libraries, skipped
 
 
 def utc(moment: datetime) -> str:
@@ -162,7 +174,7 @@ class Scanner:
         if self.directory.exists():
             status = self.directory.stat()
             skip.add((status.st_dev, status.st_ino))
-        found, unreadable, libraries = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
+        found, unreadable, libraries, skipped = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         if '' in unreadable:
             raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
         with connect(self.directory, rows=True) as db:
@@ -204,6 +216,7 @@ class Scanner:
         stats['removed'] = removed
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries
+        stats['skipped'] = skipped
         return stats
 
     def _examine(self, relative: str) -> dict:

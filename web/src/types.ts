@@ -17,9 +17,10 @@ export const searchable = (search: SearchStatus) => search.indexed > 0;
 /** Visual search is downloading, starting, or preparing images for the first time. */
 export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
+/** `skipped` counts the RAW photos and videos the scanner can't read, from the last scan that counted them. */
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unlistedFolders: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unlistedFolders: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 export interface Folder { path: string; label: string; name: string; id: string }
 interface RecentFolder { path: string; label: string; available: boolean }

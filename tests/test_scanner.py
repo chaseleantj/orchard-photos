@@ -57,12 +57,22 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((stats['images'], stats['unreadable']), (2, 0))
         self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
 
+    def test_raw_photos_and_videos_are_counted_as_skipped_not_unreadable(self):
+        picture(self.root / 'kept.jpg')
+        for name in ('a/IMG_1.CR3', 'a/IMG_2.nef', 'DSC_3.dng', 'clip.MOV', 'b/film.mp4', '.hidden/raw.arw'):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes(b'not decoded')
+        stats = self.scanner.scan()
+        self.assertEqual(set(self.files()), {'kept.jpg'})
+        self.assertEqual(stats['unreadable'], 0)
+        self.assertEqual(stats['skipped'], {'raw': 3, 'video': 2})
+
     @unittest.skipIf(sys.platform == 'win32', 'Symlinks need Developer Mode on Windows')
     def test_symlink_loops_end_and_real_paths_win(self):
         picture(self.root / 'real/one.png')
         os.symlink(self.root, self.root / 'real/loop')
         os.symlink(self.root / 'real', self.root / 'alias')
-        found, unreadable, _ = walk(self.root)
+        found, unreadable, *_ = walk(self.root)
         self.assertEqual([path for path, _ in found], ['real/one.png'])
         self.assertEqual(unreadable, [])
 
