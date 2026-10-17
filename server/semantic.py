@@ -29,7 +29,7 @@ TOKENIZER = "tokenizer.json"
 # BATCH_SIZE. Its vectors match VISION's on the CPU to a cosine of 0.9997 or more, so they are stored under the same MODEL.
 # Other computers keep VISION, since fp16 is slower than fp32 on a CPU.
 CORE_ML_REPOSITORY = "ChaseLean/siglip2-base-patch16-256-coreml-fp16"
-CORE_ML_REVISION = "<revision>"  # Placeholder until the upload: the commit of CORE_ML_REPOSITORY that holds it.
+CORE_ML_REVISION = "ca75720483cf3daae26c091ab23f12e1e8a6cdb1"  # The commit of CORE_ML_REPOSITORY that holds CORE_ML_VISION.
 CORE_ML_VISION = "vision_model_fp16_coreml.onnx"
 CORE_ML_SHA256 = "87aa52ceed129728ae749782dfafb7cb4e92060f9018776040071b6d85caebc9"
 # The GPU, asked for by name: left to choose, Core ML picks the Neural Engine, which is half as fast here.
