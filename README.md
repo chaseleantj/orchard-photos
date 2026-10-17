@@ -12,11 +12,30 @@ Orchard is a small Python server with a React page, shown in its own window. The
 
 ## Quick start
 
-<!-- DOWNLOADS: links to the Mac DMG and the Windows zip on the Releases page go here, above the steps for running from source. -->
+The downloads bring their own Python, so they need no setup:
 
-Orchard runs on macOS, Windows and Linux, with Python 3.12, 3.13 or 3.14. If a step fails, see [Questions and problems](docs/questions-and-problems.md).
+| System | Download |
+| --- | --- |
+| Mac with Apple Silicon, macOS 14 or later | [Orchard-mac-arm64.dmg](https://github.com/chaseleantj/orchard-photos/releases/latest/download/Orchard-mac-arm64.dmg) |
+| Windows 10 or 11, x64 | [Orchard-windows-x64.zip](https://github.com/chaseleantj/orchard-photos/releases/latest/download/Orchard-windows-x64.zip) |
 
-### macOS
+On Linux and Intel Macs, run Orchard from a clone, which works on macOS, Windows and Linux with Python 3.12, 3.13 or 3.14. If a step fails, see [Questions and problems](docs/questions-and-problems.md).
+
+### Installing the Mac app
+
+Open the DMG and drag Orchard to Applications. Orchard isn't signed by Apple yet, so the first time you open it, macOS says it can't verify it:
+
+1. Click **Done**.
+2. Open **System Settings › Privacy & Security**, and click **Open Anyway** next to the message about Orchard.
+3. Click **Open Anyway** again when macOS asks, and enter your password.
+
+You can instead run `xattr -dr com.apple.quarantine /Applications/Orchard.app` in Terminal before opening it. The first time you open a folder in your Desktop or Documents, macOS asks whether Orchard may open it, and it may ask again after an update.
+
+### Installing on Windows
+
+Extract the zip, then open `Orchard.exe` in the `Orchard` folder. Windows may say it protected your PC. Click **More info**, then **Run anyway**.
+
+### Running from source on macOS
 
 ```bash
 git clone https://github.com/chaseleantj/orchard-photos.git
@@ -24,9 +43,9 @@ cd orchard-photos
 ./orchard ~/Pictures
 ```
 
-If your Python is too old, `./orchard` says so, and how to get a supported one, like `brew install python@3.13`. To open Orchard from the Dock or Spotlight, run `scripts/install-app` once. It installs `~/Applications/Orchard.app`.
+If your Python is too old, `./orchard` says so, and how to get a supported one, like `brew install python@3.13`. To open the clone from the Dock or Spotlight, run `scripts/install-app` once. It installs `~/Applications/Orchard.app`, and needs the Xcode command line tools, which `xcode-select --install` installs.
 
-### Windows
+### Running from source on Windows
 
 In Command Prompt or PowerShell, install Python and the Microsoft Visual C++ Redistributable, which visual search needs:
 
@@ -45,7 +64,7 @@ orchard.cmd C:\Users\you\Pictures
 
 You can also double-click `orchard.cmd`. If you downloaded a zip, right-click it, choose Properties, then Unblock before extracting it.
 
-### Linux
+### Running from source on Linux
 
 Python needs its venv package, and the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, including WSL:
 
@@ -60,21 +79,21 @@ Without the GTK packages, Orchard opens in your browser instead.
 
 ## Using Orchard
 
-The first run installs the Python packages into a `.venv` folder beside the code, which takes a minute or two. Then Orchard opens in its own window. Close the window, or press Ctrl+C in the terminal, to quit.
+The first run from a clone installs the Python packages into a `.venv` folder beside the code, which takes a minute or two. Then Orchard opens in its own window. Close the window, or press Ctrl+C in the terminal, to quit.
 
 - Run `./orchard` with no folder to reopen the last one. Run it with a folder while Orchard is open to switch the window to that folder.
 - Add `--browser` to use your browser instead of a window. Orchard is then at http://127.0.0.1:4400.
 - Images are sorted newest first, by the date they were taken. **Filter** narrows them by subfolder, file type and date.
 - Identical files show once, and bursts, edits and resized copies share one tile.
-- **Map** lays the whole folder out by similarity, so look-alike images sit together.
+- **Map** lays the whole folder out by similarity, so look-alike images sit together. It shows the newest 25,000 images, and filters reach the rest.
 
 Visual search and the map need the search model, a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers. Orchard offers to set it up when you open your first folder. Until then, the search bar matches file names. Orchard has been tested with libraries of up to 25,000 photos.
 
 ## Privacy
 
-Orchard only goes online to download the search model from Hugging Face once, and for pip to install its Python packages on the first run and after an update changes them. After that, it works offline. Its cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
+Orchard only goes online to download the search model from Hugging Face once, and, when run from a clone, for pip to install its Python packages on the first run and after an update changes them. After that, it works offline. If you turn on **Check for updates** in Info, it also asks api.github.com once a day whether a newer version is out. That check is off unless you turn it on. Orchard's cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
 
-The server listens only on this computer, and rejects requests from other sites, so don't expose it through a proxy or tunnel. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
+The server listens only on this computer, and accepts requests only from Orchard's own page and from programs on the computer, so a website you visit can't read your photos. It won't work through a proxy, so don't expose it through one or a tunnel. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Documentation
 

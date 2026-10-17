@@ -26,13 +26,12 @@ body:
       placeholder: macOS 15.5, Windows 11 24H2, Ubuntu 24.04
     validations:
       required: true
-  # "The release you downloaded" depends on GitHub Releases existing, which the packaging branch adds before launch.
   - type: input
     id: version
     attributes:
       label: Orchard version
-      description: The release you downloaded, or if you cloned the repository, the output of `git rev-parse --short HEAD`.
-      placeholder: b38f839
+      description: The version at the bottom of Info. If you cloned the repository, also add the output of `git rev-parse --short HEAD`.
+      placeholder: 0.1.0
     validations:
       required: true
   - type: textarea
@@ -52,9 +51,14 @@ body:
     validations:
       required: true
   - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: In Info, click Copy diagnostics, and paste it here. It has no file names or folders.
+      render: text
+  - type: textarea
     id: output
     attributes:
       label: Terminal output
-      description: What the terminal printed. The Mac app writes it to `~/Library/Logs/Orchard.log`.
+      description: What the terminal printed. The Mac apps write it to `~/Library/Logs/Orchard.log`, and the Windows app to `%TEMP%\Orchard.log`.
       render: text
-  # INTEGRATION: when Info gains Copy diagnostics, add a Diagnostics field asking for its output.

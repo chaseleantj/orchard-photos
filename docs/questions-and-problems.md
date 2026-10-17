@@ -57,7 +57,7 @@ If the model downloaded but won't load, delete `models/`, and Orchard downloads 
 
 Check these, in order:
 
-- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files, videos and Live Photo videos aren't shown.
+- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files, videos and Live Photo videos aren't shown, and Info counts them.
 - **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open.
 - **Hidden files and Photos libraries.** Both are skipped. See [Apple Photos](using-orchard.md#apple-photos).
 - **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.
@@ -65,7 +65,19 @@ Check these, in order:
 - **The date.** A photo without EXIF data is dated by when the file last changed, so a copied photo may sit in a later month than you expect.
 - **New files.** Orchard rescans every minute. **Rescan now** in Info does it at once.
 
-On a Mac, the first time you open your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow access. If you chose **Don't Allow**, Orchard can't read the folder. Turn it back on in System Settings › Privacy & Security › Files and Folders, for the app you started Orchard from, like Terminal.
+On a Mac, a folder macOS keeps Orchard out of can't be read at all. See [Orchard says macOS is blocking access](#orchard-says-macos-is-blocking-access).
+
+## Orchard says macOS is blocking access
+
+The first time Orchard opens your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow it. If you chose **Don't Allow**, Orchard says macOS is blocking access to the folder. The Mac app from `scripts/install-app` instead stops with "Operation not permitted" in its log.
+
+To allow it, open **System Settings › Privacy & Security › Files & Folders**, and turn on the folder for Orchard, or for the app you started Orchard from, like Terminal. If it isn't listed there, add it to **Full Disk Access** instead. Then choose **Rescan now** in Info, or open Orchard again. Each update of the downloaded app counts as a new app to macOS, so it may ask again.
+
+## Orchard says "This app is available only on this computer"
+
+The server refused the request. It accepts requests only from Orchard's own page and from programs on the computer, so it refuses a page opened through another address, like a proxy, a tunnel, another hostname or another port. Use Orchard's own window, or open http://127.0.0.1:4400, or the port you chose with `--port`.
+
+The terminal, or the app's log, shows a line starting with `Refused` for each refused request, with the Host, Origin and `Sec-Fetch-Site` it came with. Include it if you report the problem.
 
 ## Photos on external, network and cloud drives
 
@@ -81,5 +93,6 @@ Install Orchard on each computer. Each one keeps its own cache and prepares its 
 
 ## Reporting a problem
 
-[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. Include what the terminal printed. The Mac app writes the same output to `~/Library/Logs/Orchard.log`.
-<!-- INTEGRATION: when Info gains Copy diagnostics, say to paste its output here. -->
+[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. In Info, click **Copy diagnostics**, and paste the report into the form. It names versions, counts and the last error, but no file names or folders.
+
+Include what the terminal printed, too. The Mac apps write it to `~/Library/Logs/Orchard.log`, and the Windows app to `%TEMP%\Orchard.log`.

@@ -14,7 +14,7 @@ your folder
 
 ## Scanning
 
-The scanner walks the whole folder and finds every image file. For each new or changed file, it:
+The scanner walks the whole folder and finds every image file. It counts RAW photos and videos too, which it can't read, so Info can say they aren't shown. For each new or changed file, it:
 
 1. Hashes the contents with SHA-256.
 2. Reads the width, height, camera and date taken from EXIF.
@@ -22,7 +22,9 @@ The scanner walks the whole folder and finds every image file. For each new or c
 
 Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
 
-The server rescans the open folder every minute.
+Large images are decoded in turn, within a shared memory budget, and shrunk before they're turned upright, so a folder of huge PNGs or TIFFs doesn't run out of memory. Images over 300 megapixels are refused.
+
+The server rescans the open folder every minute. A folder that's slow to list, like one on a network drive, is rechecked less often: the wait is at least 20 times as long as the last listing took.
 
 ## Visual search
 
@@ -48,6 +50,8 @@ Bursts, edits and resized copies are different files, so they have different has
 
 Each group forms around one centre, and every member must match that centre. This stops a slow series, like a plant photographed every day, from chaining into one long group. Crops differ more than resized copies, so Orchard also groups files in the same folder whose names differ only by a size or copy suffix, like `photo-800x400.jpg` and `photo (1).jpg`, as long as their cosine similarity is at least 0.72.
 
+Screenshots, renders and web graphics have no camera details, and different screens of one app or design can score as high as copies. So when a pair has such an image, and both have the same shape, they also have to look alike pixel by pixel, compared in grey at 64 × 64. Copies pass, and different screens don't.
+
 The image that fronts each group is the sharpest one, measured by the variance of the Laplacian. Between copies of one picture, which are about equally sharp, the larger one wins.
 
 ## The map
@@ -56,11 +60,11 @@ The map uses UMAP to squeeze the vectors down to two dimensions, so similar imag
 
 Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard fits the layout again only once new images make up more than a fifth of the map.
 
-To draw thousands of images quickly, the server packs small icons into sheets of 1,024 icons each, so the page loads a handful of sheets instead of one image per request.
+To draw thousands of images quickly, the server packs small icons into sheets of 1,024 icons each, so the page loads a handful of sheets instead of one image per request. The map shows at most the newest 25,000 images that match the filters, and new images get their icon slots newest first, so those images share the first sheets.
 
 ## The server
 
-The server is a small HTTP server from Python's standard library. It serves the built page from `dist/` and a JSON API under `/api/`. It only listens on `127.0.0.1`, and it rejects requests from other hosts and other sites, so a web page you visit can't read your photos through it.
+The server is a small HTTP server from Python's standard library. It serves the built page from `dist/` and a JSON API under `/api/`. It only listens on `127.0.0.1`, and accepts requests only from its own page and from programs on the computer, so a web page you visit can't read your photos through it. The Host must be 127.0.0.1, localhost or [::1] on the server's port, which stops DNS rebinding. The `Origin` and `Sec-Fetch-Site` headers turn away every other page, even one on another local port, and a POST must be JSON, which a web form can't send. The one exception is an image search, which sends the image itself. Every response tells the browser not to frame the page or guess content types, and the page runs only its own scripts. The server logs each request it refuses as a `Refused` line.
 
 Only one folder is open at a time. Opening another folder closes the current one and stops its background work.
 

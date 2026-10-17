@@ -40,6 +40,8 @@ npm run dev
 
 Then open http://127.0.0.1:5173. Vite reloads the page when you change the frontend, and passes `/api` requests to the server on port 4400. Restart the server after changing Python code.
 
+The server accepts only its own page, and refuses one on port 5173. So Vite's proxy, in `vite.config.ts`, passes requests on with the server's own Host, and with its Origin when they come from the dev page. A request sent to port 4400 from the dev page directly is refused, with a `Refused` line in the server's output. A program, like `curl`, can call the API, but a POST must have the type `application/json`, or an image type for an image search.
+
 The server takes these options:
 
 | Option | Description |
@@ -50,6 +52,7 @@ The server takes these options:
 | `--no-watch` | Only scan when asked, instead of every minute. |
 | `--window` | Open in its own window, and quit when it closes. `./orchard` passes this. |
 | `--browser` | Open the page in the browser instead. The last of `--window` and `--browser` wins. |
+| `--version` | Print the version and quit. |
 
 ## Project layout
 
@@ -64,16 +67,20 @@ The server takes these options:
 | `server/groups.py` | Groups near-duplicates. |
 | `server/layout.py` | Lays out the map with UMAP, written in NumPy. |
 | `server/atlas.py` | Packs map icons into sheets. |
+| `server/diagnostics.py` | The report that Copy diagnostics in Info copies, without file names or folders. |
+| `server/updates.py` | The opt-in daily check for a newer release on GitHub. |
 | `server/parity-vector.npy` | The vector the CPU gives for the test image that a GPU must match. |
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |
 | `dist/` | The built page. |
-| `tests/` | Python tests, one file per server module. |
+| `tests/` | Python tests, one file per server module. `tests/ui/` holds the Playwright test of the page. |
 | `orchard`, `orchard.cmd` | The launchers for macOS and Linux, and for Windows. They find a supported Python, install the packages, and start the server with `--window`. |
-| `scripts/install-app` | Builds the Mac app that opens Orchard from the Dock. |
+| `scripts/install-app` | Builds the Mac app that opens a clone from the Dock. |
+| `scripts/build-app`, `scripts/app/` | Build the Mac DMG and the Windows zip, and their launchers. |
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
 | `scripts/build-coreml-model` | Builds the Core ML image encoder and the parity vector. |
-| `app.json` | The app's name, command name and ports. |
+| `app.json` | The app's name, version, command name and ports. |
 | `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows, and the linters and UI test on Ubuntu. |
+| `.github/workflows/release.yml` | Builds and tests the downloads, and drafts a release, for a `v*` tag. |
 
 ## Tests
 
@@ -86,7 +93,7 @@ npm run lint
 
 On Windows, run `.venv\Scripts\python -m unittest discover -s tests` instead of `npm test`. Tests that need symlinks or folder permissions are skipped there. The tests never download the model. They replace it with fixed vectors.
 
-To lint, install ruff with `.venv/bin/pip install -r requirements-dev.txt`, again after `requirements.txt` changes, since `npm run lint` runs it with ESLint. `npm run test:ui` opens a few generated images in the built page with headless Chromium, which `npx playwright install chromium` installs once.
+Linting runs on macOS, Linux and in CI, since `npm run lint` runs ruff from `.venv/bin`. Install ruff with `.venv/bin/pip install -r requirements-dev.txt`, and again after `requirements.txt` changes, since `./orchard` then makes a fresh `.venv`. `npm run test:ui` opens a few generated images in the built page with headless Chromium, which `npx playwright install chromium` installs once.
 
 The smoke test runs Orchard the way a user does. It starts `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too. Add `--visual` to also download the model and check that a search finds the right image:
 
@@ -94,7 +101,7 @@ The smoke test runs Orchard the way a user does. It starts `./orchard --browser`
 scripts/smoke-test --visual
 ```
 
-On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows. On Ubuntu, it also runs the linters with `npm run lint`, the UI test with `npm run test:ui`, and checks that `dist/` matches the sources. `npm run lint` runs ruff from `.venv/bin`, so on Windows, leave linting to CI. To run the visual check in CI, start the workflow by hand with **visual** ticked.
+On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows. On Ubuntu, it also runs the linters with `npm run lint`, the UI test with `npm run test:ui`, and checks that `dist/` matches the sources. To run the visual check in CI, start the workflow by hand with **visual** ticked.
 
 ## Building the downloads
 
@@ -104,16 +111,18 @@ The Mac DMG and the Windows zip carry their own Python, with the packages instal
 python3.13 scripts/build-app
 ```
 
-- **macOS** gives `build/Orchard-mac-arm64.dmg`, holding `Orchard.app`. Its executable is a small launcher, compiled from `scripts/app/macos-launcher.c` with the Xcode command line tools. It runs python-build-standalone's Python from inside `Contents/MacOS`, so its window shows under Orchard's name and icon. A compiled launcher, unlike a script, lets macOS ask to allow Desktop and Documents and remember the answer. The app is signed ad hoc, so macOS asks once for Open Anyway, and each new build counts as a new app that asks for folders again.
+- **macOS** gives `build/Orchard-mac-arm64.dmg`, holding `Orchard.app`. Its executable is a small launcher, compiled from `scripts/app/macos-launcher.c` with the Xcode command line tools. It runs python-build-standalone's Python from inside `Contents/MacOS`, so its window shows under Orchard's name and icon. A compiled launcher, unlike a script, lets macOS ask to allow Desktop and Documents and remember the answer. The app is signed ad hoc, so macOS asks once for Open Anyway, and each new build counts as a new app that asks for folders again. `scripts/install-app` compiles the same launcher with `-DSTART_SCRIPT` for a clone's app, where it runs `./orchard` instead.
 - **Windows** gives `build/Orchard-windows-x64.zip`, holding an `Orchard` folder. `Orchard.exe` is a small launcher, compiled from `scripts/app/windows-launcher.cs` with the .NET compiler that comes with Windows. It runs python.org's embeddable Python in `runtime\`.
 
-Both launchers, in `scripts/app/`, write Python's output to a log, `~/Library/Logs/Orchard.log` or `%TEMP%\Orchard.log`, and show its end if Orchard stops without opening. To test a build the way CI does, point the smoke test at its launcher:
+Both launchers, in `scripts/app/`, write Python's output to a log, `~/Library/Logs/Orchard.log` or `%TEMP%\Orchard.log`, and show its end if Orchard stops without opening. When the log says "Operation not permitted", the Mac one also names the Files & Folders setting. To test a build the way CI does, point the smoke test at its launcher:
 
 ```bash
 scripts/smoke-test --launcher build/dmg/Orchard.app/Contents/MacOS/Orchard
 ```
 
-Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`. It builds both on GitHub's runners, copies each out of its DMG or zip, runs the smoke test with `--visual` on it, and attaches both to a draft release to check and publish. Started by hand, it keeps them as workflow artifacts instead. The asset names carry no version, so `releases/latest/download/Orchard-mac-arm64.dmg` always links the newest. On Linux, people run `./orchard` from a clone.
+The version lives in `app.json`. The server reports it, `--version` prints it, and `scripts/build-app` puts it in the Mac app. `package.json` and `package-lock.json` carry it too, and a test checks that all three match.
+
+Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`, and the tag must name the version in `app.json`. It builds both on GitHub's runners, copies each out of its DMG or zip, runs the smoke test with `--visual` on it, and attaches both to a draft release to check and publish. Started by hand, it keeps them as workflow artifacts instead. The asset names carry no version, so `releases/latest/download/Orchard-mac-arm64.dmg` always links the newest. On Linux, people run `./orchard` from a clone.
 
 When renaming, the launchers and the app's bundle identifier in `scripts/build-app` carry the name too.
 

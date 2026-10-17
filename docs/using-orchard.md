@@ -1,6 +1,6 @@
 # Using Orchard
 
-This guide covers what you can do in Orchard once it's running. To install it, see the [README](../README.md).
+This guide covers what you can do in Orchard once it's running. To install it, see the [README](../README.md). It has been tested with folders of up to 25,000 photos.
 
 ## Opening a folder
 
@@ -26,9 +26,9 @@ Orchard runs in WSL with its own window, through WSLg. Some things differ from L
 - Folders under `/mnt/c` work, but scanning them is slower than folders inside WSL.
 - The model runs on the CPU, since DirectML isn't available in WSL. Native Windows prepares images faster, on the GPU.
 
-## The Mac app
+## The Mac app from a clone
 
-`scripts/install-app` installs `~/Applications/Orchard.app`, which opens this clone's window from the Dock or Spotlight. It compiles a small launcher with clang, so it needs the Xcode command line tools, which `xcode-select --install` installs. The first start sets things up, which takes about a minute. If the clone is in your Desktop or Documents folder, macOS asks whether Orchard may open it, and may ask again after you reinstall the app. If Orchard can't start, the app shows the end of its log, `~/Library/Logs/Orchard.log`.
+The downloaded Mac app needs nothing more. When you run Orchard from a clone, `scripts/install-app` installs `~/Applications/Orchard.app`, which opens this clone's window from the Dock or Spotlight. It compiles a small launcher with clang, so it needs the Xcode command line tools, which `xcode-select --install` installs. The first start sets things up, which takes about a minute. If the clone is in your Desktop or Documents folder, macOS asks whether Orchard may open it, and may ask again after you reinstall the app. If Orchard can't start, the app shows the end of its log, `~/Library/Logs/Orchard.log`.
 
 The app finds Python the way your terminal did when you ran `scripts/install-app`, so run it again if you install Python somewhere new. With Python from Homebrew or python.org, the window shows in the Dock as Orchard. With other Pythons, like pyenv's, it shows as Python.
 
@@ -48,14 +48,14 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 Click an image to open it. The viewer shows the file name, date, folder, size and type. **Details** adds the full path, the camera, and any other copies of the file.
 
-From the viewer, you can:
+The viewer's buttons are labelled:
 
-- Find similar images.
-- Copy the image, with Cmd+C on a Mac or Ctrl+C elsewhere.
-- Download the original. In the window, this asks where to save it.
-- Show it in Finder, in Explorer on Windows, or in your file manager on Linux.
-- Click its folder to show only images from that folder.
-- Click the image, or the zoom button, to see it at actual size.
+- **Find similar** searches with the image.
+- **Copy image** copies it. Cmd+C on a Mac, or Ctrl+C elsewhere, does the same.
+- **Download original** saves the file. In the window, this asks where to save it.
+- **Show in Finder**, or **Show in folder** on Windows and Linux, opens the folder that holds it.
+
+Click its folder to show only images from that folder. Click the image, or the zoom button, to see it at actual size.
 
 Use the left and right arrow keys to move between images, and Escape to close the viewer.
 
@@ -63,7 +63,7 @@ Use the left and right arrow keys to move between images, and Escape to close th
 
 Identical files appear once, and the viewer lists every place a copy is saved.
 
-Images that look almost the same, like bursts, edits and resized copies, share one tile. The tile shows the sharpest and largest of them, with a badge for how many there are. Open the tile to see them all, and use the up and down arrow keys to switch between them.
+Images that look almost the same, like bursts, edits and resized copies, share one tile. Images without camera details, like screenshots and renders, share one only when their pixels match too, so different screens of one app stay apart. The tile shows the sharpest and largest of them, with a badge for how many there are. Open the tile to see them all, and use the up and down arrow keys to switch between them.
 
 ## Filtering
 
@@ -89,7 +89,7 @@ Searching with an image shows its 100 closest matches.
 
 ## The map
 
-**Map** lays the whole folder out by similarity, so images that look alike sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. When you search, the matches light up and the rest dim.
+**Map** lays the whole folder out by similarity, so images that look alike sit together. It shows the newest 25,000 images that match your filters, so in a larger folder, filter by date or subfolder to reach the rest. Scroll or pinch to zoom, drag to move, and click an image to open it. When you search, the matches light up and the rest dim.
 
 To search with an image from the map, press and hold it until it lifts, then drag it to the top of the window.
 
@@ -125,7 +125,12 @@ If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, lik
 
 Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds, how long background work has left, and a button to rescan the folder.
 
-You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own.
+At the bottom, Info shows Orchard's version, and:
+
+- **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
+- **Copy diagnostics**, which copies a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
+
+You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often.
 
 ## Supported files
 
@@ -133,6 +138,7 @@ Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can'
 
 Orchard skips:
 
+- RAW photos and videos. Info counts them, and says they aren't shown yet.
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
 - Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
@@ -161,11 +167,11 @@ Orchard keeps its cache, the search model and the list of recent folders in one 
 | Windows | `%LOCALAPPDATA%\orchard\` |
 | Linux and WSL | `~/.local/share/orchard/`, or `$XDG_DATA_HOME/orchard/` if that's set |
 
-If you start Orchard with `--data-dir`, it's that folder instead. The Python packages are separate, in `.venv` inside Orchard's own folder, and take about 250 MB.
+If you start Orchard with `--data-dir`, it's that folder instead. Run from a clone, the Python packages are separate, in `.venv` inside the clone, and take about 250 MB. The downloaded apps carry their own.
 
 ### Disk space
 
-Each photo needs a thumbnail, its search vector and a map icon. Allow about 600 MB per 10,000 photos. The search model adds one copy, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a JPEG up to 4,096 pixels across, so it opens quickly next time.
+Each photo needs a thumbnail, its search vector and a map icon. Allow about 600 MB per 10,000 photos, or 1.5 GB for 25,000. The search model adds one copy, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a JPEG up to 4,096 pixels across, so it opens quickly next time.
 
 ### Resetting Orchard
 
@@ -176,10 +182,10 @@ Quit Orchard, then delete, inside the data folder:
 - `recent.json` to clear the list of recent folders.
 - The whole data folder to start over.
 
-To reinstall the Python packages, delete `.venv` in Orchard's own folder. The next run installs them again.
+To reinstall the Python packages of a clone, delete its `.venv`. The next run installs them again.
 
 ### Uninstalling
 
-Quit Orchard, then delete Orchard's own folder, the cloned or unzipped one, and its data folder. On a Mac, also delete `~/Applications/Orchard.app` if you installed it.
+Quit Orchard, then delete the app, or Orchard's own folder if you cloned it, and its data folder. On a Mac, delete `Orchard.app` from Applications, and for a clone, also `~/Applications/Orchard.app` if you installed it. On Windows, delete the extracted `Orchard` folder.
 
 If something goes wrong, see [Questions and problems](questions-and-problems.md).
