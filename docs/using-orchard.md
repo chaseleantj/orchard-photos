@@ -89,11 +89,19 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 ## Setting up visual search
 
-Visual search and the map need a model called SigLIP 2. It's a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
+Visual search and the map need a model called SigLIP 2. It's a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
 
 When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own.
 
-Preparing takes a moment per image. On an Apple Silicon Mac, a folder of 20,000 images is ready in a few minutes. On a computer that prepares images on its CPU, it takes from 20 minutes to a few hours. The newest images are prepared first, so you can search recent photos while the rest are still being prepared.
+Preparing takes a moment per image, and how long a whole folder takes depends mostly on whether Orchard can use the computer's [GPU](#which-gpu-orchard-uses). These rough times come from one Mac and one Intel laptop:
+
+| Computer | 10,000 photos |
+| --- | --- |
+| Apple Silicon Mac | A few minutes |
+| Windows laptop, on its GPU | About 40 minutes |
+| 4-core laptop, on its CPU | About an hour |
+
+Before that, Orchard reads each new file and draws its thumbnail, which took about 40 seconds per 1,000 photos on the laptop. You can browse while both run. The newest images are prepared first, so you can search recent photos while the rest are still being prepared.
 
 ## Background work and Info
 
@@ -108,7 +116,157 @@ Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can'
 Orchard skips:
 
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
-- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, export them to a folder first.
+- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
 
 Symlinked folders are followed once, so a link loop can't trap the scan.
+
+## Apple Photos
+
+Orchard can't read a Photos library, so to browse those photos, export them to a folder first:
+
+1. Open Photos and choose **Library** in the sidebar.
+2. Select the photos you want, or press Cmd+A for all of them.
+3. Choose **File › Export › Export Unmodified Originals**, then **Export**.
+4. Choose or make a folder, like `Pictures/Photos export`, and click **Export Originals**.
+5. Open that folder in Orchard.
+
+Unmodified originals keep their EXIF dates, so they land in the right month. They don't include edits made in Photos. To get the edited versions, choose **File › Export › Export Photos** instead. The export is a full copy, so it needs as much free space as the photos themselves.
+
+If **Optimize Mac Storage** is on in Photos' iCloud settings, most originals are only in iCloud. Photos downloads them during the export, which can take a long time for a large library. To download them all first, choose **Download Originals to this Mac** in the same settings.
+
+## Disk space
+
+Orchard keeps its cache in its [data folder](#resetting-orchard), never beside your photos. Each photo needs a thumbnail, its search vector and a map icon. In tests, that came to 30 to 40 KB for most photos, and about 60 KB for phone photos, so allow about 6 GB per 100,000 photos. The search model adds 504 MB or 690 MB once, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a full-size JPEG, so it opens quickly next time.
+
+The Python packages take about 250 MB, in `.venv` inside Orchard's own folder.
+
+## Questions and problems
+
+### Orchard says it needs Python 3.12, 3.13 or 3.14
+
+Orchard runs on Python 3.12 to 3.14. Python 3.15 isn't supported yet, since ONNX Runtime, which runs the search model, has no packages for it. You don't need to remove another Python. Install 3.13 beside it, and the launcher finds it:
+
+- On a Mac: `brew install python@3.13`, or the installer from [python.org](https://www.python.org/downloads/).
+- On Windows: `winget install Python.Python.3.13`.
+- On Ubuntu 24.04 and later: `sudo apt update && sudo apt install python3 python3-venv`. On older Ubuntu, get `python3.12` from the [deadsnakes PPA](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa).
+
+On Windows, open a new Command Prompt after installing Python. One that was already open doesn't see it.
+
+### Python can't create environments, on Linux
+
+Debian and Ubuntu ship the part of Python that makes environments as a separate package. Install the one Orchard names, for example:
+
+```bash
+sudo apt update && sudo apt install python3.12-venv
+```
+
+A fresh install, including WSL's, has no package lists yet, so `apt install` fails without `apt update` first.
+
+### Visual search needs the Visual C++ Redistributable, on Windows
+
+ONNX Runtime needs Microsoft's C++ runtime, which Python doesn't include. Browsing works without it, but visual search shows this message. Install it, then restart Orchard:
+
+```bat
+winget install Microsoft.VCRedist.2015+.x64
+```
+
+On an Arm laptop, use `Microsoft.VCRedist.2015+.arm64`.
+
+### The port is in use
+
+Orchard listens on port 4400. If another program has it, Orchard says so and stops. Quit that program, or start Orchard on another port, like `./orchard --port 4401`. The page's saved settings, like the theme, belong to the port, so a new port starts with the defaults.
+
+### The search model won't download
+
+The model goes into the `models` folder inside Orchard's [data folder](#resetting-orchard). It's about 504 MB on an Apple Silicon Mac and 690 MB elsewhere. If the download stops, choose **Try again** in Info, and it carries on where it stopped.
+
+The download comes from huggingface.co. Behind a proxy, set `HTTPS_PROXY` before starting Orchard, like `HTTPS_PROXY=http://proxy.example.com:8080 ./orchard`, and make sure the proxy allows huggingface.co and hf.co. If the proxy inspects HTTPS with its own certificate, also set `SSL_CERT_FILE` to that certificate's file.
+
+If the model downloaded but won't load, delete the `models` folder, and Orchard downloads it again. To skip the download on a computer that's offline, copy the `models` folder from another computer of the same kind, like another Apple Silicon Mac.
+
+### Indexing is slow
+
+Preparing images for search takes a few minutes on an Apple Silicon Mac, but can take hours on a laptop for a large folder. The [rough times](#setting-up-visual-search) are above. Info shows how long is left.
+
+You can search the newest photos first, since they're prepared first. If you quit Orchard, or the computer sleeps, it carries on from where it stopped next time.
+
+### Which GPU Orchard uses
+
+Orchard runs the image half of the model on the GPU where it can:
+
+- **Apple Silicon Macs** use Core ML, about 7 times faster than the CPU.
+- **Windows on x64** uses DirectML, with any DirectX 12 GPU. On one laptop's Intel graphics, it was about 1.8 times faster than the CPU.
+- **Everything else**, including Linux, WSL and Windows on Arm, uses the CPU. On Linux, an NVIDIA GPU works through CUDA, as described in [Developing Orchard](development.md#setup).
+
+Before using the GPU, Orchard checks that it gives the same result as the CPU on a test image. If it doesn't, or it fails to load, Orchard uses the CPU and prints a warning in the terminal, like "Core ML could not run the search model, so the CPU runs it". On a Mac, the CPU then needs its own copy of the image model, a further 372 MB download.
+
+### Some photos are missing
+
+Check these, in order:
+
+- **Unsupported files.** Orchard reads only the [formats listed above](#supported-files). RAW files, videos and Live Photo videos aren't shown.
+- **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open.
+- **Hidden files and Photos libraries.** Both are skipped. See [Apple Photos](#apple-photos).
+- **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.
+- **Filters.** Info says how many images your filters show.
+- **The date.** A photo without EXIF data is dated by when the file last changed, so a copied photo may sit in a later month than you expect.
+- **New files.** Orchard rescans every minute. **Rescan now** in Info does it at once.
+
+On a Mac, the first time you open your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow access. If you chose **Don't Allow**, Orchard can't read the folder. Turn it back on in System Settings › Privacy & Security › Files and Folders, for the app you started Orchard from, like Terminal.
+
+### Photos on external, network and cloud drives
+
+Orchard works with any folder your computer can open. Its cache stays on your computer, so if a drive is unplugged, Orchard keeps showing the last scan. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
+
+The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos.
+
+Cloud folders, like iCloud Drive, OneDrive, Dropbox and Google Drive, work best when their files are kept on the computer. A file that's only online is downloaded when Orchard reads it, so the first scan may download the whole folder, or fail to read files that aren't available.
+
+### Using Orchard on two computers
+
+Install Orchard on each computer. Each one keeps its own cache and prepares its own copy of the search index, so nothing is shared or synced between them. The photos themselves can live on a shared drive.
+
+Keep each computer's data folder on that computer. Orchard's index is an SQLite database, which isn't safe to share over a network drive.
+
+### Under WSL
+
+Orchard runs in WSL with its own window, through WSLg. Some things differ from Linux on its own:
+
+- **Show in folder** opens File Explorer, and `--browser` opens your Windows browser.
+- Folders under `/mnt/c` open fine, but reading them is slower. On one laptop, the first scan took about 1.5 times as long, and each minute's rescan about 10 times as long, still under 2 seconds per 1,000 photos. Preparing images took the same time.
+- The model runs on the CPU, since DirectML isn't available in WSL. Native Windows prepares images faster, on the GPU.
+
+### Resetting Orchard
+
+Orchard keeps its cache, the search model and the list of recent folders in one data folder:
+
+| System | Data folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/orchard/` |
+| Windows | `%LOCALAPPDATA%\orchard\` |
+| Linux and WSL | `~/.local/share/orchard/` |
+
+If you start Orchard with `--data-dir`, it's that folder instead. Quit Orchard, then delete:
+
+- `libraries/<id>/` to clear one folder's cache. Its `folder.txt` names the folder it belongs to. Orchard reads the folder again the next time you open it.
+- `models/` to download the search model again.
+- `recent.json` to clear the list of recent folders.
+- The whole data folder to start over.
+
+To reinstall the Python packages, delete `.venv` in Orchard's own folder. The next run installs them again.
+
+### Uninstalling
+
+Quit Orchard, then delete Orchard's own folder and its data folder:
+
+- **macOS:** the cloned folder, `~/Library/Application Support/orchard/`, and `~/Applications/Orchard.app` if you installed it.
+- **Windows:** the cloned or unzipped folder, and `%LOCALAPPDATA%\orchard\`.
+- **Linux and WSL:** the cloned folder, and `~/.local/share/orchard/`.
+
+The window's saved page settings, like the theme, are kept by the system's web view, in `~/Library/WebKit/org.python.python/` on a Mac and `%APPDATA%\pywebview\` on Windows. They're a few kilobytes, and other Python apps can share these folders, so only delete them if nothing else uses them. pip also keeps the packages it downloaded in its own cache, shared with other projects. `python3 -m pip cache purge` clears it.
+
+### Reporting a problem
+
+[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. Include what the terminal printed. The Mac app writes the same output to `/tmp/orchard.log`.
+<!-- INTEGRATION: when Info gains Copy diagnostics, say to paste its output here. -->
