@@ -27,7 +27,7 @@ Run `./orchard` with no folder to reopen the last one. Running it with a folder 
 sudo apt update && sudo apt install python3-venv python3-gi gir1.2-webkit2-4.1
 ```
 
-Without the GTK packages, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
+Without the GTK packages, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead. Under WSL, Show in folder opens File Explorer, and the browser is your Windows one.
 
 ### Windows
 

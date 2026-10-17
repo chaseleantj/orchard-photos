@@ -4,12 +4,13 @@ import json
 from email.message import Message
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, open_browser, picker_command, reveal
+from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, open_browser, picker_command, reveal, wsl_explorer
 from server.semantic import EARLIER
 
 PORT = APP['port']
@@ -178,18 +179,48 @@ class HandlerTests(unittest.TestCase):
 
 
     def test_linux_without_xdg_open_names_the_package_to_show_a_folder(self):
-        with patch('server.api.sys.platform', 'linux'), patch('server.api.shutil.which', return_value=None), \
+        with patch('server.api.sys.platform', 'linux'), patch('server.api.wsl_explorer', return_value=None), patch('server.api.shutil.which', return_value=None), \
                 patch('server.api.subprocess.Popen') as popen, self.assertRaisesRegex(ValueError, 'sudo apt update && sudo apt install xdg-utils'):
             reveal(Path('/photos/a.jpg'))
         popen.assert_not_called()
-        with patch('server.api.sys.platform', 'linux'), patch('server.api.shutil.which', return_value='/usr/bin/xdg-open'), \
-                patch('server.api.subprocess.Popen') as popen:
-            reveal(Path('/photos/a.jpg'))
-        self.assertEqual(popen.call_args.args[0], ['xdg-open', str(Path('/photos'))])
+
+    def test_linux_shows_a_folder_with_xdg_open_and_says_when_it_finds_no_app(self):
+        # xdg-open exits with 3 when nothing can open a folder. One still running when the wait ends found an app.
+        for outcome, fails in ((0, False), (3, True), (subprocess.TimeoutExpired('xdg-open', 1), False)):
+            with self.subTest(outcome=outcome), patch('server.api.sys.platform', 'linux'), patch('server.api.wsl_explorer', return_value=None), \
+                    patch('server.api.shutil.which', return_value='/usr/bin/xdg-open'), patch('server.api.subprocess.Popen') as popen:
+                popen.return_value.wait.side_effect = [outcome]
+                if fails:
+                    with self.assertRaisesRegex(ValueError, 'xdg-open found no app'):
+                        reveal(Path('/photos/a.jpg'))
+                else:
+                    reveal(Path('/photos/a.jpg'))
+                self.assertEqual(popen.call_args.args[0], ['xdg-open', str(Path('/photos'))])
+
+    def test_wsl_is_recognised_by_its_kernel(self):
+        for release, expected in (('5.15.167.4-microsoft-standard-WSL2', '/mnt/c/Windows/explorer.exe'), ('6.8.0-1021-azure', None)):
+            with self.subTest(release=release), patch.object(Path, 'read_text', return_value=release), \
+                    patch('server.api.shutil.which', return_value='/mnt/c/Windows/explorer.exe'):
+                self.assertEqual(wsl_explorer(), expected)
+        with patch.object(Path, 'read_text', side_effect=FileNotFoundError):
+            self.assertIsNone(wsl_explorer())
+
+    def test_under_wsl_explorer_shows_the_file_and_opens_the_page_in_windows(self):
+        explorer = '/mnt/c/Windows/explorer.exe'
+        with patch('server.api.sys.platform', 'linux'), patch('server.api.wsl_explorer', return_value=explorer), \
+                patch('server.api.subprocess.run', return_value=SimpleNamespace(stdout='\\\\wsl.localhost\\Ubuntu\\photos\\a b.jpg\n')) as run, \
+                patch('server.api.subprocess.Popen') as popen, patch('server.api.webbrowser.open') as browser:
+            reveal(Path('/photos/a b.jpg'))
+            self.assertEqual(run.call_args.args[0], ['wslpath', '-w', str(Path('/photos/a b.jpg'))])
+            self.assertEqual(popen.call_args.args[0], [explorer, '/select,', '\\\\wsl.localhost\\Ubuntu\\photos\\a b.jpg'])
+            open_browser('http://127.0.0.1:4400')
+            self.assertEqual(popen.call_args.args[0], [explorer, 'http://127.0.0.1:4400'])
+        browser.assert_not_called()
 
     def test_without_a_browser_the_address_is_printed_to_open_by_hand(self):
         for opened in (True, False):
-            with self.subTest(opened=opened), patch('server.api.webbrowser.open', return_value=opened), patch('server.api.print') as say:
+            with self.subTest(opened=opened), patch('server.api.wsl_explorer', return_value=None), \
+                    patch('server.api.webbrowser.open', return_value=opened), patch('server.api.print') as say:
                 open_browser('http://127.0.0.1:4400')
             self.assertEqual(say.called, not opened)
             if not opened:
@@ -201,8 +232,9 @@ class LaunchTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name).resolve()
         (self.home / 'photos').mkdir()
-        patchers = [patch(f'server.api.{target}') for target in ('become_app', 'webbrowser.open', 'print')]
-        _, self.open_browser, _ = [patcher.start() for patcher in patchers]
+        # The browser opens the way it does outside WSL, wherever the tests run.
+        patchers = [patch(f'server.api.{target}') for target in ('become_app', 'webbrowser.open', 'print')] + [patch('server.api.wsl_explorer', return_value=None)]
+        _, self.open_browser, _, _ = [patcher.start() for patcher in patchers]
         for patcher in patchers:
             self.addCleanup(patcher.stop)
         # A real folder would be scanned in the background; these tests look only at how Orchard starts and stops.

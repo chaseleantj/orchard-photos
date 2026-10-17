@@ -29,6 +29,9 @@ WATCH_SECONDS = 60
 UPLOAD_LIMIT = 20 * 1024 * 1024
 FORM_LIMIT = 64 * 1024
 IMMUTABLE = 'private, max-age=31536000, immutable'
+# How long Show in folder waits to hear whether xdg-open failed. Finding no app takes it about a second, as it tries
+# each browser it knows first; one still running after this found an app.
+OPENER_SECONDS = 3
 
 
 def default_data_dir() -> Path:
@@ -182,20 +185,44 @@ def choose_folder(command: list[str]):
     return result.stdout.strip() or None
 
 
+def wsl_explorer() -> str | None:
+    """Under WSL, which has no file manager or browser of its own, the path of Windows' Explorer, which can show a file
+    or open an address in Windows instead. None elsewhere, or when WSL can't start Windows programs."""
+    try:
+        if 'microsoft' not in Path('/proc/sys/kernel/osrelease').read_text().lower():
+            return None
+    except OSError:
+        return None
+    return shutil.which('explorer.exe')
+
+
 def reveal(path: Path):
     if sys.platform == 'darwin':
         subprocess.Popen(['open', '-R', str(path)])
     elif sys.platform == 'win32':
         subprocess.Popen(['explorer', '/select,', str(path)])
+    elif explorer := wsl_explorer():
+        windows_path = subprocess.run(['wslpath', '-w', str(path)], capture_output=True, text=True, check=True).stdout.strip()
+        # Explorer exits with status 1 even when it shows the file, so its status says nothing.
+        subprocess.Popen([explorer, '/select,', windows_path])
     elif shutil.which('xdg-open'):
-        subprocess.Popen(['xdg-open', str(path.parent)])
+        opener = subprocess.Popen(['xdg-open', str(path.parent)])
+        try:
+            failed = opener.wait(OPENER_SECONDS) != 0
+        except subprocess.TimeoutExpired:
+            failed = False
+        if failed:
+            raise ValueError('xdg-open found no app to show the folder in.')
     else:
         raise ValueError('Showing the folder needs xdg-open. On Ubuntu: sudo apt update && sudo apt install xdg-utils')
 
 
 def open_browser(url: str):
-    """Open url in the default browser, or say to open it by hand when there is none, as on a fresh WSL."""
-    if not webbrowser.open(url):
+    """Open url in the default browser, or say to open it by hand when there is none."""
+    if explorer := wsl_explorer():
+        # Windows' default browser. Python's own search ends in xdg-open, which opens nothing under WSL.
+        subprocess.Popen([explorer, url])
+    elif not webbrowser.open(url):
         print(f'No web browser was found. Open {url} in one.', flush=True)
 
 
