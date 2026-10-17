@@ -86,6 +86,8 @@ npm run build
 
 On Windows, run `.venv\Scripts\python -m unittest discover -s tests` instead of `npm test`. Tests that need symlinks or folder permissions are skipped there. The tests never download the model. They replace it with fixed vectors.
 
+To lint, install ruff with `.venv/bin/pip install -r requirements-dev.txt`, again after `requirements.txt` changes, then run `npm run lint` for ruff, ESLint and the TypeScript check. `npm run test:ui` opens a few generated images in the built page with headless Chromium, which `npx playwright install chromium` installs once.
+
 The smoke test runs Orchard the way a user does. It starts `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too. Add `--visual` to also download the model and check that a search finds the right image:
 
 ```bash
