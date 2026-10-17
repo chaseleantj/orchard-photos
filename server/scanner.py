@@ -5,10 +5,12 @@ Originals are only ever read. Identical files share one image, so thumbnails and
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
+import errno
 import hashlib
 import logging
 import os
 from pathlib import Path
+import sys
 import threading
 import time
 import warnings
@@ -35,6 +37,7 @@ THUMBNAIL_SIZE = 720
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
+BLOCKED = 'Blocked by macOS'
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
@@ -49,6 +52,17 @@ logger = logging.getLogger(__name__)
 
 class FolderUnavailable(RuntimeError):
     pass
+
+
+def blocked_by_macos(error: Exception) -> bool:
+    """Whether macOS's privacy settings kept this app out, as they do from Desktop and Documents until the user allows
+    it. They refuse with EPERM, where a file's own permissions give EACCES."""
+    return sys.platform == 'darwin' and isinstance(error, PermissionError) and error.errno == errno.EPERM
+
+
+def blocked(folder: Path) -> FolderUnavailable:
+    return FolderUnavailable(f'macOS is blocking access to {folder}. Allow it in System Settings › Privacy & Security › '
+                             'Files & Folders, or Full Disk Access, then rescan.')
 
 
 class ScanCancelled(Exception):
@@ -95,7 +109,9 @@ def walk(root: Path, skip=frozenset(), found=None):
                                 skipped[SKIPPED[extension]] += 1
                     except OSError:
                         continue
-        except OSError:
+        except OSError as error:
+            if not relative and blocked_by_macos(error):
+                raise blocked(root) from None
             unreadable.append(relative)
     return files, unreadable, libraries, skipped
 
@@ -188,6 +204,8 @@ def failure(error: Exception) -> str:
         return 'Too large to open'
     if isinstance(error, UnidentifiedImageError):
         return 'Not a readable image'
+    if blocked_by_macos(error):
+        return BLOCKED
     if isinstance(error, PermissionError):
         return 'Permission denied'
     if isinstance(error, OSError) and 'truncated' in str(error):
@@ -241,6 +259,8 @@ class Scanner:
                     raise ScanCancelled
                 batch = changed[start:start + BATCH]
                 results = list(pool.map(self._examine, [path for path, _ in batch]))
+                if any(result.get('error') == BLOCKED for result in results):
+                    raise blocked(self.folder)
                 with connect(self.directory, rows=True) as db:
                     for (path, status), result in zip(batch, results):
                         if 'width' in result:

@@ -1,7 +1,7 @@
 # Lines run long in places, so E501 stays off. This is the width isort wraps imports at.
 line-length = 160
 target-version = "py312"
-extend-include = ["scripts/smoke-test", "scripts/build-coreml-model"]
+extend-include = ["scripts/smoke-test", "scripts/build-coreml-model", "scripts/build-app"]
 
 [lint]
 select = ["F", "E", "W", "I", "UP", "B"]

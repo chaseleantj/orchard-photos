@@ -96,6 +96,27 @@ scripts/smoke-test --visual
 
 On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows, and checks that `dist/` matches the sources. To run the visual check in CI, start the workflow by hand with **visual** ticked.
 
+## Building the downloads
+
+The Mac DMG and the Windows zip carry their own Python, with the packages installed, so they need no Python or terminal. `scripts/build-app` builds the one for the computer it runs on, an Apple Silicon Mac or Windows x64, into `build/`. Run it with Python 3.13, the version inside the app, since pip installs the packages for the Python that runs it:
+
+```bash
+python3.13 scripts/build-app --version 0.1.0
+```
+
+- **macOS** gives `build/Orchard-mac-arm64.dmg`, holding `Orchard.app`. Its executable is a small launcher, compiled from `scripts/app/macos-launcher.c` with the Xcode command line tools. It runs python-build-standalone's Python from inside `Contents/MacOS`, so its window shows under Orchard's name and icon. A compiled launcher, unlike a script, lets macOS ask to allow Desktop and Documents and remember the answer. The app is signed ad hoc, so macOS asks once for Open Anyway, and each new build counts as a new app that asks for folders again.
+- **Windows** gives `build/Orchard-windows-x64.zip`, holding an `Orchard` folder. `Orchard.exe` is a small launcher, compiled from `scripts/app/windows-launcher.cs` with the .NET compiler that comes with Windows. It runs python.org's embeddable Python in `runtime\`.
+
+Both launchers, in `scripts/app/`, write Python's output to a log, `~/Library/Logs/Orchard.log` or `%TEMP%\Orchard.log`, and show its end if Orchard stops without opening. To test a build the way CI does, point the smoke test at its launcher:
+
+```bash
+scripts/smoke-test --launcher build/dmg/Orchard.app/Contents/MacOS/Orchard
+```
+
+Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`. It builds both on GitHub's runners, copies each out of its DMG or zip, runs the smoke test with `--visual` on it, and attaches both to a draft release to check and publish. Started by hand, it keeps them as workflow artifacts instead. The asset names carry no version, so `releases/latest/download/Orchard-mac-arm64.dmg` always links the newest. On Linux, people run `./orchard` from a clone.
+
+When renaming, the launchers and the app's bundle identifier in `scripts/build-app` carry the name too.
+
 ## The Core ML model
 
 On an Apple Silicon Mac, Orchard downloads its image encoder from its own Hugging Face repository. `scripts/build-coreml-model` makes that file from the ONNX export's pinned revision, and prints its SHA-256. The same input always gives the same file. It needs the `onnx` package, which the app doesn't:

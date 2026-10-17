@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import errno
 import os
 from pathlib import Path
 import shutil
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import warnings
 
 from PIL import Image
@@ -142,6 +144,15 @@ class ScannerTests(unittest.TestCase):
         stats = self.scanner.scan()
         self.assertEqual((stats['unlisted_folders'], stats['removed']), (1, 0))
         self.assertEqual(set(self.files()), {'locked/one.png'})
+
+    def test_a_folder_macos_keeps_out_says_where_to_allow_it(self):
+        picture(self.root / 'one.png')
+        refused = PermissionError(errno.EPERM, 'Operation not permitted')
+        for target in ('server.scanner.os.scandir', 'pathlib.Path.open'):
+            with self.subTest(target), patch('server.scanner.sys.platform', 'darwin'), patch(target, side_effect=refused):
+                with self.assertRaisesRegex(FolderUnavailable, 'Privacy & Security'):
+                    self.scanner.scan()
+        self.assertEqual(self.files(), {})
 
     def test_capture_date_camera_and_orientation(self):
         picture(self.root / 'offset.jpg', exif=dated(offset='+02:00'))

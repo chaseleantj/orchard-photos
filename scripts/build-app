@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Build Orchard as an app that brings its own Python: Orchard.app in a DMG on macOS, or Orchard.exe in a zip on Windows.
+
+Run it with Python 3.13 on the system it builds for, Apple Silicon or Windows x64, since pip picks the packages for the
+Python running it. The app is written to build/, and needs no Python or terminal to run."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import plistlib
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import urllib.request
+import zipfile
+
+ROOT = Path(__file__).resolve().parent.parent
+APP = json.loads((ROOT / 'app.json').read_text(encoding='utf-8'))
+TEMPLATES = Path(__file__).with_name('app')
+# What the server reads at run time. ROOT in server/ is the folder holding them.
+FILES = ['server', 'dist', 'assets', 'app.json', 'LICENSE']
+# The Python inside the app: python-build-standalone's on macOS, and python.org's embeddable one on Windows. pip
+# installs the packages with the Python running this script, so its version has to match.
+PYTHON = (3, 13)
+MAC_PYTHON = 'python{}.{}'.format(*PYTHON)
+WINDOWS_PYTHON = 'python{}{}'.format(*PYTHON)
+RUNTIMES = {
+    'darwin': ('https://github.com/astral-sh/python-build-standalone/releases/download/20261013/'
+               'cpython-3.13.16%2B20261013-aarch64-apple-darwin-install_only_stripped.tar.gz',
+               '16a5332fb0dcb77f163fc8f8cbccd95be1644cc53e68e5d2a79f50afd6680a0e'),
+    'win32': ('https://www.python.org/ftp/python/3.13.16/python-3.13.16-embed-amd64.zip',
+              '97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297'),
+}
+# ONNX Runtime has macOS wheels only for Apple Silicon.
+MACHINES = {'darwin': 'arm64', 'win32': 'AMD64'}
+ARTIFACTS = {'darwin': f'{APP["name"]}-mac-arm64.dmg', 'win32': f'{APP["name"]}-windows-x64.zip'}
+IDENTIFIER = 'io.github.chaseleantj.orchard'
+# Parts of python-build-standalone the app never uses: Tk, the headers, pip, and the shared library, since its python
+# is linked statically.
+MAC_UNUSED = ['include', 'share', 'lib/pkgconfig', 'lib/itcl*', 'lib/tcl*', 'lib/tk*', 'lib/thread*', 'lib/libtcl*', 'lib/libpython*']
+MAC_STDLIB_UNUSED = ['config-*', 'ensurepip', 'idlelib', 'tkinter', 'turtledemo', 'lib-dynload/_tkinter.*', 'site-packages/pip*']
+# Test suites some packages ship, which are a fifth of their size.
+TESTS = ['PyObjCTest', '**/tests']
+# The .NET Framework compiler that comes with Windows, so the launcher needs no SDK.
+CSC = Path(os.environ.get('WINDIR', r'C:\Windows'), 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+
+
+def download(url: str, sha256: str, folder: Path) -> Path:
+    """Fetch url into folder once, and check it is the file expected."""
+    path = folder / url.rsplit('/', 1)[1].replace('%2B', '+')
+    if not path.exists():
+        folder.mkdir(parents=True, exist_ok=True)
+        print(f'Downloading {url}', flush=True)
+        with urllib.request.urlopen(url) as response, open(path.with_suffix('.part'), 'wb') as file:
+            shutil.copyfileobj(response, file)
+        path.with_suffix('.part').rename(path)
+    if hashlib.sha256(path.read_bytes()).hexdigest() != sha256:
+        path.unlink()
+        sys.exit(f'{path.name} is not the file expected. Run the build again to download it again.')
+    return path
+
+
+def remove(folder: Path, patterns: list[str]):
+    for pattern in patterns:
+        for path in list(folder.glob(pattern)):
+            # A match inside one already removed is gone too.
+            shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink(missing_ok=True)
+
+
+def copy_app(target: Path):
+    """Copy the server, the built page and what they read into target."""
+    if not (ROOT / 'dist' / 'index.html').exists():
+        sys.exit('dist/ is not built. Run npm ci && npm run build first.')
+    target.mkdir(parents=True)
+    for name in FILES:
+        source = ROOT / name
+        if source.is_dir():
+            shutil.copytree(source, target / name, ignore=shutil.ignore_patterns('__pycache__'))
+        else:
+            shutil.copy2(source, target / name)
+
+
+def install_packages(site_packages: Path):
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-compile', '--no-warn-script-location',
+                    '--target', str(site_packages), '-r', str(ROOT / 'requirements.txt')], check=True)
+    # Command-line tools the packages bring, which the app never runs.
+    remove(site_packages, ['bin', *TESTS])
+
+
+def compile_python(*folders: Path):
+    """Compile ahead, since the app never writes bytecode: a signed Mac app must stay unchanged. Unchecked, the compiled
+    files are used whatever the sources' times become after copying."""
+    subprocess.run([sys.executable, '-m', 'compileall', '-q', '-j', '0', '--invalidation-mode', 'unchecked-hash', *map(str, folders)], check=True)
+
+
+def oldest_macos(site_packages: Path) -> str:
+    """The oldest macOS every installed wheel supports, from the tags in their WHEEL files."""
+    versions = [(11, 0)]  # python-build-standalone's own minimum
+    for wheel in site_packages.glob('*.dist-info/WHEEL'):
+        tags = re.findall(r'macosx_(\d+)_(\d+)_', wheel.read_text(encoding='utf-8'))
+        if tags:
+            # A wheel tagged for several versions runs on the oldest of them.
+            versions.append(min((int(major), int(minor)) for major, minor in tags))
+    return '{}.{}'.format(*max(versions))
+
+
+def build_mac(build: Path, version: str) -> Path:
+    app = build / f'{APP["name"]}.app'
+    contents = app / 'Contents'
+    resources = contents / 'Resources'
+    runtime = resources / 'python'
+    with tarfile.open(download(*RUNTIMES['darwin'], build / 'downloads')) as archive:
+        archive.extractall(resources, filter='tar')
+    stdlib = runtime / 'lib' / MAC_PYTHON
+    remove(runtime, MAC_UNUSED)
+    remove(stdlib, MAC_STDLIB_UNUSED)
+    for path in (runtime / 'bin').iterdir():
+        if path.name != MAC_PYTHON:
+            path.unlink()
+    site_packages = stdlib / 'site-packages'
+    install_packages(site_packages)
+    copy_app(resources / 'app')
+    # Puts the app's folder on Python's path, so the server imports without setting PYTHONPATH.
+    (site_packages / f'{APP["slug"]}.pth').write_text(os.path.relpath(resources / 'app', site_packages) + '\n', encoding='utf-8')
+    compile_python(runtime / 'lib', resources / 'app')
+
+    macos = contents / 'MacOS'
+    macos.mkdir()
+    oldest = oldest_macos(site_packages)
+    subprocess.run(['clang', '-O2', f'-mmacosx-version-min={oldest}', '-o', str(macos / APP['name']), str(TEMPLATES / 'macos-launcher.c')], check=True)
+    # Python runs from inside Contents/MacOS, so macOS shows its window as this app's, with one icon in the Dock.
+    (macos / 'python').symlink_to(os.path.relpath(runtime / 'bin' / MAC_PYTHON, macos))
+    shutil.copy2(ROOT / 'assets' / 'orchard.icns', resources / f'{APP["name"]}.icns')
+    plist = {
+        'CFBundleName': APP['name'], 'CFBundleDisplayName': APP['name'], 'CFBundleIdentifier': IDENTIFIER,
+        'CFBundleExecutable': APP['name'], 'CFBundleIconFile': f'{APP["name"]}.icns', 'CFBundlePackageType': 'APPL',
+        'CFBundleShortVersionString': version, 'CFBundleVersion': version,
+        'LSMinimumSystemVersion': oldest, 'LSArchitecturePriority': ['arm64'],
+        'NSHighResolutionCapable': True,
+    }
+    with open(contents / 'Info.plist', 'wb') as file:
+        plistlib.dump(plist, file)
+    # Ad hoc, with no Apple account: Apple Silicon only runs signed code, and macOS can then remember what the user
+    # allows, like folders on the Desktop. An ad hoc signature changes with every build, so a new version asks again.
+    subprocess.run(['codesign', '--force', '--sign', '-', str(app)], check=True)
+
+    stage = build / 'dmg'
+    stage.mkdir()
+    shutil.move(app, stage)
+    (stage / 'Applications').symlink_to('/Applications')
+    dmg = build / ARTIFACTS['darwin']
+    # LZMA on HFS+ makes the smallest image, a third smaller than on APFS.
+    subprocess.run(['hdiutil', 'create', '-quiet', '-volname', APP['name'], '-srcfolder', str(stage), '-fs', 'HFS+', '-format', 'ULMO', str(dmg)], check=True)
+    return dmg
+
+
+def build_windows(build: Path) -> Path:
+    folder = build / APP['name']
+    runtime = folder / 'runtime'
+    with zipfile.ZipFile(download(*RUNTIMES['win32'], build / 'downloads')) as archive:
+        archive.extractall(runtime)
+    # The embeddable Python ignores PYTHONPATH and reads its path from this file, relative to it.
+    (runtime / f'{WINDOWS_PYTHON}._pth').write_text(f'{WINDOWS_PYTHON}.zip\n.\n..\\app\nimport site\n', encoding='utf-8')
+    site_packages = runtime / 'Lib' / 'site-packages'
+    install_packages(site_packages)
+    copy_app(folder / 'app')
+    compile_python(site_packages, folder / 'app')
+    subprocess.run([str(CSC), '/nologo', '/optimize', '/target:winexe', f'/win32icon:{ROOT / "assets" / "orchard.ico"}',
+                    f'/out:{folder / (APP["name"] + ".exe")}', str(TEMPLATES / 'windows-launcher.cs')], check=True)
+    archive = build / ARTIFACTS['win32']
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as file:
+        for path in sorted(folder.rglob('*')):
+            file.write(path, path.relative_to(build))
+    return archive
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', default='0.0.0', help="the version the Mac app shows, like 0.1.0")
+    parser.add_argument('--out', type=Path, default=ROOT / 'build', help='where to build; the downloads are kept there for next time')
+    args = parser.parse_args()
+    if sys.platform not in RUNTIMES or platform.machine() != MACHINES[sys.platform]:
+        sys.exit(f'scripts/build-app builds on Apple Silicon Macs and Windows x64, not {sys.platform} {platform.machine()}.')
+    if sys.version_info[:2] != PYTHON:
+        sys.exit('scripts/build-app needs Python {}.{}, the version inside the app, to install its packages.'.format(*PYTHON))
+    build = args.out.resolve()
+    # Only what an earlier build made, in case --out names a folder with other files in it.
+    remove(build, ['dmg', APP['name'], f'{APP["name"]}.app', *ARTIFACTS.values()])
+    artifact = build_mac(build, args.version) if sys.platform == 'darwin' else build_windows(build)
+    print(f'Built {artifact}, {artifact.stat().st_size / 1e6:.0f} MB')
+
+
+if __name__ == '__main__':
+    main()
