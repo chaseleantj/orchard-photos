@@ -129,6 +129,18 @@ class GroupsTests(unittest.TestCase):
         self.assertEqual(stored[shot][0], stored[copy][0])
         self.assertNotIn(different, stored)
 
+    def test_the_colour_under_transparent_pixels_does_not_count(self):
+        cutouts = []
+        for hidden in ('black', 'red'):
+            image = Image.new('RGBA', (64, 64), hidden)
+            image.putalpha(0)
+            image.paste((0, 0, 255, 255), (16, 16, 48, 48))
+            cutouts.append(image)
+        first = self.add(1, turned(0), cutouts[0], camera=None)
+        second = self.add(2, turned(1), cutouts[1], camera=None)
+        self.groups.update()
+        self.assertEqual(self.stored()[first][0], self.stored()[second][0])
+
     def test_a_crop_without_camera_details_is_left_to_its_vector(self):
         photo = checkerboard(128)
         whole = self.add(1, turned(0), photo, width=1280, camera=None)

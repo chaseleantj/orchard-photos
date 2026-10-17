@@ -95,9 +95,12 @@ def sharpness(path: Path) -> float:
 
 
 def look(path: Path) -> numpy.ndarray:
-    """An image in grey at LOOK_EDGE pixels square, for comparing two pixel by pixel."""
+    """An image in grey at LOOK_EDGE pixels square, on white where it is transparent, for comparing two pixel by
+    pixel. The colour hidden under transparent pixels is arbitrary, so it doesn't count."""
     with Image.open(path) as image:
-        return numpy.asarray(image.convert('L').resize((LOOK_EDGE, LOOK_EDGE), Image.Resampling.BOX), numpy.int16)
+        small = image.convert('RGBA').resize((LOOK_EDGE, LOOK_EDGE), Image.Resampling.BOX)
+    grey = Image.alpha_composite(Image.new('RGBA', small.size, 'white'), small).convert('L')
+    return numpy.asarray(grey, numpy.int16)
 
 
 def look_alike(first: numpy.ndarray, second: numpy.ndarray) -> bool:
