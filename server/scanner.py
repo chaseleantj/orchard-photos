@@ -22,8 +22,7 @@ except ImportError:
 
 EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
 THUMBNAIL_SIZE = 720
-# Anything larger is refused as a possible decompression bomb. Pillow only warns between one and two times its
-# limit, so the scanner checks the size itself.
+# Anything larger is refused as a possible decompression bomb, by refuse_oversized.
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
@@ -122,6 +121,13 @@ def displayable(image):
     return image.convert('RGBA' if has_alpha else 'RGB')
 
 
+def refuse_oversized(image):
+    """Raise DecompressionBombError for an image past the limit, which Pillow only warns about up to twice the limit."""
+    width, height = image.size
+    if width * height > Image.MAX_IMAGE_PIXELS:
+        raise Image.DecompressionBombError(f'{width} x {height} pixels')
+
+
 def failure(error: Exception) -> str:
     if isinstance(error, Image.DecompressionBombError):
         return 'Too large to open'
@@ -218,9 +224,8 @@ class Scanner:
                 return {'id': digest}
             with Image.open(path) as image:
                 mime = Image.MIME.get(image.format or '', 'application/octet-stream')
+                refuse_oversized(image)
                 width, height = image.size
-                if width * height > Image.MAX_IMAGE_PIXELS:
-                    raise Image.DecompressionBombError(f'{width} x {height} pixels')
                 if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                     width, height = height, width
                 taken, camera = exif_details(image)

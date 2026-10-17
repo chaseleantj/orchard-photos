@@ -465,6 +465,8 @@ class SemanticIndex:
     def search(self, text: str = "", image_id: str = "", image_bytes: bytes | None = None) -> list[tuple[str, float]]:
         """Return every indexed image ranked by cosine similarity, best first."""
         import numpy
+        from PIL import Image, ImageOps
+        from server.scanner import refuse_oversized
 
         if sum((bool(text.strip()), bool(image_id), image_bytes is not None)) != 1:
             raise ValueError("Provide one text query or one reference image.")
@@ -480,8 +482,8 @@ class SemanticIndex:
                     raise ValueError
                 query = matrix[ids.index(image_id)]
             elif image_bytes is not None:
-                from PIL import Image, ImageOps
                 with Image.open(BytesIO(image_bytes)) as source:
+                    refuse_oversized(source)
                     image = ImageOps.exif_transpose(source).convert("RGB")
                 try:
                     query = self.encoder.features(images=[image])[0]
@@ -489,7 +491,7 @@ class SemanticIndex:
                     image.close()
             else:
                 query = self.encoder.features(text=[text.strip()])[0]
-        except (ValueError, OSError):
+        except (ValueError, OSError, Image.DecompressionBombError):
             raise ValueError("The reference image could not be read or is not indexed yet.")
         except Exception as error:
             self._set_state("error", str(error))
