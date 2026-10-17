@@ -15,7 +15,7 @@ On Linux, `./orchard` makes `.venv` with `--system-site-packages`, so the window
 
 On Windows, the environment's Python is `.venv\Scripts\python.exe`, and `orchard.cmd` doesn't rebuild the page, so run `npm run build` yourself after changing the frontend. ONNX Runtime needs the Microsoft Visual C++ Redistributable there. Without it, visual search says how to install it.
 
-Search runs SigLIP 2 with ONNX Runtime on the CPU, or on the GPU through Core ML on an Apple Silicon Mac. To use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
+Search runs SigLIP 2 with ONNX Runtime on the CPU, or on the GPU: through Core ML on an Apple Silicon Mac, and through DirectML on Windows x64, where `requirements.txt` installs `onnxruntime-directml` in place of `onnxruntime`. DirectML works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. Windows on Arm has no DirectML build, so it uses the CPU. On Linux, to use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
 
 The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18+:
 

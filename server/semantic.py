@@ -34,7 +34,11 @@ CORE_ML_VISION = "vision_model_fp16_coreml.onnx"
 CORE_ML_SHA256 = "87aa52ceed129728ae749782dfafb7cb4e92060f9018776040071b6d85caebc9"
 # The GPU, asked for by name: left to choose, Core ML picks the Neural Engine, which is half as fast here.
 CORE_ML_OPTIONS = {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"}
-# Before using Core ML, its vector for a fixed test image must match the one VISION gives on the CPU, stored next to
+# On Windows x64, onnxruntime-directml takes onnxruntime's place and runs VISION on any DirectX 12 GPU, from NVIDIA,
+# AMD or Intel: on an Intel Iris Xe, about 1.6 times faster than the CPU, with the same vectors. The text encoder stays
+# on the CPU.
+DIRECTML = "DmlExecutionProvider"
+# Before using a GPU, its vector for a fixed test image must match the one VISION gives on the CPU, stored next to
 # this file by scripts/build-coreml-model, at least this closely. Otherwise the CPU runs VISION.
 PARITY_VECTOR = Path(__file__).with_name("parity-vector.npy")
 PARITY_COSINE = 0.999
@@ -166,7 +170,11 @@ class Encoder:
                     from tokenizers import Tokenizer
                 except ImportError as error:
                     raise RuntimeError(_missing(error)) from error
-                vision = self._core_ml_session(onnxruntime) if self.core_ml else None
+                vision = None
+                if self.core_ml:
+                    vision = _gpu_session(onnxruntime, "Core ML", self._path(*_files(True)[0]),
+                                          [("CoreMLExecutionProvider", CORE_ML_OPTIONS), "CPUExecutionProvider"])
+                    self.core_ml = vision is not None
                 if vision is None and not self.downloaded():
                     self._fetch()  # Core ML failed, and the CPU's own image encoder isn't here yet.
                     self.activity = "loading"
@@ -174,6 +182,12 @@ class Encoder:
                 providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
                              if name in onnxruntime.get_available_providers()]
                 vision_file, text_file, tokenizer_file = (self._path(*file) for file in _files(self.core_ml))
+                if vision is None and DIRECTML in onnxruntime.get_available_providers():
+                    # DirectML can't reuse memory patterns or run nodes in parallel, as ONNX Runtime's documentation says.
+                    options = onnxruntime.SessionOptions()
+                    options.enable_mem_pattern = False
+                    options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+                    vision = _gpu_session(onnxruntime, "DirectML", vision_file, [DIRECTML, "CPUExecutionProvider"], options)
                 try:
                     vision = vision or onnxruntime.InferenceSession(str(vision_file), providers=providers)
                     text = onnxruntime.InferenceSession(str(text_file), providers=providers)
@@ -188,24 +202,6 @@ class Encoder:
                 raise
             finally:
                 self.activity = None
-
-    def _core_ml_session(self, onnxruntime):
-        """The image encoder on the GPU, or None once it has fallen back to the CPU because Core ML could not load it
-        or gave the wrong vector for the test image."""
-        import numpy
-
-        try:
-            session = onnxruntime.InferenceSession(str(self._path(*_files(True)[0])),
-                                                   providers=[("CoreMLExecutionProvider", CORE_ML_OPTIONS), "CPUExecutionProvider"])
-            cosine = float(_unit(_run(session, parity_pixels()[None]))[0] @ numpy.load(PARITY_VECTOR))
-            if cosine >= PARITY_COSINE:
-                return session
-            reason = f"its vector for the test image is off, at a cosine of {cosine:.4f}"
-        except Exception as error:
-            reason = str(error) or type(error).__name__
-        logger.warning("Core ML could not run the search model, so the CPU runs it: %s", reason)
-        self.core_ml = False
-        return None
 
     def features(self, *, images=None, text=None):
         import numpy
@@ -234,6 +230,23 @@ def _files(core_ml):
     """(repository, revision, name) of each file to download, the image encoder first, with or without Core ML."""
     vision = (CORE_ML_REPOSITORY, CORE_ML_REVISION, CORE_ML_VISION) if core_ml else (REPOSITORY, REVISION, VISION)
     return [vision, (REPOSITORY, REVISION, TEXT), (REPOSITORY, REVISION, TOKENIZER)]
+
+
+def _gpu_session(onnxruntime, engine, path, providers, options=None):
+    """The image encoder on the GPU through `engine`, or None when it can't load it or gives the wrong vector for the
+    test image, so the CPU runs it instead."""
+    import numpy
+
+    try:
+        session = onnxruntime.InferenceSession(str(path), sess_options=options, providers=providers)
+        cosine = float(_unit(_run(session, parity_pixels()[None]))[0] @ numpy.load(PARITY_VECTOR))
+        if cosine >= PARITY_COSINE:
+            return session
+        reason = f"its vector for the test image is off, at a cosine of {cosine:.4f}"
+    except Exception as error:
+        reason = str(error) or type(error).__name__
+    logger.warning("%s could not run the search model, so the CPU runs it: %s", engine, reason)
+    return None
 
 
 def core_ml_available() -> bool:
@@ -291,7 +304,7 @@ def _pixels(image):
 
 
 def parity_pixels():
-    """The test image Core ML must get right: smooth colour gradients and ripples, made without any decoder so it is
+    """The test image a GPU must get right: smooth colour gradients and ripples, made without any decoder so it is
     exactly the same everywhere."""
     import numpy
 

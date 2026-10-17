@@ -191,7 +191,7 @@ class SemanticTests(unittest.TestCase):
         self.place(True)
         opened = []
 
-        def open_session(path, providers):
+        def open_session(path, sess_options=None, providers=None):
             opened.append((Path(path).name, providers))
             if isinstance(providers[0], tuple):
                 return core_ml_session()
@@ -220,6 +220,38 @@ class SemanticTests(unittest.TestCase):
                 for core_ml in (False, True):
                     for file in _files(core_ml):
                         self.encoder._path(*file).unlink(missing_ok=True)
+
+    def load_directml(self, directml_session):
+        """Load with DirectML installed, as on Windows x64. Returns each session's file, providers and options."""
+        self.place(False)
+        opened = []
+
+        def open_session(path, sess_options=None, providers=None):
+            opened.append((Path(path).name, providers, sess_options))
+            return directml_session() if providers[0] == semantic.DIRECTML else self.session()
+
+        with patch("onnxruntime.get_available_providers", return_value=[semantic.DIRECTML, "CPUExecutionProvider"]), \
+                patch("onnxruntime.InferenceSession", side_effect=open_session), patch("tokenizers.Tokenizer.from_file"):
+            self.encoder.load()
+        return opened
+
+    def test_directml_runs_the_image_encoder_and_the_cpu_the_text_encoder(self):
+        opened = self.load_directml(self.session)
+        self.assertEqual([(name, providers) for name, providers, _ in opened],
+                         [(Path(VISION).name, [semantic.DIRECTML, "CPUExecutionProvider"]), (Path(TEXT).name, ["CPUExecutionProvider"])])
+        self.assertFalse(opened[0][2].enable_mem_pattern)
+
+    def test_directml_falls_back_to_the_cpu_when_it_fails_to_load_or_is_off(self):
+        for failing in (lambda: (_ for _ in ()).throw(RuntimeError("no DirectX 12 device")), lambda: self.session(-np.load(PARITY_VECTOR))):
+            with self.subTest(failing=failing):
+                self.encoder._vision = None
+                with self.assertLogs("server.semantic", level="WARNING") as logs:
+                    opened = self.load_directml(failing)
+                self.assertIn("DirectML could not run the search model, so the CPU runs it", logs.output[0])
+                self.assertEqual([(name, providers) for name, providers, _ in opened],
+                                 [(Path(VISION).name, [semantic.DIRECTML, "CPUExecutionProvider"]), (Path(VISION).name, ["CPUExecutionProvider"]),
+                                  (Path(TEXT).name, ["CPUExecutionProvider"])])
+                self.assertTrue(self.encoder.loaded)
 
     def test_an_unavailable_core_ml_repository_downloads_the_cpu_encoder_instead(self):
         from huggingface_hub.errors import HFValidationError

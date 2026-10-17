@@ -42,7 +42,7 @@ rem unchanged packages from downloading again.
   echo Orchard could not make its Python environment in "%VENV%". If Orchard is open, close it and try again.
   exit /b 1
 )
-echo Installing Python packages. The first run downloads about 70 MB, which takes about a minute.
+echo Installing Python packages. The first run downloads about 90 MB, which takes about a minute.
 "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check -r "%ROOT%requirements.txt" || exit /b 1
 copy /y "%ROOT%requirements.txt" "%VENV%\.installed" >nul
 exit /b

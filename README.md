@@ -44,7 +44,7 @@ On a laptop with an Arm processor, like a Snapdragon, use `Microsoft.VCRedist.20
 orchard.cmd C:\Users\you\Pictures
 ```
 
-The first run installs Python packages into the `.venv` folder beside it, which takes about two minutes and 195 MB on disk. The window uses Microsoft Edge's WebView2, which comes with Windows 10 and 11. In the browser, there is no Choose folder button on Windows, so type or paste the folder path instead.
+The first run installs Python packages into the `.venv` folder beside it, which takes about two minutes, a download of about 90 MB, and 290 MB on disk. The window uses Microsoft Edge's WebView2, which comes with Windows 10 and 11. Visual search runs on the GPU through DirectML, with any DirectX 12 graphics from NVIDIA, AMD or Intel, and falls back to the CPU without one. On Windows on Arm, it uses the CPU. In the browser, there is no Choose folder button on Windows, so type or paste the folder path instead.
 
 ### The Mac app
 
