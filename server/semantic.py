@@ -191,7 +191,8 @@ class Encoder:
             options = onnxruntime.SessionOptions()
             options.enable_mem_pattern = False
             options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
-            return _gpu_session(onnxruntime, "DirectML", self._path(*_files(False)[0]), [DIRECTML, "CPUExecutionProvider"], options)
+            return _gpu_session(onnxruntime, "DirectML", self._path(*_files(False)[0]),
+                                [DIRECTML, "CPUExecutionProvider"], options)
         return None
 
     def features(self, *, images=None, text=None):

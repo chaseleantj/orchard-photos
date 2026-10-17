@@ -14,7 +14,8 @@ import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, Vi
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
-// An image dropped anywhere across the top of the window, down to this far below the search bar, counts as dropped on it.
+// An image dropped anywhere across the top of the window, down to this far below the search bar, counts as
+// dropped on it.
 const DROP_REACH = 96;
 // A grid this short fits in a few screens and needs no timeline.
 const TIMELINE_MIN = 100;
