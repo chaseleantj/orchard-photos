@@ -1,0 +1,93 @@
+name: Release
+
+# Builds the Mac DMG and the Windows zip, opens each the way a user would to test it, and attaches both to a draft
+# release when a v* tag is pushed. Started by hand, it builds and tests them, and keeps them as workflow artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: Orchard-mac-arm64.dmg
+            log: ~/Library/Logs/Orchard.log
+            python: Orchard.app/Contents/MacOS/python
+          - os: windows-latest
+            artifact: Orchard-windows-x64.zip
+            log: $LOCALAPPDATA/Temp/Orchard.log
+            python: Orchard/runtime/python.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # The version inside the app, since pip installs its packages with the Python that runs the build.
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Build
+        # A tag like v0.1.0 makes the version 0.1.0.
+        run: python scripts/build-app --version "$( [ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}" || echo 0.0.0 )"
+      - name: Open the DMG and copy the app out
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" "build/${{ matrix.artifact }}"
+          ditto "$RUNNER_TEMP/dmg/Orchard.app" "$RUNNER_TEMP/Orchard.app"
+          hdiutil detach "$RUNNER_TEMP/dmg"
+          echo "LAUNCHER=$RUNNER_TEMP/Orchard.app/Contents/MacOS/Orchard" >> "$GITHUB_ENV"
+      - name: Unzip the app
+        if: runner.os == 'Windows'
+        run: |
+          python -m zipfile -e "build/${{ matrix.artifact }}" "$RUNNER_TEMP"
+          echo "LAUNCHER=$RUNNER_TEMP/Orchard/Orchard.exe" >> "$GITHUB_ENV"
+      # The smoke test opens the page in the browser, so check apart that the window's toolkit loads.
+      - name: Load the window's toolkit
+        run: '"$RUNNER_TEMP/${{ matrix.python }}" -I -c "from webview.guilib import initialize; initialize()"'
+      - name: Cache the search model
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/orchard-data/models
+          key: release-model-${{ runner.os }}-${{ hashFiles('server/semantic.py') }}
+      - name: Smoke test
+        run: python scripts/smoke-test --launcher "$LAUNCHER" --visual --data-dir ~/orchard-data
+      - name: Show the app's log
+        if: failure()
+        run: cat ${{ matrix.log }}
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/${{ matrix.artifact }}
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --draft --title "Orchard $GITHUB_REF_NAME" \
+            --generate-notes --notes-file - <<'NOTES'
+          **Mac** (Apple Silicon, macOS 14 or later): open `Orchard-mac-arm64.dmg` and drag Orchard to Applications. Orchard isn't signed by Apple yet, so the first time, macOS says it can't verify it. Click **Done**, open **System Settings › Privacy & Security**, click **Open Anyway** next to the message about Orchard, and confirm with your password.
+
+          **Windows** (x64): extract `Orchard-windows-x64.zip`, then open `Orchard.exe` in the `Orchard` folder. Windows may say it protected your PC. Click **More info**, then **Run anyway**.
+          NOTES
