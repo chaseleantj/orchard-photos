@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 import threading
+import time
 import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
@@ -204,7 +205,9 @@ class Scanner:
         if self.directory.exists():
             status = self.directory.stat()
             skip.add((status.st_dev, status.st_ino))
+        started = time.monotonic()
         found, unreadable, libraries = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
+        listed = time.monotonic() - started
         if '' in unreadable:
             raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
         with connect(self.directory, rows=True) as db:
@@ -244,6 +247,7 @@ class Scanner:
             stats['files'] = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
         stats['removed'] = removed
+        stats['listed_seconds'] = round(listed, 3)
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries
         return stats

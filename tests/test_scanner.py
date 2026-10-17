@@ -57,6 +57,7 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(self.files()['a/b/c/deep.jpg']['folder'], 'a/b/c')
         self.assertEqual((stats['images'], stats['unreadable']), (2, 0))
         self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
+        self.assertGreaterEqual(stats['listed_seconds'], 0)
 
     @unittest.skipIf(sys.platform == 'win32', 'Symlinks need Developer Mode on Windows')
     def test_symlink_loops_end_and_real_paths_win(self):
