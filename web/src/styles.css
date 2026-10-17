@@ -2,7 +2,7 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   font-size: var(--body); line-height: 1.5; font-weight: 400;
   font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
-  --bg: #faf9f6; --surface: #ffffff; --soft: #f0efeb; --ink: #272724; --muted: #73736c; --line: #d9d9d1; --focus: #6b7861; --danger: #a44434;
+  --bg: #faf9f6; --surface: #ffffff; --soft: #f0efeb; --ink: #272724; --muted: #6c6c65; --line: #d9d9d1; --focus: #6b7861; --danger: #a44434;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px; --s10: 40px; --s12: 48px; --s16: 64px; --s20: 80px;
   /* Two sizes and one weight: hierarchy comes from ink against muted, and from space. */
   --body: 14px; --title: 22px;
@@ -39,6 +39,8 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .muted { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .header { display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
+/* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step. */
+html { scroll-padding-top: calc(var(--s4) + var(--s12) + var(--s2) * 2); }
 .wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
@@ -62,6 +64,8 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .search .icon-button:hover, .search .icon-button[aria-expanded='true'] { background: var(--surface); }
 .library-meta { display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); color: var(--muted); }
 .library-meta p { margin: 0; }
+/* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
+.library-meta :focus-visible { outline-offset: -2px; }
 /* Background work sits beside the count it is changing: a short bar and what it is doing. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
 .activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; }
@@ -163,8 +167,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .detail-summary { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
 .crumbs { padding: 0; text-align: left; color: var(--muted); overflow-wrap: anywhere; }
 .crumbs:hover { color: var(--ink); }
-/* Pulled left so the first icon lines up with the text above, not its hit area. */
-.detail-actions { display: flex; gap: var(--s1); margin: var(--s4) 0 0 calc((var(--icon) - var(--s10)) / 2); }
+/* Pulled left so the icons line up with the text above, not their hit areas. */
+.detail-actions { display: flex; flex-direction: column; align-items: flex-start; margin: var(--s4) 0 0 calc(var(--s3) * -1); }
 .detail-status { min-height: 1.5em; }
 /* Filters that are on mark their button with a dot, which survives the label collapsing on narrow windows. */
 .filter-on { position: relative; }
@@ -238,6 +242,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
  :root { --page: 16px; --gap: 4px; --panel-width: min(360px, calc(100vw - 32px)); }
  .header { grid-template-columns: 1fr auto; gap: var(--s3); padding-top: var(--s4); }
  .search { grid-row: 2; grid-column: 1/-1; height: var(--s10); }
+ /* The header's two rows of controls, the gap and padding between them, then a step. */
+ html { scroll-padding-top: calc(var(--s4) + var(--s10) * 2 + var(--s3) + var(--s2) * 2); }
  .view-switch { margin-right: 0; }
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }

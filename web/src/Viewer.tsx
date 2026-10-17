@@ -99,10 +99,10 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         </div>
         <div className="detail-actions">
-          {onSimilar && <button className="icon-button" aria-label="Find similar" title="Find similar" onClick={() => onSimilar(item.id)}><ScanSearch /></button>}
-          <button className="icon-button" aria-label="Copy image" title="Copy image" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}</button>
-          <a className="icon-button" href={downloadUrl(item.id, item.path)} download aria-label="Download original" title="Download original"><Download /></a>
-          <button className="icon-button" aria-label={reveal} title={reveal} onClick={() => show(item.path)}><FolderOpen /></button>
+          {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
+          <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>
+          <a className="text-button" href={downloadUrl(item.id, item.path)} download><Download />Download original</a>
+          <button className="text-button" onClick={() => show(item.path)}><FolderOpen />{reveal}</button>
         </div>
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
         {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
