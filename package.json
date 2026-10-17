@@ -7,18 +7,24 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test": ".venv/bin/python -m unittest discover -s tests"
+    "test": ".venv/bin/python -m unittest discover -s tests",
+    "lint": ".venv/bin/ruff check . && eslint --max-warnings 0 . && tsc --noEmit -p ."
   },
   "dependencies": {
+    "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
     "typescript": "~5.8.3",
+    "typescript-eslint": "8.71.2",
     "vite": "^6.3.5"
   }
 }
