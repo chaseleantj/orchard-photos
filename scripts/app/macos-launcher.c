@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
     mkdir(logs, 0755);
     snprintf(log, sizeof log, "%s/Orchard.log", logs);
 
-    char *arguments[argc + 7];
+    char *arguments[argc + 6];
     char *fixed[] = {python, "-I", "-B", "-m", "server.api", "--window"};
     int count = sizeof fixed / sizeof *fixed;
     memcpy(arguments, fixed, sizeof fixed);

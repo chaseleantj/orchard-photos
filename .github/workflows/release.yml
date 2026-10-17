@@ -87,7 +87,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --draft --title "Orchard $GITHUB_REF_NAME" \
             --generate-notes --notes-file - <<'NOTES'
-          **Mac** (Apple Silicon, macOS 14 or later): open `Orchard-mac-arm64.dmg` and drag Orchard to Applications. Orchard isn't signed by Apple yet, so the first time, macOS says it can't verify it. Click **Done**, open **System Settings › Privacy & Security**, click **Open Anyway** next to the message about Orchard, and confirm with your password.
+          **Mac** (Apple Silicon): open `Orchard-mac-arm64.dmg` and drag Orchard to Applications. Orchard isn't signed by Apple yet, so the first time, macOS says it can't verify it. Click **Done**, open **System Settings › Privacy & Security**, click **Open Anyway** next to the message about Orchard, and confirm with your password.
 
           **Windows** (x64): extract `Orchard-windows-x64.zip`, then open `Orchard.exe` in the `Orchard` folder. Windows may say it protected your PC. Click **More info**, then **Run anyway**.
           NOTES
