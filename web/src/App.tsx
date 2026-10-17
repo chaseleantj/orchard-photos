@@ -199,7 +199,7 @@ export default function App() {
   const findSimilar = useCallback((id: string) => { clearSearch(); setPicked(null); setSelected(null); setView('grid'); setSimilar(id); setMode('visual'); }, [clearSearch]);
   const useImage = useCallback((file: File) => {
     if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) { setError('Choose an image file to search.'); return; }
-    if (file.size > UPLOAD_LIMIT) { setError('Choose an image smaller than 20 MB.'); return; }
+    if (file.size > UPLOAD_LIMIT) { setError(`Choose an image smaller than ${UPLOAD_LIMIT / 1024 / 1024} MB.`); return; }
     clearSearch(); setPanel(null); setUpload(file); setMode('visual'); setSelected(null); setPicked(null); setView('grid');
   }, [clearSearch]);
   // A lifted map image follows the pointer until it is let go, and finds similar images if that is on the search bar.

@@ -66,7 +66,7 @@ Visual search and the map need the search model, a one-time download of about 50
 
 ## Privacy
 
-Orchard only reads your photos. The server listens only on this computer, and rejects requests from other sites.
+Orchard only reads your photos. The server listens only on this computer, and rejects requests from other sites, so don't expose it through a public proxy.
 
 The only network requests are the one-time model download from Hugging Face, and pip's when the packages are installed. After that, Orchard works offline.
 

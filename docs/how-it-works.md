@@ -38,7 +38,7 @@ Where it can, Orchard runs the image half on the GPU:
 - **Windows on x64** uses DirectML, which works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. It runs the same file as the CPU.
 - **Everything else**, including Windows on Arm and Linux, uses the CPU. On Linux, installing `onnxruntime-gpu` in place of `onnxruntime` runs it on an NVIDIA GPU through CUDA.
 
-Before using a GPU, Orchard runs a fixed test image and compares its vector with the CPU's, stored in `server/parity-vector.npy`. If the GPU fails to load the model or its vector is off, the CPU runs it instead, and on a Mac, downloads the full-precision file first. The text half always runs on the CPU, where a search takes a few tens of milliseconds.
+Before using Core ML or DirectML, Orchard runs a fixed test image and compares its vector with the CPU's, stored in `server/parity-vector.npy`. If the GPU fails to load the model or its vector is off, the CPU runs it instead, and on a Mac, downloads the full-precision file first. The text half runs on the CPU, or on CUDA when `onnxruntime-gpu` is installed. On the CPU, a search takes a few tens of milliseconds.
 
 Vectors are stored with the name of the model that made them. Vectors from any other model are deleted when a folder opens, along with the map and stacks made from them, since vectors from two models can't be compared.
 
