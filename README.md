@@ -9,7 +9,7 @@ Orchard is a private photo browser for a folder on your computer. Point it at a 
 
 ## Quick start
 
-You need macOS, Linux or Windows, and Python 3.12, 3.13 or 3.14. Python 3.15 doesn't work yet, because ONNX Runtime, which runs visual search, has no packages for it. If your Python doesn't fit, `./orchard` says which version it found and how to get a supported one. On Debian and Ubuntu, you also need the `python3-venv` package. For Windows, see [Windows](#windows) below.
+You need macOS, Linux or Windows, and Python 3.12, 3.13 or 3.14. Python 3.15 doesn't work yet, because ONNX Runtime, which runs visual search, has no packages for it. If your Python doesn't fit, `./orchard` says which version it found and how to get a supported one. On Debian and Ubuntu, install the packages [below](#linux-packages) first. For Windows, see [Windows](#windows) below.
 
 ```bash
 git clone https://github.com/chaseleantj/orchard.git
@@ -21,13 +21,13 @@ The first run installs Python packages, which takes about a minute: about 55 MB 
 
 Run `./orchard` with no folder to reopen the last one. Running it with a folder while Orchard is already open switches the open window to that folder. To use your browser instead of a window, add `--browser`. Orchard is then at http://127.0.0.1:4400.
 
-On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian:
+<a id="linux-packages"></a>On Linux, Python needs its venv package, and the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, including WSL:
 
 ```bash
-sudo apt install python3-gi gir1.2-webkit2-4.1
+sudo apt update && sudo apt install python3-venv python3-gi gir1.2-webkit2-4.1
 ```
 
-Without it, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
+Without the GTK packages, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
 
 ### Windows
 

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, picker_command
+from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, open_browser, picker_command, reveal
 from server.semantic import EARLIER
 
 PORT = APP['port']
@@ -176,6 +176,24 @@ class HandlerTests(unittest.TestCase):
                 command = picker_command(None)
                 self.assertEqual(command and command[0], program)
 
+
+    def test_linux_without_xdg_open_names_the_package_to_show_a_folder(self):
+        with patch('server.api.sys.platform', 'linux'), patch('server.api.shutil.which', return_value=None), \
+                patch('server.api.subprocess.Popen') as popen, self.assertRaisesRegex(ValueError, 'sudo apt update && sudo apt install xdg-utils'):
+            reveal(Path('/photos/a.jpg'))
+        popen.assert_not_called()
+        with patch('server.api.sys.platform', 'linux'), patch('server.api.shutil.which', return_value='/usr/bin/xdg-open'), \
+                patch('server.api.subprocess.Popen') as popen:
+            reveal(Path('/photos/a.jpg'))
+        self.assertEqual(popen.call_args.args[0], ['xdg-open', str(Path('/photos'))])
+
+    def test_without_a_browser_the_address_is_printed_to_open_by_hand(self):
+        for opened in (True, False):
+            with self.subTest(opened=opened), patch('server.api.webbrowser.open', return_value=opened), patch('server.api.print') as say:
+                open_browser('http://127.0.0.1:4400')
+            self.assertEqual(say.called, not opened)
+            if not opened:
+                self.assertIn('Open http://127.0.0.1:4400 in one', say.call_args.args[0])
 
 class LaunchTests(unittest.TestCase):
     def setUp(self):

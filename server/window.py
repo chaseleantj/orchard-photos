@@ -42,7 +42,7 @@ def unavailable() -> str | None:
         initialize()
     except webview.WebViewException:
         if sys.platform == 'linux':
-            return 'WebKitGTK for Python is missing. On Ubuntu: sudo apt install python3-gi gir1.2-webkit2-4.1'
+            return 'WebKitGTK for Python is missing. On Ubuntu: sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1'
         return 'pywebview could not load its window toolkit'
     finally:
         log.disabled = False

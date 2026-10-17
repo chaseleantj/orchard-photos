@@ -187,8 +187,16 @@ def reveal(path: Path):
         subprocess.Popen(['open', '-R', str(path)])
     elif sys.platform == 'win32':
         subprocess.Popen(['explorer', '/select,', str(path)])
-    else:
+    elif shutil.which('xdg-open'):
         subprocess.Popen(['xdg-open', str(path.parent)])
+    else:
+        raise ValueError('Showing the folder needs xdg-open. On Ubuntu: sudo apt update && sudo apt install xdg-utils')
+
+
+def open_browser(url: str):
+    """Open url in the default browser, or say to open it by hand when there is none, as on a fresh WSL."""
+    if not webbrowser.open(url):
+        print(f'No web browser was found. Open {url} in one.', flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -426,7 +434,7 @@ def main(argv=None):
             sys.exit(error)
         print(f'{APP["name"]} is already running at {url}', flush=True)
         if args.show == 'browser' or args.show == 'window' and not bring_forward(url):
-            webbrowser.open(url)
+            open_browser(url)
         return True
 
     if join_running():
@@ -480,7 +488,7 @@ def main(argv=None):
         app.close()
         return
     if args.show == 'browser':
-        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.3, lambda: open_browser(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

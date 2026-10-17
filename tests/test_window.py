@@ -71,7 +71,7 @@ class AvailabilityTests(unittest.TestCase):
         with patch('server.window.sys.platform', 'linux'), patch.dict(os.environ, {'DISPLAY': ':0'}), \
                 patch('server.window.initialize', side_effect=window.webview.WebViewException('no GTK')):
             reason = window.unavailable()
-        self.assertIn('sudo apt install python3-gi gir1.2-webkit2-4.1', reason)
+        self.assertIn('sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1', reason)
         self.assertNotIn('\n', reason)
 
 

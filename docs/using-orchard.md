@@ -26,7 +26,7 @@ Orchard is then at http://127.0.0.1:4400, and stops when you press Ctrl+C in the
 
 The window remembers its size and place, and the page remembers settings like the theme. On a Mac, the Dock app and `./orchard` in a terminal each keep their own, because macOS stores them per app.
 
-On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, install it with `sudo apt install python3-gi gir1.2-webkit2-4.1`. Orchard uses these system packages, so they need to match the Python that runs it. That's the case when it's your system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why.
+On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, install it with `sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1`. Orchard uses these system packages, so they need to match the Python that runs it. That's the case when it's your system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why.
 
 Each folder keeps its own cache, so switching back to a folder you've opened before is quick. If the folder goes away, for example on an unplugged drive, Orchard keeps showing the last scan and tells you the folder is unavailable.
 

@@ -20,7 +20,7 @@ find_python() {
   if [ "$(uname)" = Darwin ]; then
     echo 'Install Python 3.13 with Homebrew (brew install python@3.13) or from https://www.python.org/downloads/, then run Orchard again.' >&2
   else
-    echo 'Install Python 3.12, 3.13 or 3.14 with your package manager. On Ubuntu 24.04 and later: sudo apt install python3 python3-venv' >&2
+    echo 'Install Python 3.12, 3.13 or 3.14 with your package manager. On Ubuntu 24.04 and later: sudo apt update && sudo apt install python3 python3-venv' >&2
     echo 'On older Ubuntu, get python3.12 from the deadsnakes PPA: https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa' >&2
   fi
   return 1
@@ -44,7 +44,7 @@ if ! installed; then
     python=$(find_python)
     version=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
     # Debian and Ubuntu ship the part of venv that installs pip as a separate package.
-    "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt install python$version-venv" >&2; exit 1; }
+    "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt update && sudo apt install python$version-venv" >&2; exit 1; }
     # A fresh environment each time, so packages that requirements.txt drops are removed too. pip's cache keeps
     # unchanged packages from downloading again.
     # On Linux the window uses the distribution's GTK bindings for Python, which pip can't install.
