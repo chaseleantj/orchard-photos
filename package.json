@@ -8,7 +8,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": ".venv/bin/python -m unittest discover -s tests",
-    "lint": ".venv/bin/ruff check . && eslint --max-warnings 0 . && tsc --noEmit -p ."
+    "test:ui": "playwright test -c tests/ui",
+    "lint": ".venv/bin/ruff check . && eslint --max-warnings 0 . && tsc --noEmit -p . && tsc --noEmit -p tests/ui"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -17,6 +18,8 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
