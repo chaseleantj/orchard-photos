@@ -1,3 +1,4 @@
+from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
@@ -413,6 +414,19 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(status["state"], "ready")
         self.add("3")
         self.assertEqual(self.search.status()["state"], "idle")
+
+    def test_an_upload_too_large_to_decode_is_refused_and_search_stays_ready(self):
+        self.add("1")
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.array([[1, 0]], dtype=np.float32)):
+            self.search.index()
+        for side in (12, 20):
+            with self.subTest(side=side), patch.object(Image, "MAX_IMAGE_PIXELS", 100), patch.object(self.encoder, "features") as features:
+                upload = BytesIO()
+                Image.new("RGB", (side, side)).save(upload, "PNG")
+                with self.assertRaisesRegex(ValueError, "could not be read"):
+                    self.search.search(image_bytes=upload.getvalue())
+                features.assert_not_called()
+            self.assertEqual(self.search.status()["state"], "ready")
 
     def test_indexing_stops_when_cancelled(self):
         self.add(*[str(n) for n in range(40)])
