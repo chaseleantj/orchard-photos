@@ -10,7 +10,9 @@ import numpy as np
 from PIL import Image
 
 from server.scanner import thumbnail_path
-from server.semantic import DOWNLOAD_BYTES, FILES, IMAGE_MEAN, IMAGE_SIZE, IMAGE_STD, MODEL, REVISION, Encoder, SemanticIndex, _pixels
+from server import semantic
+from server.semantic import (CORE_ML_SHA256, CORE_ML_VISION, EARLIER, IMAGE_SIZE, MAX_TOKENS, MODEL, PARITY_VECTOR, REPOSITORY,
+                             TEXT, TOKENIZER, VISION, Encoder, SemanticIndex, _files, _pixels, parity_pixels)
 
 
 class SemanticTests(unittest.TestCase):
@@ -18,7 +20,9 @@ class SemanticTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
-        self.encoder = Encoder(self.directory / "models")
+        # Tests choose the engine themselves, so they behave the same on every computer.
+        with patch("server.semantic.core_ml_available", return_value=False):
+            self.encoder = Encoder(self.directory / "models")
         self.search = SemanticIndex(self.directory, self.encoder)
         with closing(sqlite3.connect(self.search.database)) as connection, connection:
             connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
@@ -31,6 +35,13 @@ class SemanticTests(unittest.TestCase):
                     Image.new("RGB", (8, 8), (len(image_id), 0, 0)).save(thumbnail_path(self.directory, image_id), "WEBP")
                 connection.execute("INSERT INTO images VALUES (?)", (image_id,))
 
+    def place(self, core_ml, content="{}"):
+        """Write every file the given engine needs, with the tokenizer as `content`."""
+        for file in _files(core_ml):
+            path = self.encoder._path(*file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+
     def test_empty_folder_and_invalid_queries_do_not_download_a_model(self):
         self.assertEqual(self.search.status(), {"state": "idle", "indexed": 0, "total": 0, "downloaded": False})
         self.search.index()
@@ -42,32 +53,76 @@ class SemanticTests(unittest.TestCase):
         self.assertFalse((self.directory / "models").exists())
 
     def test_downloaded_weights_are_recognised_only_when_complete(self):
-        snapshot = self.encoder.repository / "snapshots" / REVISION
-        for name in FILES[:-1]:
-            (snapshot / name).parent.mkdir(parents=True, exist_ok=True)
-            (snapshot / name).write_text("{}")
-        self.assertFalse(self.encoder.downloaded())
-        (snapshot / FILES[-1]).write_text("{}")
-        self.assertTrue(self.encoder.downloaded())
+        for core_ml in (False, True):
+            self.encoder.core_ml = core_ml
+            self.place(core_ml)
+            self.encoder._path(*_files(core_ml)[-1]).unlink()
+            self.assertFalse(self.encoder.downloaded())
+            self.place(core_ml)
+            self.assertTrue(self.encoder.downloaded())
+
+    def test_apple_silicon_downloads_the_core_ml_image_encoder_in_place_of_the_full_precision_one(self):
+        self.assertEqual(self.encoder.size, 689_793_386)
+        self.encoder.core_ml = True
+        self.assertEqual(self.encoder.size, 503_893_893)
+        self.assertEqual([name for _, _, name in _files(True)], [CORE_ML_VISION, TEXT, TOKENIZER])
+        self.assertEqual([name for _, _, name in _files(False)], [VISION, TEXT, TOKENIZER])
+
+    def test_core_ml_is_chosen_only_where_available_and_not_after_an_earlier_fallback(self):
+        def chosen(available):
+            with patch("server.semantic.core_ml_available", return_value=available):
+                return Encoder(self.directory / "models").core_ml
+        self.assertEqual((chosen(False), chosen(True)), (False, True))
+        # A Mac that fell back before has only the CPU's files, and keeps using them.
+        self.place(False)
+        self.assertFalse(chosen(True))
+        self.place(True)
+        self.assertTrue(chosen(True))
+
+    def test_platform_check_wants_an_apple_silicon_mac_with_core_ml(self):
+        providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+        for system, machine, available, expected in [("darwin", "arm64", providers, True), ("darwin", "x86_64", providers, False),
+                                                     ("linux", "arm64", providers, False), ("darwin", "arm64", providers[1:], False)]:
+            with patch.object(semantic.sys, "platform", system), patch("platform.machine", return_value=machine), \
+                    patch("onnxruntime.get_available_providers", return_value=available):
+                self.assertEqual(semantic.core_ml_available(), expected, (system, machine, available))
 
     def test_download_progress_and_failure_are_reported_between_runs(self):
         self.add("1")
-        blobs = self.encoder.repository / "blobs"
+        blobs = self.encoder._folder(REPOSITORY) / "blobs"
         blobs.mkdir(parents=True)
         (blobs / "weights.incomplete").write_bytes(b"x" * 1000)
         self.encoder.activity = "downloading"
         status = self.search.status()
-        self.assertEqual((status["state"], status["received"], status["size"]), ("downloading", 1000, DOWNLOAD_BYTES))
+        self.assertEqual((status["state"], status["received"], status["size"]), ("downloading", 1000, self.encoder.size))
+        # With Core ML, the image encoder comes from its own repository, and both count.
+        self.encoder.core_ml = True
+        other = self.encoder._path(*_files(True)[0]).parents[2] / "blobs"
+        other.mkdir(parents=True)
+        (other / "weights.incomplete").write_bytes(b"x" * 500)
+        self.assertEqual(self.search.status()["received"], 1500)
         self.encoder.activity, self.encoder.failure = None, "The search model could not download."
         self.assertEqual((self.search.status()["state"], self.search.status()["error"]), ("error", "The search model could not download."))
 
-    def test_a_finished_download_removes_the_old_pytorch_weights(self):
-        old = self.directory / "models" / f"models--{MODEL.replace('/', '--')}" / "blobs"
-        old.mkdir(parents=True)
-        (old / "pytorch_model.bin").write_bytes(b"x")
-        with patch("huggingface_hub.snapshot_download"):
+    def test_an_earlier_model_makes_setup_an_update_until_the_download_removes_it(self):
+        self.assertFalse(self.encoder.replaces())
+        for repository in EARLIER:
+            blobs = self.directory / "models" / f"models--{repository.replace('/', '--')}" / "blobs"
+            blobs.mkdir(parents=True)
+            (blobs / "weights").write_bytes(b"x")
+        self.assertTrue(self.encoder.replaces())
+        with patch("huggingface_hub.snapshot_download") as download:
             self.encoder._fetch()
-        self.assertFalse(old.parent.exists())
+        self.assertEqual(download.call_args.kwargs["allow_patterns"], [VISION, TEXT, TOKENIZER])
+        self.assertFalse(self.encoder.replaces())
+        self.assertEqual(list((self.directory / "models").iterdir()), [])
+
+    def test_a_failed_download_keeps_the_earlier_model(self):
+        earlier = self.directory / "models" / f"models--{EARLIER[-1].replace('/', '--')}"
+        earlier.mkdir(parents=True)
+        with patch("huggingface_hub.snapshot_download", side_effect=OSError("offline")), self.assertRaisesRegex(RuntimeError, "could not download"):
+            self.encoder._fetch()
+        self.assertTrue(self.encoder.replaces())
 
     def test_a_failed_download_is_kept_for_the_status_and_cleared_on_retry(self):
         with patch.object(self.encoder, "_fetch", side_effect=RuntimeError("No connection")):
@@ -79,24 +134,164 @@ class SemanticTests(unittest.TestCase):
                 self.encoder.load()
         self.assertEqual(self.encoder.failure, "Still no connection")
 
-    def test_images_are_resized_and_centre_cropped_like_clip(self):
+    def test_images_are_squashed_whole_into_a_square_and_scaled_to_plus_minus_one(self):
         wide = Image.new("RGB", (900, 300), (255, 0, 0))
-        wide.paste((128, 128, 128), (300, 0, 600, 300))
+        wide.paste((0, 0, 255), (0, 0, 300, 300))
         pixels = _pixels(wide)
-        self.assertEqual(pixels.shape, (3, IMAGE_SIZE, IMAGE_SIZE))
-        grey = (128 / 255 - np.array(IMAGE_MEAN)) / np.array(IMAGE_STD)
-        np.testing.assert_allclose(pixels[:, 10:-10, 10:-10].mean(axis=(1, 2)), grey, atol=1e-3)
+        self.assertEqual((pixels.shape, pixels.dtype), ((3, IMAGE_SIZE, IMAGE_SIZE), np.float32))
+        # Nothing is cropped: the blue third on the left survives, squashed to a third of the width.
+        third = IMAGE_SIZE // 3
+        np.testing.assert_allclose(pixels[:, :, :third - 2].mean(axis=(1, 2)), [-1, -1, 1], atol=1e-3)
+        np.testing.assert_allclose(pixels[:, :, third + 2:].mean(axis=(1, 2)), [1, -1, -1], atol=1e-3)
         self.assertEqual(_pixels(Image.new("RGB", (5, 2000))).shape, (3, IMAGE_SIZE, IMAGE_SIZE))
 
     def test_features_run_the_matching_encoder_and_return_unit_vectors(self):
-        self.encoder._vision = Mock(**{"run.return_value": [np.array([[3.0, 4.0]], dtype=np.float32)]})
+        self.encoder._vision = self.session(np.array([3.0, 4.0], dtype=np.float32))
         self.encoder._text = Mock(**{"run.return_value": [np.array([[0.0, 2.0], [5.0, 0.0]], dtype=np.float32)]})
         self.encoder._tokenizer = Mock(**{"encode_batch.return_value": [SimpleNamespace(ids=[1, 2, 3]), SimpleNamespace(ids=[1, 3, 3])]})
         np.testing.assert_allclose(self.encoder.features(images=[Image.new("RGB", (300, 200))]), [[0.6, 0.8]])
         self.assertEqual(self.encoder._vision.run.call_args.args[1]["pixel_values"].shape, (1, 3, IMAGE_SIZE, IMAGE_SIZE))
-        np.testing.assert_allclose(self.encoder.features(text=["a cat", "a dog"]), [[0, 1], [1, 0]])
+        np.testing.assert_allclose(self.encoder.features(text=["A Cat", "a dog"]), [[0, 1], [1, 0]])
+        self.encoder._tokenizer.encode_batch.assert_called_once_with(["a cat", "a dog"])
         tokens = self.encoder._text.run.call_args.args[1]["input_ids"]
         self.assertEqual((tokens.dtype, tokens.tolist()), (np.int64, [[1, 2, 3], [1, 3, 3]]))
+        # Each tower's pooled embedding, not its per-token states.
+        self.assertEqual((self.encoder._vision.run.call_args.args[0], self.encoder._text.run.call_args.args[0]), (["pooler_output"], ["pooler_output"]))
+
+    def test_descriptions_are_always_exactly_the_tokens_the_text_model_reads(self):
+        from tokenizers import Tokenizer, models, pre_tokenizers, processors
+        tokenizer = Tokenizer(models.WordLevel({"<pad>": 0, "<eos>": 1, "<unk>": 2, "a": 3, "cat": 4}, unk_token="<unk>"))
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        tokenizer.post_processor = processors.TemplateProcessing(single="$A <eos>", special_tokens=[("<eos>", 1)])
+        self.place(False)
+        tokenizer.save(str(self.encoder._path(*_files(False)[2])))
+        with patch("onnxruntime.InferenceSession"):
+            self.encoder.load()
+        short, long = self.encoder._tokenizer.encode_batch(["a cat", "a " * 100])
+        self.assertEqual(short.ids, [3, 4, 1] + [0] * (MAX_TOKENS - 3))
+        self.assertEqual((len(long.ids), long.ids[-1]), (MAX_TOKENS, 1))
+
+    def session(self, vector=None, batch="batch_size"):
+        """A stand-in ONNX Runtime session whose image encoder gives `vector` for every image."""
+        vector = np.load(PARITY_VECTOR) if vector is None else vector
+        session = Mock(**{"get_inputs.return_value": [SimpleNamespace(shape=[batch, 3, IMAGE_SIZE, IMAGE_SIZE])]})
+        session.run.side_effect = lambda names, feed: [np.tile(vector, (len(next(iter(feed.values()))), 1))]
+        return session
+
+    def load_core_ml(self, core_ml_session):
+        """Load with Core ML on and only its files present. Returns the providers each session was opened with."""
+        self.encoder.core_ml = True
+        self.place(True)
+        opened = []
+
+        def open_session(path, providers):
+            opened.append((Path(path).name, providers))
+            if isinstance(providers[0], tuple):
+                return core_ml_session()
+            return self.session()
+
+        with patch("onnxruntime.InferenceSession", side_effect=open_session), patch("tokenizers.Tokenizer.from_file"), \
+                patch.object(self.encoder, "_fetch", side_effect=lambda: self.place(False)) as download:
+            self.encoder.load()
+        return opened, download.call_count
+
+    def test_core_ml_runs_the_image_encoder_when_it_matches_the_cpu(self):
+        opened, downloads = self.load_core_ml(lambda: self.session(batch=16))
+        self.assertEqual((opened[0][0], opened[0][1][0]), (CORE_ML_VISION, ("CoreMLExecutionProvider", semantic.CORE_ML_OPTIONS)))
+        self.assertEqual((self.encoder.core_ml, downloads, len(opened)), (True, 0, 2))
+
+    def test_core_ml_falls_back_to_the_cpu_and_downloads_its_encoder_when_it_fails_to_load_or_is_off(self):
+        for failing in (lambda: (_ for _ in ()).throw(RuntimeError("compile failed")), lambda: self.session(-np.load(PARITY_VECTOR), 16)):
+            with self.subTest(failing=failing):
+                self.encoder = Encoder(self.directory / "models")
+                with self.assertLogs("server.semantic", level="WARNING") as logs:
+                    opened, downloads = self.load_core_ml(failing)
+                self.assertIn("so the CPU runs it", logs.output[0])
+                self.assertEqual((self.encoder.core_ml, downloads), (False, 1))
+                self.assertEqual([name for name, _ in opened], [CORE_ML_VISION, Path(VISION).name, Path(TEXT).name])
+                self.assertTrue(self.encoder.loaded)
+                for core_ml in (False, True):
+                    for file in _files(core_ml):
+                        self.encoder._path(*file).unlink(missing_ok=True)
+
+    def test_an_unavailable_core_ml_repository_downloads_the_cpu_encoder_instead(self):
+        from huggingface_hub.errors import HFValidationError
+        self.encoder.core_ml = True
+        with patch("huggingface_hub.hf_hub_download", side_effect=HFValidationError("bad id")), \
+                patch("huggingface_hub.snapshot_download") as download, self.assertLogs("server.semantic", level="WARNING"):
+            self.encoder._fetch()
+        self.assertFalse(self.encoder.core_ml)
+        self.assertEqual(download.call_args.kwargs["allow_patterns"], [VISION, TEXT, TOKENIZER])
+
+    def test_a_connection_failure_is_not_taken_for_a_missing_core_ml_repository(self):
+        self.encoder.core_ml = True
+        with patch("huggingface_hub.hf_hub_download", side_effect=OSError("offline")), self.assertRaisesRegex(RuntimeError, "could not download"):
+            self.encoder._fetch()
+        self.assertTrue(self.encoder.core_ml)
+
+    def test_a_core_ml_download_is_checked_against_its_sha256(self):
+        path = self.encoder._path(*_files(True)[0])
+        content = b"the model"
+
+        def download(*args, **kwargs):
+            blob = path.parents[2] / "blobs" / "weights"
+            blob.parent.mkdir(parents=True, exist_ok=True)
+            blob.write_bytes(content)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.symlink_to(blob)
+        with patch("huggingface_hub.hf_hub_download", side_effect=download), patch("huggingface_hub.snapshot_download") as source:
+            # A file that isn't the expected one is deleted, and the CPU's encoder downloaded in its place.
+            self.encoder.core_ml = True
+            with self.assertLogs("server.semantic", level="WARNING"):
+                self.encoder._fetch()
+            self.assertFalse(self.encoder.core_ml)
+            self.assertFalse(path.exists() or (path.parents[2] / "blobs" / "weights").exists())
+            self.assertEqual(source.call_args.kwargs["allow_patterns"], [VISION, TEXT, TOKENIZER])
+            self.encoder.core_ml = True
+            with patch("server.semantic.CORE_ML_SHA256", __import__("hashlib").sha256(content).hexdigest()):
+                self.encoder._fetch()
+        self.assertTrue(self.encoder.core_ml and path.is_file())
+        self.assertEqual(source.call_args.kwargs["allow_patterns"], [TEXT, TOKENIZER])
+        self.assertEqual(len(CORE_ML_SHA256), 64)
+
+    def test_a_core_ml_file_already_in_place_is_not_downloaded_again(self):
+        self.encoder.core_ml = True
+        self.encoder._path(*_files(True)[0]).parent.mkdir(parents=True)
+        self.encoder._path(*_files(True)[0]).write_text("{}")
+        with patch("huggingface_hub.hf_hub_download") as download, patch("huggingface_hub.snapshot_download") as source:
+            self.encoder._fetch()
+        download.assert_not_called()
+        self.assertEqual((self.encoder.core_ml, source.call_args.kwargs["allow_patterns"]), (True, [TEXT, TOKENIZER]))
+
+    def test_a_fixed_batch_is_padded_and_the_padding_dropped(self):
+        session = self.session(batch=16)
+        session.run.side_effect = lambda names, feed: [feed["pixel_values"][:, 0, 0, :2] + 1]
+        pixels = np.arange(20, dtype=np.float32)[:, None, None, None] * np.ones((20, 3, 1, 2), np.float32)
+        vectors = semantic._run(session, pixels)
+        self.assertEqual([call.args[1]["pixel_values"].shape[0] for call in session.run.call_args_list], [16, 16])
+        np.testing.assert_array_equal(vectors[:, 0], np.arange(20) + 1)
+
+    def test_the_parity_vector_and_image_are_well_formed(self):
+        self.assertEqual(np.load(PARITY_VECTOR).shape, (768,))
+        np.testing.assert_allclose(np.linalg.norm(np.load(PARITY_VECTOR)), 1, atol=1e-5)
+        pixels = parity_pixels()
+        self.assertEqual((pixels.shape, pixels.dtype), ((3, IMAGE_SIZE, IMAGE_SIZE), np.float32))
+        self.assertTrue(-1 <= pixels.min() and pixels.max() <= 1)
+
+    def test_vectors_from_an_earlier_model_are_discarded_and_the_folder_indexed_again(self):
+        self.add("1", "2")
+        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+            connection.executemany("INSERT INTO semantic_embeddings VALUES (?, ?, ?)",
+                                   [(image_id, EARLIER[0], np.ones(512, "<f4").tobytes()) for image_id in ("1", "2")])
+        self.assertEqual(self.search.status()["indexed"], 0)
+        self.assertTrue(self.search.has_earlier())
+        self.search.discard_earlier()
+        self.assertFalse(self.search.has_earlier())
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(2, dtype=np.float32)) as encode:
+            self.search.index()
+        self.assertEqual(len(encode.call_args.kwargs["images"]), 2)
+        with closing(sqlite3.connect(self.search.database)) as connection:
+            self.assertEqual(connection.execute("SELECT DISTINCT model FROM semantic_embeddings").fetchall(), [(MODEL,)])
 
     def test_model_failure_is_reported_and_can_be_retried(self):
         self.add("1")

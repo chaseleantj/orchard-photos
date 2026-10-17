@@ -93,9 +93,11 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 ## Setting up visual search
 
-Visual search and the map need a model called CLIP. It's a one-time download of about 600 MB, and it runs offline after that.
+Visual search and the map need a model called SigLIP 2. It's a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that. On an Apple Silicon Mac, preparing a folder takes about 10 ms per image on the GPU, so about 3 minutes for 20,000 images, measured on an Apple M5. On the CPU, it takes about 50 ms per image on the M5 and more on most laptops, so 20,000 images take 20 minutes or longer.
 
 When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, you can set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search automatically.
+
+Earlier versions of Orchard used a model called CLIP. If you used one, Orchard asks you to **Update visual search**: the new model finds images more accurately and understands more languages. Until you update, the search bar searches file names, near-duplicates aren’t stacked, and the map waits. Updating downloads the new model, deletes the old one, and prepares your folders again.
 
 ## Background work and Library
 

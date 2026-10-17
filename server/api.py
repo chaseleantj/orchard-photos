@@ -143,7 +143,8 @@ class App:
         recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
                   for path in self.recent() if not library or path != str(library.folder)]
         result = {'app': APP['name'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
-                  'model': self.encoder.downloaded() or self.encoder.activity is not None}
+                  'model': {'present': self.encoder.downloaded() or self.encoder.activity is not None,
+                            'size': self.encoder.size, 'update': self.encoder.replaces()}}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
                                 'name': library.folder.name or str(library.folder), 'id': library.directory.name}
@@ -445,7 +446,10 @@ def main(argv=None):
                 if app.library:
                     app.library.scan()
         threading.Thread(target=watch, daemon=True).start()
-    threading.Thread(target=app.encoder.warm, daemon=True).start()
+    if app.encoder.downloaded():
+        # Load the model ahead of the first search, then index. A scan that finishes first indexes on its own, unless
+        # Core ML failed meanwhile and the CPU's image encoder was still downloading.
+        app.prepare()
     print(f'{APP["name"]} is running at {url}', flush=True)
     if args.show == 'window':
         # The window runs on the main thread, as macOS requires, and closing it quits.

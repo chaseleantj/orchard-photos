@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from server.api import APP, RECENT_LIMIT, App, Handler, arguments, main, picker_command
+from server.semantic import EARLIER
 
 PORT = APP['port']
 
@@ -75,6 +76,10 @@ class AppTests(unittest.TestCase):
     def test_status_before_any_folder_is_open(self):
         status = self.app.status()
         self.assertEqual((status['app'], status['folder'], status['library'], status['recent']), (APP['name'], None, None, []))
+        self.assertEqual(status['model'], {'present': False, 'size': self.app.encoder.size, 'update': False})
+        # An earlier model left by a previous version turns setting up into an update.
+        (self.app.encoder.cache / f"models--{EARLIER[0].replace('/', '--')}").mkdir(parents=True)
+        self.assertTrue(self.app.status()['model']['update'])
         with self.assertRaisesRegex(ValueError, 'Choose a folder'):
             self.app.current()
 

@@ -23,8 +23,15 @@ export interface LibraryStatus {
 }
 export interface Folder { path: string; label: string; name: string; id: string }
 export interface RecentFolder { path: string; label: string; available: boolean }
-/** `model` says the visual search model is downloaded or on its way. */
-export interface Status { app: string; platform: string; picker: boolean; model: boolean; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+/** The visual search model, shared by every folder. `present` says it is downloaded or on its way, `size` is its download
+ *  in bytes, and `update` says a model an earlier version used is still here, so setting up replaces it and every
+ *  folder is prepared again. */
+export interface Model { present: boolean; size: number; update: boolean }
+/** What setting up visual search is called, the same wherever it is offered. */
+export const setUpLabel = (model: Model) => model.update ? 'Update visual search' : 'Set up visual search';
+/** Why an update is offered, said the same wherever it is. */
+export const UPDATE_REASON = 'Visual search has a new model that finds images more accurately, in more languages.';
+export interface Status { app: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }

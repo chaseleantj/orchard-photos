@@ -2,13 +2,13 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
 from server.library import Library
 from server.scanner import preview_path
-from server.semantic import Encoder
+from server.semantic import EARLIER, MODEL, Encoder
 
 
 class LibraryTests(unittest.TestCase):
@@ -220,6 +220,28 @@ class LibraryTests(unittest.TestCase):
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'state': 'idle'})
         with self.assertRaisesRegex(ValueError, 'not set up'):
             self.library.map({})
+
+    def test_reopening_after_a_model_change_drops_the_old_vectors_and_map(self):
+        old, kept = self.image(1), self.image(2)
+        with self.library.scanner.connect() as db:
+            db.executemany('INSERT INTO semantic_embeddings VALUES (?,?,?)', [(old, EARLIER[0], b'old'), (kept, MODEL, b'new')])
+            db.executemany('INSERT INTO umap_positions VALUES (?,?,?,1)', [(old, 0.1, 0.2), (kept, 0.3, 0.4)])
+            db.execute('INSERT INTO image_groups VALUES (?,?,1)', (old, kept))
+        reopened = Library(self.folder, self.library.directory, self.library.semantic.encoder)
+        with reopened.scanner.connect() as db:
+            self.assertEqual([tuple(row) for row in db.execute('SELECT image_id, model FROM semantic_embeddings')], [(kept, MODEL)])
+            self.assertEqual(db.execute('SELECT count(*) FROM umap_positions').fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT count(*) FROM image_groups').fetchone()[0], 0)
+        # Without the current model on disk, a scan doesn't start preparing: setting up or updating is the user's choice.
+        with patch('server.library.threading.Thread') as thread:
+            reopened.scan()
+        thread.assert_not_called()
+        # Reopening once the vectors all match keeps the map.
+        with reopened.scanner.connect() as db:
+            db.execute('INSERT INTO umap_positions VALUES (?,?,?,1)', (kept, 0.3, 0.4))
+        Library(self.folder, self.library.directory, self.library.semantic.encoder)
+        with reopened.scanner.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM umap_positions').fetchone()[0], 1)
 
     def test_preparing_asked_for_midway_runs_again_afterwards(self):
         runs = []

@@ -1,4 +1,4 @@
-"""The map's layout: a UMAP of the CLIP embeddings, so look-alikes sit together.
+"""The map's layout: a UMAP of the image embeddings, so look-alikes sit together.
 
 UMAP (McInnes, Healy and Melville, 2018) links each image to its nearest neighbours, then arranges the images in two
 dimensions so linked images pull together while random pairs push apart. It is written here in NumPy, which keeps
@@ -212,6 +212,12 @@ class Layout:
 
     def status(self) -> dict:
         return dict(self._state)
+
+    def clear(self):
+        """Forget every position, so the next map is fitted afresh."""
+        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+            connection.execute("DELETE FROM umap_positions")
+        self._cache = None
 
     def _set(self, state, stage="", error=None):
         self._state = {"state": state, "stage": stage, **({"error": error} if error else {})}

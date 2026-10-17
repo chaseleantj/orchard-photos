@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       visual:
-        description: Also download the search model (about 600 MB) and test visual search
+        description: Also download the search model (about 500 MB on macOS, 690 MB on Ubuntu) and test visual search
         type: boolean
         default: false
 

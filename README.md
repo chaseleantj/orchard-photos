@@ -41,7 +41,7 @@ The app finds Python the same way your Terminal does when you run `scripts/insta
 
 ## Visual search
 
-Visual search and the map use CLIP, a model that turns images and text into vectors that sit close together when their meaning is similar. The model is a one-time download of about 600 MB, and runs offline afterwards. Orchard offers to set it up when you open your first folder. You can also set it up later from Info (the ⓘ button). Until then, browsing, filters and file-name search all work without it.
+Visual search and the map use SigLIP 2, a model that turns images and text into vectors that sit close together when their meaning is similar. It understands descriptions in many languages. The model is a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and runs offline afterwards. Orchard offers to set it up when you open your first folder. You can also set it up later from Info (the ⓘ button). Until then, browsing, filters and file-name search all work without it.
 
 Progress for scanning, downloading and preparing images shows beside the image count. Images can be searched as soon as they're prepared.
 
@@ -65,7 +65,7 @@ Quit Orchard, then delete whichever of these you have:
 ## Documentation
 
 - [Using Orchard](docs/using-orchard.md): browsing, search, the map, duplicates, and supported files.
-- [How Orchard works](docs/how-it-works.md): scanning, CLIP search, near-duplicate grouping and the map layout.
+- [How Orchard works](docs/how-it-works.md): scanning, visual search, near-duplicate grouping and the map layout.
 - [Developing Orchard](docs/development.md): live reload, project layout, tests and renaming.
 
 ## License

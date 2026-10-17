@@ -17,12 +17,14 @@ from PIL import Image
 
 from server.scanner import WORKERS, thumbnail_path
 
-# Cosine similarity between image embeddings. Resized copies and the closest frames of a burst score above it;
-# looser bursts score from 0.93, and different shots of one subject, like one plant on two days, 0.85 to 0.93.
-THRESHOLD = 0.97
+# Cosine similarity between image embeddings. Re-encoded and resized copies and the closest frames of a burst score
+# above it; most bursts score from 0.86, and different shots of one subject, like one plant on two days, 0.74 to
+# 0.93. Versions of one design, like an illustration with the book in another colour, reach 0.98, so the cut sits high.
+THRESHOLD = 0.9775
 # Files in one folder whose names differ only by a size or copy suffix, like photo-800x400.jpg and photo (1).jpg,
-# need only look related: crops of one picture score from 0.7 up, unrelated pictures that share a name far lower.
-RELATED_THRESHOLD = 0.7
+# need only look related: nearly every crop and small copy of one picture scores above it, while most numbered files
+# that are different pictures, like slide (4).jpg and slide (21).jpg, score below.
+RELATED_THRESHOLD = 0.72
 EXTENSION = re.compile(r'\.(jpe?g|jpe|png|gif|webp|bmp|tiff?|hei[cf]|avif)$', re.I)
 SUFFIX = re.compile(r'(-\d+x\d+|@\d+x|-scaled|\.bk| \(\d+\)| copy( \d+)?|-e\d{10,})$', re.I)
 CHUNK = 2048
@@ -116,6 +118,13 @@ class Groups:
         except (OSError, ValueError):
             crisp = 0.0
         return crisp * pixels ** 0.25
+
+    def clear(self):
+        """Forget every group, so each image stands alone until the next update."""
+        with self._lock:
+            with self._connect() as connection:
+                connection.execute('DELETE FROM image_groups')
+            self._grouped = None
 
     def update(self) -> bool:
         """Regroup if the embeddings changed since the last grouping. Returns whether any group changed."""

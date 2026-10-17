@@ -37,6 +37,13 @@ class Library:
         self.atlas = Atlas(self.directory)
         self.layout = Layout(self.semantic)
         self.groups = Groups(self.directory, self.semantic)
+        # Vectors from an earlier search model can't be compared with the current one's, so they go, along with the map
+        # and stacks made from them. The folder is prepared again once the current model is downloaded. The vectors go
+        # last, so an interrupted clean-up is finished on the next open.
+        if self.semantic.has_earlier():
+            self.layout.clear()
+            self.groups.clear()
+            self.semantic.discard_earlier()
         self.closed = threading.Event()
         self.scan_lock = threading.Lock()
         self.semantic_lock = threading.Lock()

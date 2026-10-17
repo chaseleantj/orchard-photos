@@ -2,7 +2,7 @@
 """Install and start Orchard through ./orchard on a few generated images, and check the API lists them.
 
 Runs on any Python 3, so it can also show what ./orchard says when Python is too old. --visual also downloads the
-search model (about 600 MB) and runs a search; pass a lasting --data-dir to keep the model between runs."""
+search model (about 500 MB on an Apple Silicon Mac, 690 MB elsewhere) and runs a search; pass a lasting --data-dir to keep the model between runs."""
 import argparse
 import json
 import os

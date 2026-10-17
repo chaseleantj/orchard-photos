@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
-import { APP_NAME, filterParams, request, storageKey } from './types';
+import { APP_NAME, UPDATE_REASON, filterParams, megabytes, request, setUpLabel, storageKey } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
-import type { Filters, SearchStatus } from './types';
+import type { Filters, Model, SearchStatus } from './types';
 
 interface Working { state: string; stage?: string; error?: string }
 interface MapData { points: MapPoint[]; pending: number; sheets: string[]; layout: Working }
@@ -28,11 +28,11 @@ function readCamera(key: string): MapCamera | undefined {
 }
 
 interface Props {
-  root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
+  root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; model: Model; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
   onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; left: string; onSetUp: () => void; onReset: () => void;
 }
 
-export default function Embedding({ root, filters, highlight, search, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, left, onSetUp, onReset }: Props) {
+export default function Embedding({ root, filters, highlight, search, model, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, left, onSetUp, onReset }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
@@ -146,7 +146,7 @@ export default function Embedding({ root, filters, highlight, search, scanning, 
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}
     {unprepared && !preparing && (search.state === 'error'
       ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
-      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a 600 MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>Set up visual search</button></div>)}
+      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. {model.update ? `${UPDATE_REASON} It downloads once (${megabytes(model.size)} MB), then prepares this folder again.` : `Setting up visual search downloads a ${megabytes(model.size)} MB model once, which runs on this computer.`}</p><button className="text-button primary" onClick={onSetUp}>{setUpLabel(model)}</button></div>)}
     {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
       <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} images ready. The map opens when they all are.`}{left && ` ${left}.`}</p>
       <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" /></div></div>}

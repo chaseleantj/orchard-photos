@@ -1,79 +1,148 @@
-"""Private, on-device CLIP search. One encoder is shared by every folder; each folder keeps its own embeddings."""
+"""Private, on-device SigLIP 2 search. One encoder is shared by every folder; each folder keeps its own embeddings."""
 
 from contextlib import contextmanager
+import hashlib
 from io import BytesIO
 import logging
 import os
 from pathlib import Path
+import platform
 import shutil
 import sqlite3
+import sys
 import threading
 
 from server.scanner import thumbnail_path
 
-# The embedding space. Stored vectors are keyed by it, so they stay valid for as long as the weights are CLIP's own.
-MODEL = "openai/clip-vit-base-patch32"
-# MODEL's weights exported to ONNX, which give the same vectors as the PyTorch original.
-# A fixed revision, so every install runs the same weights and a finished download can be recognised on disk.
-REPOSITORY = "Xenova/clip-vit-base-patch32"
-REVISION = "d15189d7028b43f1d3e65039190477f6af591c2a"
-# Only the full-precision encoders: the repository also holds a combined model and smaller, less faithful copies.
-FILES = ["onnx/vision_model.onnx", "onnx/text_model.onnx", "tokenizer.json"]
-DOWNLOAD_BYTES = 607_968_381
-# CLIP's inputs: square images normalised per channel, and descriptions of up to 77 tokens.
-IMAGE_SIZE = 224
-IMAGE_MEAN = (0.48145466, 0.4578275, 0.40821073)
-IMAGE_STD = (0.26862954, 0.26130258, 0.27577711)
-MAX_TOKENS = 77
-END_OF_TEXT = "<|endoftext|>"
+# The embedding space. Stored vectors are keyed by it, so vectors from any other model are never compared with its own.
+MODEL = "google/siglip2-base-patch16-256"
+# MODEL's weights exported to ONNX. A fixed revision, so every install runs the same weights and a finished download can be recognised on disk.
+REPOSITORY = "onnx-community/siglip2-base-patch16-256-ONNX"
+REVISION = "d1114256522a37ffa257a0a58017348ab0058db2"
+# The image encoder at full precision, which gives the same vectors as the PyTorch original, and the text encoder in
+# int8, which ranks searches as well as full precision does at a quarter of the download.
+VISION = "onnx/vision_model.onnx"
+TEXT = "onnx/text_model_int8.onnx"
+TOKENIZER = "tokenizer.json"
+# On Apple Silicon, the image encoder runs on the GPU through Core ML instead, about 7 times faster than the CPU. It is
+# REPOSITORY's fp16 copy, rewritten by scripts/build-coreml-model so Core ML can compile it, with the batch fixed at
+# BATCH_SIZE. Its vectors match VISION's on the CPU to a cosine of 0.9997 or more, so they are stored under the same MODEL.
+# Other computers keep VISION, since fp16 is slower than fp32 on a CPU.
+CORE_ML_REPOSITORY = "ChaseLean/siglip2-base-patch16-256-coreml-fp16"
+CORE_ML_REVISION = "<revision>"  # Placeholder until the upload: the commit of CORE_ML_REPOSITORY that holds it.
+CORE_ML_VISION = "vision_model_fp16_coreml.onnx"
+CORE_ML_SHA256 = "87aa52ceed129728ae749782dfafb7cb4e92060f9018776040071b6d85caebc9"
+# The GPU, asked for by name: left to choose, Core ML picks the Neural Engine, which is half as fast here.
+CORE_ML_OPTIONS = {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"}
+# Before using Core ML, its vector for a fixed test image must match the one VISION gives on the CPU, stored next to
+# this file by scripts/build-coreml-model, at least this closely. Otherwise the CPU runs VISION.
+PARITY_VECTOR = Path(__file__).with_name("parity-vector.npy")
+PARITY_COSINE = 0.999
+SIZES = {VISION: 371_992_072, TEXT: 283_438_275, TOKENIZER: 34_363_039, CORE_ML_VISION: 186_092_579}
+# Models earlier versions ran: CLIP, first in PyTorch and then in ONNX. A finished download deletes them, and while
+# one is still on disk, setting up visual search is an update.
+EARLIER = ["openai/clip-vit-base-patch32", "Xenova/clip-vit-base-patch32"]
+# SigLIP 2's inputs: images squashed to a square with no crop, and lowercased descriptions of exactly 64 tokens, since
+# the text encoder reads the last position. The tokenizer pads, but the lowercasing it was trained with is left to us.
+IMAGE_SIZE = 256
+IMAGE_MEAN = IMAGE_STD = 0.5
+MAX_TOKENS = 64
+PAD = "<pad>"
 BATCH_SIZE = 16
 logger = logging.getLogger(__name__)
 
 
 class Encoder:
-    """Downloads CLIP once, loads it on first use, and turns images and text into unit vectors.
+    """Downloads the model once, loads it on first use, and turns images and text into unit vectors.
 
     `activity` says what it is doing for the status line ("downloading" or "loading"), and `failure` why the last
-    attempt failed. Both belong to the encoder, so they are the same whichever folder is open."""
+    attempt failed. Both belong to the encoder, so they are the same whichever folder is open. `core_ml` says whether
+    the image encoder runs through Core ML. It turns off for good once Core ML fails, and stays off on a Mac where
+    an earlier failure left only the CPU's files."""
 
     def __init__(self, cache: Path):
         self.cache = Path(cache)
-        self.repository = self.cache / f"models--{REPOSITORY.replace('/', '--')}"
         self.lock = threading.RLock()
         self.activity = None
         self.failure = None
         self._vision = None
         self._text = None
         self._tokenizer = None
+        self.core_ml = core_ml_available() and (self._complete(_files(True)[:1]) or not self._complete(_files(False)))
+
+    def _folder(self, repository):
+        return self.cache / f"models--{repository.replace('/', '--')}"
+
+    def _path(self, repository, revision, name) -> Path:
+        return self._folder(repository) / "snapshots" / revision / name
+
+    def _complete(self, files) -> bool:
+        return all(self._path(*file).is_file() for file in files)
 
     @property
     def loaded(self) -> bool:
         return self._vision is not None
 
+    @property
+    def size(self) -> int:
+        """Bytes to download, which depend on the image encoder this computer runs."""
+        return sum(SIZES[name] for _, _, name in _files(self.core_ml))
+
     def downloaded(self) -> bool:
         """Whether every file is on disk, so indexing needs no download and can start on its own."""
-        snapshot = self.repository / "snapshots" / REVISION
-        return all((snapshot / name).is_file() for name in FILES)
+        return self._complete(_files(self.core_ml))
+
+    def replaces(self) -> bool:
+        """Whether an earlier model is still on disk, so setting up visual search updates it."""
+        return any(self._folder(repository).is_dir() for repository in EARLIER)
 
     def received(self) -> int:
         """Bytes downloaded so far, partial files included."""
-        try:
-            with os.scandir(self.repository / "blobs") as entries:
-                return min(DOWNLOAD_BYTES, sum(entry.stat().st_size for entry in entries if entry.is_file()))
-        except OSError:
-            return 0
+        total = 0
+        for repository in {repository for repository, _, _ in _files(self.core_ml)}:
+            try:
+                with os.scandir(self._folder(repository) / "blobs") as entries:
+                    total += sum(entry.stat().st_size for entry in entries if entry.is_file())
+            except OSError:
+                pass
+        return min(self.size, total)
 
     def _fetch(self):
         self.activity = "downloading"
         try:
-            from huggingface_hub import snapshot_download
-            snapshot_download(REPOSITORY, revision=REVISION, cache_dir=self.cache, allow_patterns=FILES)
+            from huggingface_hub import hf_hub_download, snapshot_download
+            from huggingface_hub.errors import HFValidationError, RemoteEntryNotFoundError, RepositoryNotFoundError, RevisionNotFoundError
         except ImportError as error:
             raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
+        try:
+            if self.core_ml and not self._complete(_files(True)[:1]):
+                try:
+                    hf_hub_download(CORE_ML_REPOSITORY, CORE_ML_VISION, revision=CORE_ML_REVISION, cache_dir=self.cache)
+                except (HFValidationError, RepositoryNotFoundError, RevisionNotFoundError, RemoteEntryNotFoundError):
+                    logger.warning("The Core ML search model is not available from %s, so the CPU runs it", CORE_ML_REPOSITORY)
+                    self.core_ml = False
+                else:
+                    self.core_ml = self._verified(self._path(*_files(True)[0]))
+            snapshot_download(REPOSITORY, revision=REVISION, cache_dir=self.cache,
+                              allow_patterns=[name for repository, _, name in _files(self.core_ml) if repository == REPOSITORY])
         except Exception as error:
             raise RuntimeError("The search model could not download. Check your internet connection, then try again.") from error
-        # Earlier versions ran the PyTorch copy of the weights, which nothing reads any more.
-        shutil.rmtree(self.cache / f"models--{MODEL.replace('/', '--')}", ignore_errors=True)
+        for repository in EARLIER:
+            shutil.rmtree(self._folder(repository), ignore_errors=True)
+
+    @staticmethod
+    def _verified(path: Path) -> bool:
+        """Whether a downloaded Core ML model is the one built from REPOSITORY. One that isn't is deleted, and the CPU
+        runs VISION instead, since downloading it again would give the same file."""
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest == CORE_ML_SHA256:
+            return True
+        logger.warning("The Core ML search model has SHA-256 %s, not %s, so the CPU runs it", digest, CORE_ML_SHA256)
+        blob = path.resolve()
+        path.unlink()
+        blob.unlink(missing_ok=True)
+        return False
 
     def load(self):
         """Download the weights if they are missing, then load them. Raises RuntimeError with a message to show."""
@@ -97,19 +166,22 @@ class Encoder:
                     from tokenizers import Tokenizer
                 except ImportError as error:
                     raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
-                # CUDA when onnxruntime-gpu is installed. Core ML is left out: measured on Apple Silicon, it ran no faster than the CPU.
+                vision = self._core_ml_session(onnxruntime) if self.core_ml else None
+                if vision is None and not self.downloaded():
+                    self._fetch()  # Core ML failed, and the CPU's own image encoder isn't here yet.
+                    self.activity = "loading"
+                # CUDA when onnxruntime-gpu is installed.
                 providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
                              if name in onnxruntime.get_available_providers()]
-                snapshot = self.repository / "snapshots" / REVISION
+                vision_file, text_file, tokenizer_file = (self._path(*file) for file in _files(self.core_ml))
                 try:
-                    vision = onnxruntime.InferenceSession(str(snapshot / "onnx" / "vision_model.onnx"), providers=providers)
-                    text = onnxruntime.InferenceSession(str(snapshot / "onnx" / "text_model.onnx"), providers=providers)
-                    tokenizer = Tokenizer.from_file(str(snapshot / "tokenizer.json"))
+                    vision = vision or onnxruntime.InferenceSession(str(vision_file), providers=providers)
+                    text = onnxruntime.InferenceSession(str(text_file), providers=providers)
+                    tokenizer = Tokenizer.from_file(str(tokenizer_file))
                 except Exception as error:
                     raise RuntimeError("The search model could not load. Retry, or delete the models folder to download it again.") from error
                 tokenizer.enable_truncation(MAX_TOKENS)
-                # The text model reads each description up to its first end token, so padding with more of them changes nothing.
-                tokenizer.enable_padding(pad_id=tokenizer.token_to_id(END_OF_TEXT), pad_token=END_OF_TEXT)
+                tokenizer.enable_padding(pad_id=tokenizer.token_to_id(PAD), pad_token=PAD, length=MAX_TOKENS)
                 self._vision, self._text, self._tokenizer = vision, text, tokenizer
             except RuntimeError as error:
                 self.failure = str(error)
@@ -117,18 +189,36 @@ class Encoder:
             finally:
                 self.activity = None
 
+    def _core_ml_session(self, onnxruntime):
+        """The image encoder on the GPU, or None once it has fallen back to the CPU because Core ML could not load it
+        or gave the wrong vector for the test image."""
+        import numpy
+
+        try:
+            session = onnxruntime.InferenceSession(str(self._path(*_files(True)[0])),
+                                                   providers=[("CoreMLExecutionProvider", CORE_ML_OPTIONS), "CPUExecutionProvider"])
+            cosine = float(_unit(_run(session, parity_pixels()[None]))[0] @ numpy.load(PARITY_VECTOR))
+            if cosine >= PARITY_COSINE:
+                return session
+            reason = f"its vector for the test image is off, at a cosine of {cosine:.4f}"
+        except Exception as error:
+            reason = str(error) or type(error).__name__
+        logger.warning("Core ML could not run the search model, so the CPU runs it: %s", reason)
+        self.core_ml = False
+        return None
+
     def features(self, *, images=None, text=None):
         import numpy
 
         with self.lock:
             self.load()
             if images is not None:
-                pixels = numpy.stack([_pixels(image) for image in images])
-                features = self._vision.run(None, {"pixel_values": pixels})[0]
+                features = _run(self._vision, numpy.stack([_pixels(image) for image in images]))
             else:
-                tokens = numpy.array([encoding.ids for encoding in self._tokenizer.encode_batch(text)], dtype=numpy.int64)
-                features = self._text.run(None, {"input_ids": tokens})[0]
-            return features / numpy.maximum(numpy.linalg.norm(features, axis=-1, keepdims=True), 1e-12)
+                lowered = [description.lower() for description in text]
+                tokens = numpy.array([encoding.ids for encoding in self._tokenizer.encode_batch(lowered)], dtype=numpy.int64)
+                features = self._text.run(["pooler_output"], {"input_ids": tokens})[0]
+            return _unit(features)
 
     def warm(self):
         """Load the model ahead of the first query. No-op until the weights have been downloaded."""
@@ -140,20 +230,62 @@ class Encoder:
             logger.exception("Visual search warm-up failed")
 
 
+def _files(core_ml):
+    """(repository, revision, name) of each file to download, the image encoder first, with or without Core ML."""
+    vision = (CORE_ML_REPOSITORY, CORE_ML_REVISION, CORE_ML_VISION) if core_ml else (REPOSITORY, REVISION, VISION)
+    return [vision, (REPOSITORY, REVISION, TEXT), (REPOSITORY, REVISION, TOKENIZER)]
+
+
+def core_ml_available() -> bool:
+    """Whether this is an Apple Silicon Mac whose ONNX Runtime can use Core ML."""
+    if sys.platform != "darwin" or platform.machine() != "arm64":
+        return False
+    try:
+        import onnxruntime
+    except ImportError:
+        return False
+    return "CoreMLExecutionProvider" in onnxruntime.get_available_providers()
+
+
+def _run(session, pixels):
+    """The image encoder's vectors for a stack of pixels. A model with a fixed batch, like the Core ML one, gets each
+    chunk padded to it with blank images, whose vectors are dropped."""
+    import numpy
+
+    batch = session.get_inputs()[0].shape[0]
+    if not isinstance(batch, int):
+        return session.run(["pooler_output"], {"pixel_values": pixels})[0]
+    vectors = []
+    for start in range(0, len(pixels), batch):
+        chunk = pixels[start:start + batch]
+        padded = numpy.concatenate([chunk, numpy.zeros((batch - len(chunk), *chunk.shape[1:]), chunk.dtype)])
+        vectors.append(session.run(["pooler_output"], {"pixel_values": padded})[0][:len(chunk)])
+    return numpy.concatenate(vectors)
+
+
+def _unit(features):
+    import numpy
+
+    return features / numpy.maximum(numpy.linalg.norm(features, axis=-1, keepdims=True), 1e-12)
+
+
 def _pixels(image):
-    """One RGB image as CLIP's input: resized, centre-cropped and normalised, channels first."""
+    """One RGB image as SigLIP 2's input: squashed to a square, scaled to [-1, 1], channels first."""
     import numpy
     from PIL import Image
 
-    width, height = image.size
-    # The short side becomes 224 px, and the long side is rounded down the way Transformers does it, so the crop
-    # lands on the same pixels as the PyTorch original.
-    long = int(IMAGE_SIZE * max(width, height) / min(width, height))
-    width, height = (IMAGE_SIZE, long) if width <= height else (long, IMAGE_SIZE)
-    left, top = (width - IMAGE_SIZE) // 2, (height - IMAGE_SIZE) // 2
-    image = image.resize((width, height), Image.Resampling.BICUBIC).crop((left, top, left + IMAGE_SIZE, top + IMAGE_SIZE))
+    image = image.resize((IMAGE_SIZE, IMAGE_SIZE), Image.Resampling.BILINEAR)
     pixels = numpy.asarray(image, dtype=numpy.float32) / 255
-    return ((pixels - numpy.array(IMAGE_MEAN, numpy.float32)) / numpy.array(IMAGE_STD, numpy.float32)).transpose(2, 0, 1)
+    return ((pixels - IMAGE_MEAN) / IMAGE_STD).transpose(2, 0, 1)
+
+
+def parity_pixels():
+    """The test image Core ML must get right: smooth colour gradients and ripples, made without any decoder so it is
+    exactly the same everywhere."""
+    import numpy
+
+    y, x = numpy.mgrid[0:IMAGE_SIZE, 0:IMAGE_SIZE].astype(numpy.float32) / IMAGE_SIZE
+    return numpy.stack([2 * x - 1, numpy.sin(6 * numpy.pi * x * y), numpy.cos(4 * numpy.pi * (x - y))]).astype(numpy.float32)
 
 
 class SemanticIndex:
@@ -212,10 +344,19 @@ class SemanticIndex:
             state, error = "error", self.encoder.failure
         result = {"state": state, "indexed": indexed, "total": total, "downloaded": self.encoder.downloaded()}
         if state == "downloading":
-            result["received"], result["size"] = self.encoder.received(), DOWNLOAD_BYTES
+            result["received"], result["size"] = self.encoder.received(), self.encoder.size
         if error:
             result["error"] = error
         return result
+
+    def has_earlier(self) -> bool:
+        """Whether vectors from another model are stored. They can't be compared with MODEL's."""
+        with self._connect() as connection:
+            return connection.execute("SELECT 1 FROM semantic_embeddings WHERE model != ? LIMIT 1", (MODEL,)).fetchone() is not None
+
+    def discard_earlier(self):
+        with self._connect() as connection:
+            connection.execute("DELETE FROM semantic_embeddings WHERE model != ?", (MODEL,))
 
     def _open_image(self, image_id):
         from PIL import Image

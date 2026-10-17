@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Build the image encoder Orchard runs through Core ML on Apple Silicon, and print its SHA-256.
+
+It takes the fp16 image encoder from the pinned revision of server/semantic.py's REPOSITORY and rewrites it so ONNX
+Runtime's Core ML converter compiles it quickly and keeps it small. The math is unchanged:
+- The patch embedding's Conv says auto_pad=VALID, which the converter rejects. It becomes the explicit zero pads that
+  VALID means.
+- Every 2-D MatMul weight is stored as 1 x K x N, which broadcasts to the same product. Otherwise the converter
+  writes the weights out as text, and the model takes a minute to compile and 6 GB of memory.
+- The batch is fixed at BATCH_SIZE, since Core ML can't plan the model with a variable one.
+
+The result is the file to upload to CORE_ML_REPOSITORY. With --parity, it also writes the parity vector: the unit
+vector the full-precision image encoder gives on the CPU for the fixed test image, which Orchard checks Core ML
+against. That needs the full-precision encoder too, about 372 MB more.
+
+Needs the app's packages and the onnx package, which the app doesn't use. The SHA-256 depends on onnx's version, so
+install the one below:
+
+    .venv/bin/pip install onnx==1.23.2
+    .venv/bin/python scripts/build-coreml-model OUTPUT_FOLDER
+"""
+import argparse
+import hashlib
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from server.semantic import (BATCH_SIZE, CORE_ML_VISION, IMAGE_SIZE, PARITY_VECTOR, REPOSITORY, REVISION, VISION,
+                             _unit, parity_pixels)
+
+SOURCE = "onnx/vision_model_fp16.onnx"
+SOURCE_SHA256 = "fe9ad8020a6d3d98d394c9be8f07064066135fc2f87ec11692de0b677c0ac4db"
+ONNX_VERSION = "1.23.2"
+
+
+def sha256(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def rewrite(source: Path, output: Path):
+    import onnx
+    from onnx import helper, numpy_helper
+
+    model = onnx.load(source)
+    weights = {weight.name: weight for weight in model.graph.initializer}
+    for node in model.graph.node:
+        if node.op_type == "MatMul" and node.input[1] in weights and len(weights[node.input[1]].dims) == 2:
+            weight = weights[node.input[1]]
+            weight.CopyFrom(numpy_helper.from_array(numpy_helper.to_array(weight)[None], weight.name))
+        if node.op_type == "Conv" and any(attribute.name == "auto_pad" and attribute.s == b"VALID" for attribute in node.attribute):
+            kept = [attribute for attribute in node.attribute if attribute.name != "auto_pad"]
+            del node.attribute[:]
+            node.attribute.extend(kept + [helper.make_attribute("pads", [0, 0, 0, 0])])
+    for dimension, value in zip(model.graph.input[0].type.tensor_type.shape.dim, (BATCH_SIZE, 3, IMAGE_SIZE, IMAGE_SIZE)):
+        dimension.Clear()
+        dimension.dim_value = value
+    # Shapes inferred for the variable batch no longer hold.
+    del model.graph.value_info[:]
+    onnx.save(onnx.shape_inference.infer_shapes(model), output)
+
+
+def write_parity_vector(cache):
+    import numpy
+    import onnxruntime
+    from huggingface_hub import hf_hub_download
+
+    options = onnxruntime.SessionOptions()
+    options.intra_op_num_threads = 4
+    session = onnxruntime.InferenceSession(hf_hub_download(REPOSITORY, VISION, revision=REVISION, cache_dir=cache),
+                                           options, providers=["CPUExecutionProvider"])
+    vector = _unit(session.run(["pooler_output"], {"pixel_values": parity_pixels()[None]})[0])[0]
+    numpy.save(PARITY_VECTOR, vector.astype(numpy.float32))
+    print(f"Wrote {PARITY_VECTOR.relative_to(ROOT)}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("output", type=Path, help=f"folder to write {CORE_ML_VISION} to")
+    parser.add_argument("--cache", type=Path, help="Hugging Face cache for the downloads; defaults to the usual one")
+    parser.add_argument("--parity", action="store_true", help=f"also write {PARITY_VECTOR.relative_to(ROOT)}")
+    args = parser.parse_args()
+    import onnx
+    from huggingface_hub import hf_hub_download
+
+    if onnx.__version__ != ONNX_VERSION:
+        print(f"Warning: onnx is {onnx.__version__}, not {ONNX_VERSION}, so the SHA-256 may differ.", file=sys.stderr)
+    source = Path(hf_hub_download(REPOSITORY, SOURCE, revision=REVISION, cache_dir=args.cache))
+    if sha256(source) != SOURCE_SHA256:
+        sys.exit(f"{SOURCE} from {REPOSITORY} at {REVISION} is not the expected file.")
+    args.output.mkdir(parents=True, exist_ok=True)
+    output = args.output / CORE_ML_VISION
+    rewrite(source, output)
+    print(f"Wrote {output}, {output.stat().st_size:,} bytes, SHA-256 {sha256(output)}")
+    if args.parity:
+        write_parity_vector(args.cache)
+
+
+if __name__ == "__main__":
+    main()
