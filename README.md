@@ -17,11 +17,17 @@ cd orchard
 ./orchard ~/Pictures
 ```
 
-The first run installs Python packages, which takes about a minute: about 45 MB to download and 200 MB on disk on macOS, and about 65 MB and 250 MB on Linux. After that, Orchard opens at http://127.0.0.1:4400. Stop it with Ctrl+C.
+The first run installs Python packages, which takes about a minute: about 55 MB to download and 230 MB on disk on macOS, and about 65 MB and 250 MB on Linux. After that, Orchard opens in its own window. Close the window, or press Ctrl+C in the terminal, to quit.
 
-Run `./orchard` with no folder to reopen the last one. Running it with a folder while Orchard is already open switches to that folder.
+Run `./orchard` with no folder to reopen the last one. Running it with a folder while Orchard is already open switches the open window to that folder. To use your browser instead of a window, add `--browser`. Orchard is then at http://127.0.0.1:4400.
 
-On Linux, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
+On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian:
+
+```bash
+sudo apt install python3-gi gir1.2-webkit2-4.1
+```
+
+Without it, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
 
 To open Orchard from the Dock or Spotlight like any Mac app, run this once:
 
@@ -29,9 +35,9 @@ To open Orchard from the Dock or Spotlight like any Mac app, run this once:
 scripts/install-app
 ```
 
-It installs `~/Applications/Orchard.app`, which starts Orchard in the background and opens the page. The first start sets things up, which takes about a minute. If Orchard can't start, the app shows the end of its log, `/tmp/orchard.log`. Orchard stays in the Dock while it runs. Click the icon to bring the page back, and quit it to stop Orchard.
+It installs `~/Applications/Orchard.app`, which opens Orchard's window. The first start sets things up, which takes about a minute. If Orchard can't start, the app shows the end of its log, `/tmp/orchard.log`. Closing the window quits Orchard.
 
-The app finds Python the same way your Terminal does when you run `scripts/install-app`. If you install Python somewhere new later, run it again.
+The app finds Python the same way your Terminal does when you run `scripts/install-app`. If you install Python somewhere new later, run it again. With Python from Homebrew or python.org, the window shows in the Dock as Orchard. With other Pythons, like pyenv's, it shows as Python.
 
 ## Visual search
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start Orchard, or point the running one at another folder: orchard [folder]
+# Start Orchard in its own window, or point the running one at another folder: orchard [folder] [--browser]
 # Installs Python packages on first run, and again when requirements.txt changes.
 set -e
 if [ -d "${1:-}" ]; then folder=$(cd "$1" && pwd -P); else folder=${1:-}; fi
@@ -45,7 +45,9 @@ if ! installed; then
     "$python" -c 'import ensurepip' 2>/dev/null || { echo "Python $version can't create environments. Install its venv package: sudo apt install python$version-venv" >&2; exit 1; }
     # A fresh environment each time, so packages that requirements.txt drops are removed too. pip's cache keeps
     # unchanged packages from downloading again.
-    "$python" -m venv --clear .venv
+    # On Linux the window uses the distribution's GTK bindings for Python, which pip can't install.
+    if [ "$(uname)" = Linux ]; then system=--system-site-packages; else system=; fi
+    "$python" -m venv --clear $system .venv
     echo 'Installing Python packages. The first run downloads under 70 MB, which takes about a minute.'
     .venv/bin/pip install --disable-pip-version-check -r requirements.txt
     touch .venv/.installed
@@ -62,4 +64,4 @@ if [ -d node_modules ] && { [ ! -f dist/index.html ] || [ -n "$(find web public 
 fi
 
 if [ $# -gt 0 ]; then shift; fi
-exec .venv/bin/python -m server.api --open-browser ${folder:+"$folder"} "$@"
+exec .venv/bin/python -m server.api --window ${folder:+"$folder"} "$@"

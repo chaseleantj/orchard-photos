@@ -1,13 +1,14 @@
 import io
 import json
 from email.message import Message
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler, picker_command
+from server.api import APP, RECENT_LIMIT, App, Handler, arguments, main, picker_command
 
 PORT = APP['port']
 
@@ -57,6 +58,19 @@ class AppTests(unittest.TestCase):
         self.assertNotIn(str(self.home / 'folder-6'), self.app.recent())
         listed = [entry['path'] for entry in self.app.status()['recent']]
         self.assertNotIn(str(self.home / 'folder-5'), listed, 'The open folder is not offered as a recent one')
+
+    def test_the_window_asks_for_folders_with_its_own_dialog(self):
+        self.app.open(str(self.folder('photos')))
+        self.app.window = Mock()
+        self.app.window.choose_folder.return_value = '/Volumes/Photos'
+        with patch('server.api.picker_command', return_value=None):
+            self.assertTrue(self.app.status()['picker'])
+            self.assertEqual(self.app.choose(), '/Volumes/Photos')
+            self.app.window.choose_folder.assert_called_once_with(self.home / 'photos')
+            self.app.window = None
+            self.assertFalse(self.app.status()['picker'])
+            with self.assertRaisesRegex(ValueError, 'Type the folder path'):
+                self.app.choose()
 
     def test_status_before_any_folder_is_open(self):
         status = self.app.status()
@@ -130,12 +144,79 @@ class HandlerTests(unittest.TestCase):
                 self.assertEqual(handler.json.call_args.args[1], 400)
                 handler.server.app.open.assert_not_called()
 
+    def test_a_second_launch_brings_the_window_forward_when_there_is_one(self):
+        for window in (Mock(), None):
+            with self.subTest(window=window):
+                handler = self.dispatch('/api/window/front', post=True)
+                handler.server.app.window = window
+                handler.dispatch(True)
+                self.assertEqual(handler.json.call_args.args[0], {'window': window is not None})
+                if window:
+                    window.bring_forward.assert_called_once_with()
+
     def test_linux_folder_dialog_uses_zenity_then_kdialog_then_none(self):
         for installed, program in ((['zenity', 'kdialog'], 'zenity'), (['kdialog'], 'kdialog'), ([], None)):
             with self.subTest(installed=installed), patch('server.api.sys.platform', 'linux'), \
                     patch('server.api.shutil.which', lambda name: name if name in installed else None):
                 command = picker_command(None)
                 self.assertEqual(command and command[0], program)
+
+
+class LaunchTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name).resolve()
+        (self.home / 'photos').mkdir()
+        patchers = [patch(f'server.api.{target}') for target in ('become_app', 'webbrowser.open', 'print')]
+        _, self.open_browser, _ = [patcher.start() for patcher in patchers]
+        for patcher in patchers:
+            self.addCleanup(patcher.stop)
+        # A real folder would be scanned in the background; these tests look only at how Orchard starts and stops.
+        self.library = Mock()
+        patcher = patch('server.api.App.open', autospec=True, side_effect=lambda app, value: setattr(app, 'library', self.library))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def launch(self, *options):
+        # Port 0 takes any free port, so no running copy answers.
+        main([str(self.home / 'photos'), '--port', '0', '--data-dir', str(self.home / 'data'), '--no-watch', *options])
+
+    def test_the_last_of_window_and_browser_wins(self):
+        self.assertEqual(arguments(['--window', '--browser']).show, 'browser')
+        self.assertEqual(arguments(['--browser', '--window']).show, 'window')
+        self.assertIsNone(arguments([]).show)
+
+    def test_closing_the_window_stops_the_server_and_background_work(self):
+        with patch('server.api.unavailable', return_value=None), patch('server.api.Window') as window, \
+                patch('server.api.ThreadingHTTPServer.shutdown', autospec=True, wraps=ThreadingHTTPServer.shutdown) as shutdown, \
+                patch('server.api.ThreadingHTTPServer.server_close', autospec=True, wraps=ThreadingHTTPServer.server_close) as close:
+            self.launch('--window')
+        window.return_value.run.assert_called_once_with()
+        shutdown.assert_called_once()
+        close.assert_called_once()
+        self.assertEqual(close.call_args.args[0].socket.fileno(), -1, 'The port is released')
+        self.library.close.assert_called_once_with()
+
+    def test_without_a_window_toolkit_it_opens_the_browser(self):
+        with patch('server.api.unavailable', return_value='there is no display'), patch('server.api.Window') as window, \
+                patch('server.api.ThreadingHTTPServer.serve_forever', side_effect=KeyboardInterrupt), \
+                patch('server.api.threading.Timer') as timer:
+            self.launch('--window')
+        window.assert_not_called()
+        timer.call_args.args[1]()
+        self.open_browser.assert_called_once()
+
+    def test_a_second_launch_hands_over_and_uses_the_running_window(self):
+        for show, has_window, opens_browser in (('--window', True, False), ('--window', False, True), ('--browser', True, True)):
+            with self.subTest(show=show, has_window=has_window), patch('server.api.running', return_value=True), \
+                    patch('server.api.hand_over', return_value=None) as hand_over, \
+                    patch('server.api.bring_forward', return_value=has_window), patch('server.api.Window') as window:
+                self.open_browser.reset_mock()
+                self.launch(show)
+                hand_over.assert_called_once()
+                window.assert_not_called()
+                self.assertEqual(self.open_browser.called, opens_browser)
 
 
 if __name__ == '__main__':
