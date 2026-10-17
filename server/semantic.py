@@ -310,6 +310,8 @@ class SemanticIndex:
         self._state_lock = threading.Lock()
         self._state = "idle"
         self._error = None
+        # Images the last run could not read, so they don't keep the folder from being ready.
+        self._unreadable = frozenset()
         self._matrix = None
         with self._connect() as connection:
             connection.execute("""
@@ -344,9 +346,12 @@ class SemanticIndex:
                 SELECT COUNT(*) FROM semantic_embeddings e
                 JOIN images i ON i.id = e.image_id WHERE e.model = ?
             """, (MODEL,)).fetchone()[0] if exists else 0
+            # Ready is never stored, since a scan can add images after a run finishes: it means every image has a
+            # vector, or could not be read.
+            ready = total > 0 and (indexed == total or self._only_unreadable_pending(connection, total - indexed))
         with self._state_lock:
             state, error = self._state, self._error
-        if state == "idle" and total and indexed == total:
+        if state == "idle" and ready:
             state = "ready"
         # Between runs, the shared encoder says whether the model is downloading, loading, or failed to.
         if state == "idle" and self.encoder.activity:
@@ -359,6 +364,24 @@ class SemanticIndex:
         if error:
             result["error"] = error
         return result
+
+    def _only_unreadable_pending(self, connection, pending) -> bool:
+        unreadable = self._unreadable
+        if not 0 < pending <= len(unreadable):
+            return False
+        return unreadable.issuperset(self._pending(connection))
+
+    @staticmethod
+    def _pending(connection) -> list[str]:
+        """The images without a vector, newest first by the date the grid shows, so recent images are searchable soonest."""
+        return [row[0] for row in connection.execute("""
+            SELECT i.id FROM images i
+            LEFT JOIN files f ON f.image_id = i.id
+            LEFT JOIN semantic_embeddings e ON i.id = e.image_id AND e.model = ?
+            WHERE e.image_id IS NULL
+            GROUP BY i.id
+            ORDER BY max(coalesce(i.taken, f.modified)) DESC
+        """, (MODEL,))]
 
     def has_earlier(self) -> bool:
         """Whether vectors from another model are stored. They can't be compared with MODEL's."""
@@ -376,58 +399,50 @@ class SemanticIndex:
             return image.convert("RGB")
 
     def index(self, cancelled=lambda: False):
-        """Incrementally embed new images. Safe to call from a background worker."""
+        """Incrementally embed new images, until none are left, including any a scan adds meanwhile. Safe to call from a
+        background worker."""
         if not self._index_lock.acquire(blocking=False):
             return
         try:
             self._set_state("idle")
-            if self.status()["total"] == 0:
-                self._set_state("ready")
-                return
-            with self._connect() as connection:
-                connection.execute("""
-                    DELETE FROM semantic_embeddings WHERE image_id NOT IN (SELECT id FROM images)
-                """)
-                # Newest first, by the date the grid shows, so recent images are searchable soonest.
-                pending = [row[0] for row in connection.execute("""
-                    SELECT i.id FROM images i
-                    LEFT JOIN files f ON f.image_id = i.id
-                    LEFT JOIN semantic_embeddings e ON i.id = e.image_id AND e.model = ?
-                    WHERE e.image_id IS NULL
-                    GROUP BY i.id
-                    ORDER BY max(coalesce(i.taken, f.modified)) DESC
-                """, (MODEL,))]
-            if not pending:
-                self._set_state("ready")
-                return
-            self.encoder.load()
-            self._set_state("indexing")
-            failed = 0
-            for offset in range(0, len(pending), BATCH_SIZE):
-                if cancelled():
-                    self._set_state("idle")
-                    return
-                images, ids = [], []
-                for image_id in pending[offset:offset + BATCH_SIZE]:
+            unreadable = set()
+            while True:
+                with self._connect() as connection:
+                    connection.execute("""
+                        DELETE FROM semantic_embeddings WHERE image_id NOT IN (SELECT id FROM images)
+                    """)
+                    pending = [image_id for image_id in self._pending(connection) if image_id not in unreadable]
+                if not pending:
+                    break
+                self.encoder.load()
+                self._set_state("indexing")
+                for offset in range(0, len(pending), BATCH_SIZE):
+                    if cancelled():
+                        self._set_state("idle")
+                        return
+                    images, ids = [], []
+                    for image_id in pending[offset:offset + BATCH_SIZE]:
+                        try:
+                            images.append(self._open_image(image_id))
+                            ids.append(image_id)
+                        except (OSError, ValueError):
+                            unreadable.add(image_id)
+                            logger.warning("Could not read image %s for visual search", image_id)
+                    if not images:
+                        continue
                     try:
-                        images.append(self._open_image(image_id))
-                        ids.append(image_id)
-                    except (OSError, ValueError):
-                        failed += 1
-                        logger.warning("Could not read image %s for visual search", image_id)
-                if not images:
-                    continue
-                try:
-                    vectors = self.encoder.features(images=images)
-                    with self._connect() as connection:
-                        connection.executemany(
-                            "INSERT OR REPLACE INTO semantic_embeddings VALUES (?, ?, ?)",
-                            [(image_id, MODEL, vector.astype("<f4").tobytes()) for image_id, vector in zip(ids, vectors)],
-                        )
-                finally:
-                    for image in images:
-                        image.close()
-            self._set_state("ready", f"{failed} {'image' if failed == 1 else 'images'} could not be read for visual search." if failed else None)
+                        vectors = self.encoder.features(images=images)
+                        with self._connect() as connection:
+                            connection.executemany(
+                                "INSERT OR REPLACE INTO semantic_embeddings VALUES (?, ?, ?)",
+                                [(image_id, MODEL, vector.astype("<f4").tobytes()) for image_id, vector in zip(ids, vectors)],
+                            )
+                    finally:
+                        for image in images:
+                            image.close()
+            self._unreadable = frozenset(unreadable)
+            failed = len(unreadable)
+            self._set_state("idle", f"{failed} {'image' if failed == 1 else 'images'} could not be read for visual search." if failed else None)
         except Exception as error:
             logger.exception("Visual search indexing failed")
             self._set_state("error", str(error))

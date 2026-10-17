@@ -251,6 +251,17 @@ class LibraryTests(unittest.TestCase):
         self.library.index()
         self.assertEqual(len(runs), 2)
 
+    def test_visual_search_is_not_ready_while_the_scan_has_files_to_read(self):
+        image = self.image(1)
+        with self.library.scanner.connect() as db:
+            db.execute('INSERT INTO semantic_embeddings VALUES (?,?,?)', (image, MODEL, b'vector'))
+        self.assertEqual(self.library.status()['search']['state'], 'ready')
+        self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 144, 'changed': 1000}
+        self.assertEqual(self.library.status()['search']['state'], 'idle')
+        # A rescan that finds nothing new leaves it ready.
+        self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 0, 'changed': 0}
+        self.assertEqual(self.library.status()['search']['state'], 'ready')
+
     def test_scan_counts_revisions_and_reports_a_missing_folder(self):
         Image.new('RGB', (8, 8)).save(self.folder / 'one.png')
         self.library.scan()

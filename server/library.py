@@ -118,8 +118,15 @@ class Library:
         return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unlistedFolders': self.stats.get('unlisted_folders', 0),
                 'photoLibraries': self.stats.get('photo_libraries', []),
-                'scan': self.scan_state, 'search': self.semantic.status(), 'updated': self.stats.get('updated'),
+                'scan': self.scan_state, 'search': self.search_status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
+
+    def search_status(self):
+        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too."""
+        search = self.semantic.status()
+        if search['state'] == 'ready' and self.scan_state.get('changed', 0) > self.scan_state.get('done', 0):
+            search['state'] = 'idle'
+        return search
 
     def filters(self, params):
         """Translate the folder, type and date filters into a WHERE clause over files joined to images."""

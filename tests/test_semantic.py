@@ -47,7 +47,8 @@ class SemanticTests(unittest.TestCase):
     def test_empty_folder_and_invalid_queries_do_not_download_a_model(self):
         self.assertEqual(self.search.status(), {"state": "idle", "indexed": 0, "total": 0, "downloaded": False})
         self.search.index()
-        self.assertEqual(self.search.status()["state"], "ready")
+        # An empty folder has nothing to search, so visual search isn't ready there.
+        self.assertEqual(self.search.status()["state"], "idle")
         for arguments in ({}, {"text": "cat", "image_id": "one"}):
             with self.assertRaises(ValueError):
                 self.search.search(**arguments)
@@ -346,6 +347,31 @@ class SemanticTests(unittest.TestCase):
         with closing(sqlite3.connect(self.search.database)) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM semantic_embeddings WHERE model=?", (MODEL,)).fetchone()[0], 1)
 
+    def test_ready_only_once_every_image_has_a_vector_including_ones_a_scan_adds_later(self):
+        # The startup run can start on a partial scan. Images the scan commits afterwards keep it from reading ready.
+        self.add("1", "2")
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", side_effect=lambda images: np.eye(len(images), 4, dtype=np.float32)):
+            self.search.index()
+            self.assertEqual(self.search.status()["state"], "ready")
+            self.add("3", "4")
+            status = self.search.status()
+            self.assertEqual((status["state"], status["indexed"], status["total"]), ("idle", 2, 4))
+            self.search.index()
+            self.assertEqual(self.search.status()["state"], "ready")
+
+    def test_images_a_scan_adds_while_indexing_are_indexed_in_the_same_run(self):
+        self.add("1")
+
+        def features(images):
+            if self.search.status()["total"] == 1:
+                self.add("2", "3")  # The scan commits another batch meanwhile.
+            return np.eye(len(images), 4, dtype=np.float32)
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", side_effect=features) as encode:
+            self.search.index()
+        self.assertEqual(encode.call_count, 2)
+        status = self.search.status()
+        self.assertEqual((status["state"], status["indexed"], status["total"]), ("ready", 3, 3))
+
     def test_unreadable_image_is_reported_without_discarding_good_images(self):
         self.add("1")
         self.add("2", readable=False)
@@ -355,6 +381,10 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual((status["indexed"], status["total"]), (1, 2))
         self.assertIn("1 image", status["error"])
         self.assertEqual(self.search.search(image_id="1"), [("1", 1.0)])
+        # The image that can't be read doesn't hold the folder back, but a new one does.
+        self.assertEqual(status["state"], "ready")
+        self.add("3")
+        self.assertEqual(self.search.status()["state"], "idle")
 
     def test_indexing_stops_when_cancelled(self):
         self.add(*[str(n) for n in range(40)])

@@ -96,7 +96,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const library = status.library!;
   const { counts, scan, search } = library;
   const scanning = scan.state === 'scanning';
-  const complete = search.state === 'ready' && search.indexed >= counts.images;
+  const complete = search.state === 'ready';
   const work = searchWork(search);
   const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanLeft ? `. ${scanLeft}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
