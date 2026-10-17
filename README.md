@@ -72,16 +72,9 @@ Visual search and the map need the search model, a one-time download of about 50
 
 ## Privacy
 
-Nothing is uploaded. Orchard makes only two kinds of network request:
+Orchard only goes online to download the search model from Hugging Face once, and for pip to install its Python packages. After that, it works offline. Its cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
 
-- The one-time download of the search model from Hugging Face, at huggingface.co. It comes from [`onnx-community/siglip2-base-patch16-256-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-256-ONNX), and on an Apple Silicon Mac, also from [`ChaseLean/siglip2-base-patch16-256-coreml-fp16`](https://huggingface.co/ChaseLean/siglip2-base-patch16-256-coreml-fp16).
-- pip's, when it installs the Python packages on the first run, and again after an update changes them.
-
-After that, Orchard works offline. It only ever reads your photos, and never moves, renames or changes them.
-
-Orchard keeps its thumbnails, search index and model in `~/Library/Application Support/orchard/` on macOS, `%LOCALAPPDATA%\orchard\` on Windows, and `~/.local/share/orchard/` on Linux. They take about 6 GB per 100,000 photos, plus the model. [Resetting Orchard](docs/using-orchard.md#resetting-orchard) and [Uninstalling](docs/using-orchard.md#uninstalling) say what to delete.
-
-The server listens only on this computer, and rejects requests from other sites. Don't expose it through a proxy or tunnel, since anyone who reaches it can see your photos. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
+The server listens only on this computer, and rejects requests from other sites, so don't expose it through a proxy or tunnel. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Documentation
 

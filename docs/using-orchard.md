@@ -98,8 +98,8 @@ Preparing takes a moment per image, and how long a whole folder takes depends mo
 | Computer | 10,000 photos |
 | --- | --- |
 | Apple Silicon Mac | A few minutes |
-| Windows laptop, on its GPU | About 40 minutes |
-| 4-core laptop, on its CPU | About an hour |
+| Intel laptop with Windows, on its GPU | About 40 minutes |
+| The same laptop, on its CPU | Over an hour |
 
 Before that, Orchard reads each new file and draws its thumbnail, which took about 40 seconds per 1,000 photos on the laptop. You can browse while both run. The newest images are prepared first, so you can search recent photos while the rest are still being prepared. If you quit Orchard, or the computer sleeps, it carries on where it stopped.
 
@@ -135,11 +135,38 @@ Unmodified originals keep their EXIF dates, so they land in the right month. The
 
 If **Optimize Mac Storage** is on in Photos' iCloud settings, most originals are only in iCloud. Photos downloads them during the export, which can take a long time for a large library. To download them all first, choose **Download Originals to this Mac** in the same settings.
 
-## Disk space
+## Where Orchard keeps its data
 
-Orchard keeps its cache in its [data folder](#resetting-orchard), never beside your photos. Each photo needs a thumbnail, its search vector and a map icon. In tests, that came to 30 to 40 KB for most photos, and about 60 KB for phone photos, so allow about 6 GB per 100,000 photos. The search model adds 504 MB or 690 MB once, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a full-size JPEG, so it opens quickly next time.
+Orchard keeps its cache, the search model and the list of recent folders in one data folder, never beside your photos:
 
-The Python packages take about 250 MB, in `.venv` inside Orchard's own folder.
+| System | Data folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/orchard/` |
+| Windows | `%LOCALAPPDATA%\orchard\` |
+| Linux and WSL | `~/.local/share/orchard/`, or `$XDG_DATA_HOME/orchard/` if that's set |
+
+If you start Orchard with `--data-dir`, it's that folder instead. The Python packages are separate, in `.venv` inside Orchard's own folder, and take about 250 MB.
+
+### Disk space
+
+Each photo needs a thumbnail, its search vector and a map icon. In tests, that came to 30 to 40 KB for most photos, and about 60 KB for phone photos, so allow about 6 GB per 100,000 photos. The search model adds one copy, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a JPEG up to 4,096 pixels across, so it opens quickly next time.
+
+### Resetting Orchard
+
+Quit Orchard, then delete, inside the data folder:
+
+- `libraries/<id>/` to clear one folder's cache. Its `folder.txt` names the folder it belongs to. Orchard reads the folder again the next time you open it.
+- `models/` to download the search model again.
+- `recent.json` to clear the list of recent folders.
+- The whole data folder to start over.
+
+To reinstall the Python packages, delete `.venv` in Orchard's own folder. The next run installs them again.
+
+### Uninstalling
+
+Quit Orchard, then delete Orchard's own folder, the cloned or unzipped one, and its data folder. On a Mac, also delete `~/Applications/Orchard.app` if you installed it.
+
+The window keeps its page settings, like the theme, in the system web view's storage. On a Mac, the Mac app's are in `~/Library/WebKit/local.orchard.launcher/`.
 
 ## Questions and problems
 
@@ -148,10 +175,8 @@ The Python packages take about 250 MB, in `.venv` inside Orchard's own folder.
 Orchard runs on Python 3.12 to 3.14. Python 3.15 isn't supported yet, since ONNX Runtime, which runs the search model, has no packages for it. You don't need to remove another Python. Install 3.13 beside it, and the launcher finds it:
 
 - On a Mac: `brew install python@3.13`, or the installer from [python.org](https://www.python.org/downloads/).
-- On Windows: `winget install Python.Python.3.13`.
+- On Windows: `winget install Python.Python.3.13`. Then open a new Command Prompt, since one that was already open doesn't see it.
 - On Ubuntu 24.04 and later: `sudo apt update && sudo apt install python3 python3-venv`. On older Ubuntu, get `python3.12` from the [deadsnakes PPA](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa).
-
-On Windows, open a new Command Prompt after installing Python. One that was already open doesn't see it.
 
 ### Python can't create environments, on Linux
 
@@ -175,25 +200,36 @@ On an Arm laptop, use `Microsoft.VCRedist.2015+.arm64`.
 
 ### The port is in use
 
-Orchard listens on port 4400. If another program has it, Orchard says so and stops. Quit that program, or start Orchard on another port, like `./orchard --port 4401`. The page's saved settings, like the theme, belong to the port, so a new port starts with the defaults.
+Orchard listens on port 4400. If another program has it, Orchard says so and stops. Quit that program, or start Orchard on another port, like `./orchard --port 4401`, or `orchard.cmd --port 4401` on Windows. The page's saved settings, like the theme, belong to the port, so a new port starts with the defaults.
 
 ### The search model won't download
 
-The model goes into the `models` folder inside Orchard's [data folder](#resetting-orchard). It's about 504 MB on an Apple Silicon Mac and 690 MB elsewhere. If the download stops, choose **Try again** in Info, and it carries on where it stopped.
+The model goes into `models/` in the [data folder](#where-orchard-keeps-its-data). If the download stops, choose **Try again** in Info, and it carries on where it stopped.
 
-The download comes from huggingface.co. Behind a proxy, set `HTTPS_PROXY` before starting Orchard, like `HTTPS_PROXY=http://proxy.example.com:8080 ./orchard`, and make sure the proxy allows huggingface.co and hf.co. If the proxy inspects HTTPS with its own certificate, also set `SSL_CERT_FILE` to that certificate's file.
+The download comes from huggingface.co. Behind a proxy, set `HTTPS_PROXY` before starting Orchard, and make sure the proxy allows huggingface.co and hf.co:
 
-If the model downloaded but won't load, delete the `models` folder, and Orchard downloads it again. To skip the download on a computer that's offline, copy the `models` folder from another computer of the same kind, like another Apple Silicon Mac.
+```bash
+HTTPS_PROXY=http://proxy.example.com:8080 ./orchard
+```
+
+```bat
+set HTTPS_PROXY=http://proxy.example.com:8080
+orchard.cmd
+```
+
+If the proxy inspects HTTPS with its own certificate, also set `SSL_CERT_FILE` to that certificate's file.
+
+If the model downloaded but won't load, delete `models/`, and Orchard downloads it again. To skip the download on a computer that's offline, copy `models/` from another computer of the same kind, like another Apple Silicon Mac.
 
 ### Which GPU Orchard uses
 
-Orchard runs the image half of the model on the GPU where it can:
+Orchard prepares images on the GPU where it can:
 
-- **Apple Silicon Macs** use Core ML, about 7 times faster than the CPU.
-- **Windows on x64** uses DirectML, with any DirectX 12 GPU. On one laptop's Intel graphics, it was about 1.8 times faster than the CPU.
+- **Apple Silicon Macs** use Core ML.
+- **Windows on x64** uses DirectML, with any DirectX 12 GPU.
 - **Everything else**, including Linux, WSL and Windows on Arm, uses the CPU. On Linux, an NVIDIA GPU works through CUDA, as described in [Developing Orchard](development.md#setup).
 
-Before using the GPU, Orchard checks that it gives the same result as the CPU on a test image. If it doesn't, or it fails to load, Orchard uses the CPU and prints a warning in the terminal, like "Core ML could not run the search model, so the CPU runs it". On a Mac, the CPU then needs its own copy of the image model, a further 372 MB download.
+If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, like "Core ML could not run the search model, so the CPU runs it". On a Mac, the CPU then needs its own copy of part of the model, a further 372 MB download. [How Orchard works](how-it-works.md#visual-search) explains the check it runs first.
 
 ### Some photos are missing
 
@@ -211,7 +247,7 @@ On a Mac, the first time you open your Desktop, Documents, Downloads or an exter
 
 ### Photos on external, network and cloud drives
 
-Its cache stays on your computer, so if a drive is unplugged, Orchard keeps showing the last scan. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
+The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
 
 The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos.
 
@@ -219,46 +255,15 @@ Cloud folders, like iCloud Drive, OneDrive, Dropbox and Google Drive, work best 
 
 ### Using Orchard on two computers
 
-Install Orchard on each computer. Each one keeps its own cache and prepares its own copy of the search index, so nothing is shared or synced between them. The photos themselves can live on a shared drive.
-
-Keep each computer's data folder on that computer. Orchard's index is an SQLite database, which isn't safe to share over a network drive.
+Install Orchard on each computer. Each one keeps its own cache and prepares its own search index, so nothing is shared or synced between them. The photos themselves can live on a shared drive, but keep each computer's data folder on that computer, since its SQLite database isn't safe to share over a network.
 
 ### Under WSL
 
 Orchard runs in WSL with its own window, through WSLg. Some things differ from Linux on its own:
 
 - **Show in folder** opens File Explorer, and `--browser` opens your Windows browser.
-- Folders under `/mnt/c` open fine, but reading them is slower. On one laptop, the first scan took about 1.5 times as long, and each minute's rescan about 10 times as long, still under 2 seconds per 1,000 photos. Preparing images took the same time.
+- Folders under `/mnt/c` work, but scanning them is slower than folders inside WSL.
 - The model runs on the CPU, since DirectML isn't available in WSL. Native Windows prepares images faster, on the GPU.
-
-### Resetting Orchard
-
-Orchard keeps its cache, the search model and the list of recent folders in one data folder:
-
-| System | Data folder |
-| --- | --- |
-| macOS | `~/Library/Application Support/orchard/` |
-| Windows | `%LOCALAPPDATA%\orchard\` |
-| Linux and WSL | `~/.local/share/orchard/` |
-
-If you start Orchard with `--data-dir`, it's that folder instead. Quit Orchard, then delete:
-
-- `libraries/<id>/` to clear one folder's cache. Its `folder.txt` names the folder it belongs to. Orchard reads the folder again the next time you open it.
-- `models/` to download the search model again.
-- `recent.json` to clear the list of recent folders.
-- The whole data folder to start over.
-
-To reinstall the Python packages, delete `.venv` in Orchard's own folder. The next run installs them again.
-
-### Uninstalling
-
-Quit Orchard, then delete Orchard's own folder and its data folder:
-
-- **macOS:** the cloned folder, `~/Library/Application Support/orchard/`, and `~/Applications/Orchard.app` if you installed it.
-- **Windows:** the cloned or unzipped folder, and `%LOCALAPPDATA%\orchard\`.
-- **Linux and WSL:** the cloned folder, and `~/.local/share/orchard/`.
-
-The window's saved settings, like the theme, stay in the web view's storage, `~/Library/WebKit/org.python.python/` on a Mac or `%APPDATA%\pywebview\` on Windows. Other Python apps can share these, so check before deleting them. `python3 -m pip cache purge` clears pip's download cache, which other projects share.
 
 ### Reporting a problem
 

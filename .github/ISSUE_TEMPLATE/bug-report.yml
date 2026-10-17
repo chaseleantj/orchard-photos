@@ -30,7 +30,7 @@ body:
     id: version
     attributes:
       label: Orchard version
-      description: Run `git rev-parse --short HEAD` in Orchard's folder.
+      description: The release you downloaded, or if you cloned the repository, the output of `git rev-parse --short HEAD`.
       placeholder: b38f839
     validations:
       required: true
@@ -56,9 +56,4 @@ body:
       label: Terminal output
       description: What the terminal printed. The Mac app writes it to `/tmp/orchard.log`.
       render: text
-  - type: textarea
-    id: diagnostics
-    attributes:
-      label: Diagnostics
-      description: A Copy diagnostics button is coming to Info. Until then, leave this empty.
-      render: text
+  # INTEGRATION: when Info gains Copy diagnostics, add a Diagnostics field asking for its output.
