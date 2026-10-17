@@ -1,2 +1,6 @@
 # Built by npm run build, and committed so running Orchard needs no Node.
 dist/** linguist-generated
+# The shell launcher and scripts break with Windows line endings, and cmd.exe misreads batch files without them.
+orchard text eol=lf
+scripts/* text eol=lf
+*.cmd text eol=crlf

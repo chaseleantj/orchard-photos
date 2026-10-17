@@ -319,6 +319,14 @@ class SemanticTests(unittest.TestCase):
             self.search.search(text="a sunset")
         self.assertFalse(self.search._index_lock.locked())
 
+    def test_a_missing_windows_runtime_is_named_with_its_install_command(self):
+        from server.semantic import _missing
+
+        error = ImportError("DLL load failed while importing onnxruntime_pybind11_state: The specified module could not be found.")
+        with patch("server.semantic.sys.platform", "win32"), patch("server.semantic.platform.machine", return_value="AMD64"):
+            self.assertIn("winget install Microsoft.VCRedist.2015+.x64", _missing(error))
+        self.assertIn("Python dependencies", _missing(ImportError("No module named 'onnxruntime'")))
+
     def test_index_is_incremental_and_persistent_and_ignores_deleted_images(self):
         self.add("1", "2")
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(2, dtype=np.float32)) as encode:

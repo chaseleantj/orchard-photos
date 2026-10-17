@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
+import sys
+import time
 import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
@@ -28,6 +30,9 @@ THUMBNAIL_SIZE = 720
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
+# Windows refuses to replace or delete a file while another thread reads it, as the server does while sending it.
+OPEN_FILE_TRIES = 20
+OPEN_FILE_WAIT = 0.05
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
@@ -51,6 +56,17 @@ def thumbnail_path(directory: Path, image_id: str) -> Path:
 def preview_path(directory: Path, image_id: str) -> Path:
     """A full-size JPEG for formats browsers cannot show, drawn when first viewed."""
     return Path(directory) / 'previews' / f'{image_id}.jpg'
+
+
+def while_open(change, *args, **options):
+    """Replace or delete a file, waiting briefly on Windows for any thread still reading it to finish."""
+    for attempt in range(OPEN_FILE_TRIES):
+        try:
+            return change(*args, **options)
+        except PermissionError:
+            if sys.platform != 'win32' or attempt == OPEN_FILE_TRIES - 1:
+                raise
+            time.sleep(OPEN_FILE_WAIT)
 
 
 def walk(root: Path, skip=frozenset(), found=None):
@@ -252,7 +268,7 @@ class Scanner:
                 target = thumbnail_path(self.directory, digest)
                 temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
                 displayable(display).save(temporary, 'WEBP', quality=82)
-                temporary.replace(target)
+                while_open(temporary.replace, target)
             return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
@@ -273,5 +289,5 @@ class Scanner:
             db.executemany('DELETE FROM images WHERE id=?', [(image_id,) for image_id in orphans])
         for image_id in orphans:
             for path in (thumbnail_path(self.directory, image_id), preview_path(self.directory, image_id)):
-                path.unlink(missing_ok=True)
+                while_open(path.unlink, missing_ok=True)
         return len(gone)

@@ -58,7 +58,7 @@ Only one folder is open at a time. Opening another folder closes the current one
 
 ## Where data lives
 
-The cache lives in `~/Library/Application Support/orchard/` on macOS, and `~/.local/share/orchard/` on Linux. You can change it with `--data-dir`.
+The cache lives in `~/Library/Application Support/orchard/` on macOS, `~/.local/share/orchard/` on Linux, and `%LOCALAPPDATA%\orchard\` on Windows. You can change it with `--data-dir`.
 
 | Path | Contents |
 | --- | --- |

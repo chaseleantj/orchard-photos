@@ -20,9 +20,17 @@ jobs:
         include:
           - os: ubuntu-latest
             python: '3.12'
+            tests: npm test
           - os: macos-latest
             python: '3.13'
+            tests: npm test
+          - os: windows-latest
+            python: '3.13'
+            tests: .venv/Scripts/python -m unittest discover -s tests
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,12 +44,12 @@ jobs:
         with:
           path: ~/orchard-data/models
           key: search-model-${{ hashFiles('server/semantic.py') }}
-      # Installs through ./orchard like a first run, so the unit tests below reuse its .venv.
+      # Installs through the launcher like a first run, so the unit tests below reuse its .venv.
       - name: Smoke test
-        run: scripts/smoke-test ${{ inputs.visual && '--visual --data-dir ~/orchard-data' || '' }}
+        run: python scripts/smoke-test ${{ inputs.visual && '--visual --data-dir ~/orchard-data' || '' }}
       - name: Unit tests
         if: ${{ !cancelled() }}
-        run: npm test
+        run: ${{ matrix.tests }}
 
   web:
     runs-on: ubuntu-latest

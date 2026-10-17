@@ -4,11 +4,13 @@ This guide covers everything you can do in Orchard once it's running. To install
 
 ## Opening a folder
 
-Choose a folder with **Folder**, at the right of the line under the search bar. This opens the system folder dialog. In the browser on Linux, it needs `zenity` or `kdialog`. You can also type a path, or pick a recent folder. You can also open a folder from the terminal:
+Choose a folder with **Folder**, at the right of the line under the search bar. This opens the system folder dialog. In the browser on Linux, it needs `zenity` or `kdialog`, and in the browser on Windows there is none. You can also type or paste a path, or pick a recent folder. You can also open a folder from the terminal:
 
 ```bash
 ./orchard ~/Pictures
 ```
+
+On Windows, run `orchard.cmd C:\Users\you\Pictures` instead.
 
 If Orchard is already open, this switches its window to the folder and brings it to the front, instead of opening a second one.
 
@@ -49,7 +51,7 @@ From the viewer, you can:
 - Find similar images.
 - Copy the image (Cmd+C on a Mac, Ctrl+C elsewhere).
 - Download the original. In the window, this asks where to save it.
-- Show it in Finder, or your file manager on Linux.
+- Show it in Finder, in Explorer on Windows, or in your file manager on Linux.
 - Click its folder to show only images from that folder.
 - Click the image, or the zoom button, to see it at actual size.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import threading
 
-from server.scanner import thumbnail_path
+from server.scanner import thumbnail_path, while_open
 
 CELL = 64
 COLUMNS = 32
@@ -96,4 +96,4 @@ class Atlas:
             canvas.paste(icon, ((slot % COLUMNS) * CELL + INSET, (slot // COLUMNS) * CELL + INSET))
         temporary = path.with_suffix(".tmp")
         canvas.save(temporary, "WEBP", quality=80, method=4)
-        temporary.replace(path)
+        while_open(temporary.replace, path)

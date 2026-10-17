@@ -165,7 +165,7 @@ class Encoder:
                     import onnxruntime
                     from tokenizers import Tokenizer
                 except ImportError as error:
-                    raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
+                    raise RuntimeError(_missing(error)) from error
                 vision = self._core_ml_session(onnxruntime) if self.core_ml else None
                 if vision is None and not self.downloaded():
                     self._fetch()  # Core ML failed, and the CPU's own image encoder isn't here yet.
@@ -267,6 +267,17 @@ def _unit(features):
     import numpy
 
     return features / numpy.maximum(numpy.linalg.norm(features, axis=-1, keepdims=True), 1e-12)
+
+
+def _missing(error: ImportError) -> str:
+    """What to install when ONNX Runtime or the tokenizer can't be imported.
+
+    On Windows, ONNX Runtime also needs Microsoft's C++ runtime, which Python doesn't include."""
+    if sys.platform == "win32" and "DLL load failed" in str(error):
+        machine = "arm64" if platform.machine().lower() == "arm64" else "x64"
+        return ("Visual search needs the Microsoft Visual C++ Redistributable. Install it with: "
+                f"winget install Microsoft.VCRedist.2015+.{machine}, then restart Orchard.")
+    return "Visual search needs its Python dependencies. Run the setup command and retry."
 
 
 def _pixels(image):

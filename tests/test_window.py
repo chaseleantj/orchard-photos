@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from server import window
 
 
+@unittest.skipIf(sys.platform == 'win32', 'The Mac app needs symlinks, which need Developer Mode on Windows')
 class AppBundleTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
