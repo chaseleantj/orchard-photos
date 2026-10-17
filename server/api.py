@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = json.loads((ROOT / 'app.json').read_text(encoding='utf-8'))
 RECENT_LIMIT = 10
 WATCH_SECONDS = 60
+# Between scans, the watch waits at least this many times as long as the last listing took, so a folder on a slow
+# disk or network drive is listed less often.
+WATCH_LISTING_FACTOR = 20
 UPLOAD_LIMIT = 20 * 1024 * 1024
 FORM_LIMIT = 64 * 1024
 IMMUTABLE = 'private, max-age=31536000, immutable'
@@ -509,9 +512,11 @@ def main(argv=None):
         sys.exit(str(error))
     if not args.no_watch:
         def watch():
-            while not threading.Event().wait(WATCH_SECONDS):
+            pause = WATCH_SECONDS
+            while not threading.Event().wait(pause):
                 if app.library:
                     app.library.scan()
+                    pause = max(WATCH_SECONDS, WATCH_LISTING_FACTOR * app.library.stats.get('listed_seconds', 0))
         threading.Thread(target=watch, daemon=True).start()
     if app.encoder.downloaded():
         # Load the model before the first search, then index.

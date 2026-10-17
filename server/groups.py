@@ -3,8 +3,13 @@
 Bursts, edits and resized copies are different files, but their vectors barely differ. Crops differ more, so copies
 cut from one picture are also recognised by their file names. Every member of a group must match its centre, so a
 slow series, like a plant photographed every day, can't chain into one long group.
+
+Screenshots, renders and web graphics have no camera details, and different ones of the same app or design score as
+high as copies. A pair of the same shape with such an image must also look alike pixel by pixel, which copies do, and
+different screens, frames or drawings don't. Crops change shape, so they are left to their vectors.
 """
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 import re
 import threading
@@ -26,6 +31,14 @@ SUFFIX = re.compile(r'(-\d+x\d+|@\d+x|-scaled|\.bk| \(\d+\)| copy( \d+)?|-e\d{10
 CHUNK = 2048
 # Sharpness is measured at one size, so a small copy doesn't look crisper for having fewer pixels.
 SHARPNESS_EDGE = 512
+# Pixel by pixel, two images look alike when no more than DIFFERENT_SHARE of their pixels, in grey at LOOK_EDGE
+# square, differ by more than DIFFERENT_LEVEL of 255. Copies at a half or a quarter of the size stay under it, and
+# screens with different text or pictures in one layout mostly go over.
+LOOK_EDGE = 64
+DIFFERENT_LEVEL = 32
+DIFFERENT_SHARE = 0.03
+# How far apart two aspect ratios can be, as the log of their ratio, for the images to count as the same shape.
+SAME_SHAPE = 0.02
 
 
 def stem(path: str) -> str:
@@ -36,14 +49,19 @@ def stem(path: str) -> str:
     return name
 
 
-def gather(matrix, related=()) -> numpy.ndarray:
+def gather(matrix, related=(), alike=None) -> numpy.ndarray:
     """For each row of unit vectors, the row of its group's centre. `related` lists sets of rows whose file names
-    mark them as versions of one picture. The images with the most near-duplicates claim their neighbours first, so
+    mark them as versions of one picture. `alike`, given the rows and columns of pairs whose vectors are near enough,
+    says which of them also look alike. The images with the most near-duplicates claim their neighbours first, so
     centres sit in the middle of a burst rather than at its edge."""
     rows, columns = [], []
     for start in range(0, len(matrix), CHUNK):
         row, column = numpy.nonzero(matrix[start:start + CHUNK] @ matrix.T >= THRESHOLD)
-        rows.append(row + start)
+        row += start
+        if alike is not None:
+            keep = alike(row, column)
+            row, column = row[keep], column[keep]
+        rows.append(row)
         columns.append(column)
     for members in related:
         members = numpy.asarray(members)
@@ -77,6 +95,16 @@ def sharpness(path: Path) -> float:
     return float(laplacian.var())
 
 
+def look(path: Path) -> numpy.ndarray:
+    """An image in grey at LOOK_EDGE pixels square, for comparing two pixel by pixel."""
+    with Image.open(path) as image:
+        return numpy.asarray(image.convert('L').resize((LOOK_EDGE, LOOK_EDGE), Image.Resampling.BOX), numpy.int16)
+
+
+def look_alike(first: numpy.ndarray, second: numpy.ndarray) -> bool:
+    return float((numpy.abs(first - second) > DIFFERENT_LEVEL).mean()) <= DIFFERENT_SHARE
+
+
 class Groups:
     """Which images of one folder are near-duplicates, and how well each would front its group."""
 
@@ -85,6 +113,8 @@ class Groups:
         self.semantic = semantic
         self._lock = threading.Lock()
         self._grouped = None
+        # Whether two images look alike, by their ids in order. An image's content never changes under its id.
+        self._alike = {}
         with connect(self.directory) as connection:
             # Only images with near-duplicates have a row. Every other image is a group of one.
             connection.execute('''
@@ -102,6 +132,29 @@ class Groups:
             crisp = 0.0
         return crisp * pixels ** 0.25
 
+    def _pixels_alike(self, ids, plain, shape, rows, columns):
+        """Which of the pairs at rows and columns look alike pixel by pixel. Only pairs of the same `shape`, the log
+        of the aspect ratio, with a `plain` image, one without camera details, are compared; the rest count as alike.
+        A thumbnail that can't be read leaves its vectors to decide."""
+        compared = numpy.flatnonzero((plain[rows] | plain[columns]) & (rows != columns)
+                                     & (numpy.abs(shape[rows] - shape[columns]) <= SAME_SHAPE))
+        pairs = [tuple(sorted((ids[rows[k]], ids[columns[k]]))) for k in compared]
+        unknown = {pair for pair in pairs if pair not in self._alike}
+        needed = {image_id for pair in unknown for image_id in pair}
+
+        def read(image_id):
+            try:
+                return look(thumbnail_path(self.directory, image_id))
+            except (OSError, ValueError):
+                return None
+        with ThreadPoolExecutor(WORKERS) as pool:
+            looks = dict(zip(needed, pool.map(read, needed)))
+        for first, second in unknown:
+            self._alike[first, second] = looks[first] is None or looks[second] is None or look_alike(looks[first], looks[second])
+        keep = numpy.ones(len(rows), bool)
+        keep[compared] = [self._alike[pair] for pair in pairs]
+        return keep
+
     def clear(self):
         """Forget every group, so each image stands alone until the next update."""
         with self._lock:
@@ -118,18 +171,25 @@ class Groups:
                 return False
             with connect(self.directory) as connection:
                 files = connection.execute('SELECT path, image_id FROM files WHERE image_id IS NOT NULL').fetchall()
+                images = {image_id: (camera, width, height) for image_id, camera, width, height in
+                          connection.execute('SELECT id, camera, width, height FROM images')}
             position = {image_id: index for index, image_id in enumerate(ids)}
             families = {}
             for path, image_id in files:
                 if image_id in position:
                     families.setdefault(stem(path), set()).add(position[image_id])
             related = [sorted(family) for family in families.values() if len(family) > 1]
-            centres = gather(matrix, related) if matrix is not None else []
+            pixels = {image_id: width * height for image_id, (_, width, height) in images.items()}
+            # A scan may have removed an image since its vector was read.
+            details = [images.get(image_id, (None, 1, 1)) for image_id in ids]
+            plain = numpy.array([camera is None for camera, _, _ in details], bool)
+            shape = numpy.log([max(width, 1) / max(height, 1) for _, width, height in details])
+            alike = partial(self._pixels_alike, ids, plain, shape)
+            centres = gather(matrix, related, alike) if matrix is not None else []
             sizes = numpy.bincount(centres, minlength=len(ids)) if len(ids) else []
             grouped = [index for index, centre in enumerate(centres) if sizes[centre] > 1]
             with connect(self.directory) as connection:
                 before = {row[0]: row[1:] for row in connection.execute('SELECT image_id, group_id, score FROM image_groups')}
-                pixels = dict(connection.execute('SELECT id, width * height FROM images'))
             # An image's content never changes under its id, so neither does its score.
             scores = {ids[index]: before[ids[index]][1] for index in grouped if ids[index] in before}
             missing = [ids[index] for index in grouped if ids[index] not in scores]

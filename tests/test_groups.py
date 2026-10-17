@@ -76,11 +76,11 @@ class GroupsTests(unittest.TestCase):
         self.semantic = SemanticIndex(self.directory, Encoder(self.directory / 'models'))
         self.groups = Groups(self.directory, self.semantic)
 
-    def add(self, number, vector, image, width=32):
+    def add(self, number, vector, image, width=32, camera='Pixel 9'):
         image_id = f'{number:064x}'
         image.save(thumbnail_path(self.directory, image_id), 'WEBP', lossless=True)
         with connect(self.scanner.directory, rows=True) as db:
-            db.execute('INSERT INTO images VALUES (?,?,?,?,?,?,?)', (image_id, width, width, 'image/jpeg', 100, None, None))
+            db.execute('INSERT INTO images VALUES (?,?,?,?,?,?,?)', (image_id, width, width * image.height // image.width, 'image/png', 100, None, camera))
             db.execute('INSERT INTO semantic_embeddings VALUES (?,?,?)', (image_id, MODEL, vector.tobytes()))
         return image_id
 
@@ -116,6 +116,25 @@ class GroupsTests(unittest.TestCase):
         self.groups.update()
         stored = self.stored()
         self.assertGreater(stored[large][1], stored[small][1])
+
+    def test_screens_without_camera_details_stack_only_when_their_pixels_match(self):
+        screen = Image.new('RGB', (320, 200), 'white')
+        other = screen.copy()
+        other.paste('black', (40, 40, 280, 160))
+        shot = self.add(1, turned(0), screen, width=1440, camera=None)
+        copy = self.add(2, turned(1), screen.resize((160, 100)), width=720, camera=None)
+        different = self.add(3, turned(2), other, width=1440, camera=None)
+        self.groups.update()
+        stored = self.stored()
+        self.assertEqual(stored[shot][0], stored[copy][0])
+        self.assertNotIn(different, stored)
+
+    def test_a_crop_without_camera_details_is_left_to_its_vector(self):
+        photo = checkerboard(128)
+        whole = self.add(1, turned(0), photo, width=1280, camera=None)
+        crop = self.add(2, turned(1), photo.crop((0, 0, 128, 64)), width=1280, camera=None)
+        self.groups.update()
+        self.assertEqual(self.stored()[whole][0], self.stored()[crop][0])
 
 
 if __name__ == '__main__':

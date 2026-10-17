@@ -203,6 +203,15 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual((result['pending'], result['sheets']), (1, ['v1']))
         self.assertEqual({point['id'] for point in self.library.map({})['points']}, {first, other})
 
+    def test_map_shows_only_the_newest_images_beyond_its_limit(self):
+        ids = [self.image(number, modified=f'2026-09-{number:02d}T12:00:00Z') for number in range(1, 4)]
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 3})
+        self.library.layout = SimpleNamespace(positions=lambda: {image_id: (0.0, 0.0) for image_id in ids})
+        self.library.atlas = SimpleNamespace(ensure=lambda: {image_id: n for n, image_id in enumerate(ids)}, versions=lambda: ['v1'])
+        with patch('server.library.MAP_LIMIT', 2):
+            result = self.library.map({})
+        self.assertEqual(([point['id'] for point in result['points']], result['omitted']), ([ids[2], ids[1]], 1))
+
     def test_map_waits_for_its_first_fit_then_serves_positions(self):
         first = self.image(1)
         self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 1})
@@ -273,6 +282,14 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.library.scan_state['state'], 'error')
         self.assertIn('not available', self.library.scan_state['error'])
         self.assertEqual(self.library.status()['counts']['images'], 1)
+
+    def test_pages_follow_the_revision_a_scan_commits(self):
+        Image.new('RGB', (8, 8), 'red').save(self.folder / 'one.png')
+        self.library.scan()
+        self.assertEqual(self.library.pictures({})['total'], 1)
+        Image.new('RGB', (8, 8), 'blue').save(self.folder / 'two.png')
+        self.library.scan()
+        self.assertEqual(self.library.pictures({'offset': '1'})['total'], 2)
 
     def test_a_closed_library_stops_scanning(self):
         for number in range(3):

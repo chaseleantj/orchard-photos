@@ -7,13 +7,13 @@ import re
 import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 from server.atlas import Atlas
 from server.cache import connect, preview_path, thumbnail_path, while_open
 from server.groups import Groups
 from server.layout import Layout
-from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable
+from server.scanner import FolderUnavailable, ScanCancelled, Scanner, scaled
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
@@ -21,6 +21,8 @@ PAGE_SIZE = 80
 MAX_PAGE = 2500
 IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 SIMILAR_LIMIT = 100
+# The most images the map shows, the newest. Each is a decoded icon in the page, and drawn every frame.
+MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
 PREVIEW_EDGE = 4096
@@ -57,8 +59,12 @@ class Library:
         self.semantic_lock = threading.Lock()
         self.index_wanted = False
         self.scan_state = {'state': 'ready'}
-        # Bumped whenever a scan commits, so open pages know to refresh.
+        # Bumped whenever a scan commits or the groups change, so open pages know to refresh.
         self.revision = 0
+        # The date-ordered tiles for the last filters asked, at the revision they were read, so scrolling, jumping
+        # down the timeline and the timeline itself page through one list instead of each grouping every image.
+        self._tiles = None
+        self._tiles_lock = threading.Lock()
         self.stats_path = self.directory / 'scan-status.json'
         try:
             self.stats = json.loads(self.stats_path.read_text(encoding='utf-8'))
@@ -158,6 +164,16 @@ class Library:
     def tiles(self, where, values, collapse=True):
         """One row per near-duplicate group, fronted by its best matching image and described by that image's newest
         matching file, newest first. Without collapsing, every matching image of the groups, best first."""
+        if not collapse:
+            return self._read_tiles(where, values, collapse)
+        # Read before the query, so rows a scan commits meanwhile are at worst read again.
+        key = (self.revision, tuple(where), tuple(values))
+        with self._tiles_lock:
+            if self._tiles is None or self._tiles[0] != key:
+                self._tiles = (key, self._read_tiles(where, values, collapse))
+            return self._tiles[1]
+
+    def _read_tiles(self, where, values, collapse):
         condition = ' AND '.join(where)
         # Photos are dated when they were taken, and anything without EXIF by when its file was modified.
         matching = f'''WITH matching AS (
@@ -176,9 +192,9 @@ class Library:
         sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
                          p.path,p.copies,p.grp AS "group",p.members
                   FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
-        # Grouping needs every matching row anyway, so pages are sliced from the whole list.
+        # Grouping needs every matching row, so SQL can't page this any cheaper than slicing the whole list.
         with connect(self.directory, rows=True) as db:
-            return [dict(row) for row in db.execute(sql, values)]
+            return db.execute(sql, values).fetchall()
 
     def require_search(self):
         search = self.semantic.status()
@@ -197,7 +213,7 @@ class Library:
             where.append('coalesce(g.group_id, f.image_id)=?')
             values.append(group)
             rows = self.tiles(where, values, collapse=False)
-            return {'items': rows, 'total': len(rows), 'offset': 0, 'hasMore': False}
+            return {'items': [dict(row) for row in rows], 'total': len(rows), 'offset': 0, 'hasMore': False}
         offset = max(0, int(params.get('offset', '0')))
         limit = min(MAX_PAGE, max(1, int(params.get('limit', str(PAGE_SIZE)))))
         visual = bool(image_bytes or reference or (query and params.get('mode') == 'visual'))
@@ -217,7 +233,8 @@ class Library:
             if reference or image_bytes:
                 # Beyond the closest matches, similarity to a single image is noise.
                 rows = rows[:SIMILAR_LIMIT]
-        return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'hasMore': offset + limit < len(rows)}
+        return {'items': [dict(row) for row in rows[offset:offset + limit]], 'total': len(rows), 'offset': offset,
+                'hasMore': offset + limit < len(rows)}
 
     def timeline(self, params):
         """How many tiles the date-ordered grid shows in each month, newest first, in the viewer's time zone: the
@@ -287,16 +304,14 @@ class Library:
         if not preview.is_file():
             preview.parent.mkdir(exist_ok=True)
             with Image.open(path) as source:
-                image = ImageOps.exif_transpose(source)
-                image.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE))
-                image = displayable(image)
+                image = scaled(source, PREVIEW_EDGE)
                 temporary = preview.with_suffix(f'.{threading.get_ident()}.tmp')
                 (image.convert('RGB') if image.mode == 'RGBA' else image).save(temporary, 'JPEG', quality=90)
                 while_open(temporary.replace, preview)
         return preview
 
     def map(self, params):
-        """Every filtered image with a place on the map and an icon slot in the atlas."""
+        """The newest MAP_LIMIT filtered images with a place on the map and an icon slot in the atlas."""
         where, values = self.filters(params)
         rows = self.tiles(where, values)
         self.require_search()
@@ -305,10 +320,12 @@ class Library:
             # The first fit runs in the background, and the page follows its progress.
             self.layout.start()
             return {'points': [], 'pending': 0, 'sheets': [], 'layout': self.layout.status()}
+        shown = rows[:MAP_LIMIT]
         slots = self.atlas.ensure()
         points = []
-        for row in rows:
+        for row in shown:
             if row['id'] in positions and row['id'] in slots:
                 x, y = positions[row['id']]
-                points.append({**row, 'x': round(x, 4), 'y': round(y, 4), 'slot': slots[row['id']]})
-        return {'points': points, 'pending': len(rows) - len(points), 'sheets': self.atlas.versions(), 'layout': {'state': 'ready'}}
+                points.append({**dict(row), 'x': round(x, 4), 'y': round(y, 4), 'slot': slots[row['id']]})
+        return {'points': points, 'pending': len(shown) - len(points), 'omitted': len(rows) - len(shown),
+                'sheets': self.atlas.versions(), 'layout': {'state': 'ready'}}
