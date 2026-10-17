@@ -5,8 +5,10 @@ from io import BytesIO
 import logging
 import os
 from pathlib import Path
+import platform
 import shutil
 import sqlite3
+import sys
 import threading
 
 from server.scanner import thumbnail_path
@@ -96,7 +98,7 @@ class Encoder:
                     import onnxruntime
                     from tokenizers import Tokenizer
                 except ImportError as error:
-                    raise RuntimeError("Visual search needs its Python dependencies. Run the setup command and retry.") from error
+                    raise RuntimeError(_missing(error)) from error
                 # CUDA when onnxruntime-gpu is installed. Core ML is left out: measured on Apple Silicon, it ran no faster than the CPU.
                 providers = [name for name in ("CUDAExecutionProvider", "CPUExecutionProvider")
                              if name in onnxruntime.get_available_providers()]
@@ -138,6 +140,17 @@ class Encoder:
             self.features(text=["warm up"])
         except Exception:
             logger.exception("Visual search warm-up failed")
+
+
+def _missing(error: ImportError) -> str:
+    """What to install when ONNX Runtime or the tokenizer can't be imported.
+
+    On Windows, ONNX Runtime also needs Microsoft's C++ runtime, which Python doesn't include."""
+    if sys.platform == "win32" and "DLL load failed" in str(error):
+        machine = "arm64" if platform.machine().lower() == "arm64" else "x64"
+        return ("Visual search needs the Microsoft Visual C++ Redistributable. Install it with: "
+                f"winget install Microsoft.VCRedist.2015+.{machine}, then restart Orchard.")
+    return "Visual search needs its Python dependencies. Run the setup command and retry."
 
 
 def _pixels(image):

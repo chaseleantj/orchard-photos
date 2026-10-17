@@ -2,12 +2,14 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from server.scanner import FolderUnavailable, Scanner, exif_details, thumbnail_path, walk
+from server.scanner import FolderUnavailable, Scanner, exif_details, thumbnail_path, walk, while_open
 
 
 def picture(path: Path, color='red', size=(32, 24), **save):
@@ -54,6 +56,7 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((stats['images'], stats['unreadable']), (2, 0))
         self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
 
+    @unittest.skipIf(sys.platform == 'win32', 'Symlinks need Developer Mode on Windows')
     def test_symlink_loops_end_and_real_paths_win(self):
         picture(self.root / 'real/one.png')
         os.symlink(self.root, self.root / 'real/loop')
@@ -114,7 +117,7 @@ class ScannerTests(unittest.TestCase):
             self.scanner.scan()
         self.assertEqual(set(self.files()), {'one.png'})
 
-    @unittest.skipIf(os.geteuid() == 0, 'Permissions do not apply to root')
+    @unittest.skipIf(sys.platform == 'win32' or os.geteuid() == 0, 'Permissions do not lock folders on Windows or for root')
     def test_files_in_a_locked_folder_are_kept(self):
         picture(self.root / 'locked/one.png')
         self.scanner.scan()
@@ -159,6 +162,14 @@ class ScannerTests(unittest.TestCase):
         inside.scan()
         with inside.connect() as db:
             self.assertEqual([row[0] for row in db.execute('SELECT path FROM files')], ['one.png'])
+
+    def test_windows_waits_for_a_reader_before_replacing_a_file(self):
+        change = Mock(side_effect=[PermissionError, PermissionError, None])
+        with patch('server.scanner.sys.platform', 'win32'), patch('server.scanner.time.sleep'):
+            while_open(change, 'target')
+        self.assertEqual(change.call_count, 3)
+        with patch('server.scanner.sys.platform', 'darwin'), self.assertRaises(PermissionError):
+            while_open(Mock(side_effect=PermissionError))
 
 
 if __name__ == '__main__':

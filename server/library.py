@@ -14,7 +14,7 @@ from PIL import Image, ImageOps
 from server.atlas import Atlas
 from server.groups import Groups
 from server.layout import Layout
-from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable, preview_path, thumbnail_path
+from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable, preview_path, thumbnail_path, while_open
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
@@ -46,10 +46,10 @@ class Library:
         self.revision = 0
         self.stats_path = self.directory / 'scan-status.json'
         try:
-            self.stats = json.loads(self.stats_path.read_text())
+            self.stats = json.loads(self.stats_path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             self.stats = {}
-        (self.directory / 'folder.txt').write_text(str(self.folder) + '\n')
+        (self.directory / 'folder.txt').write_text(str(self.folder) + '\n', encoding='utf-8')
 
     def close(self):
         """Stop background work for a folder that is no longer shown."""
@@ -67,7 +67,7 @@ class Library:
                 self.revision += 1
             self.stats = self.scanner.scan(progress, committed, self.closed.is_set)
             self.stats['updated'] = datetime.now(timezone.utc).isoformat()
-            self.stats_path.write_text(json.dumps(self.stats))
+            self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
             self.scan_state = {'state': 'ready'}
             # Once the model is on this computer, new images are indexed and grouped without asking.
             if self.semantic.encoder.downloaded():
@@ -280,7 +280,7 @@ class Library:
                 image = displayable(image)
                 temporary = preview.with_suffix(f'.{threading.get_ident()}.tmp')
                 (image.convert('RGB') if image.mode == 'RGBA' else image).save(temporary, 'JPEG', quality=90)
-                temporary.replace(preview)
+                while_open(temporary.replace, preview)
         return preview
 
     def map(self, params):

@@ -1,5 +1,6 @@
 """Loopback-only HTTP API and production web server. Serves one folder at a time; the folder can be changed live."""
 import argparse
+import errno
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -22,7 +23,7 @@ from server.semantic import Encoder
 from server.window import Window, become_app, unavailable
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = json.loads((ROOT / 'app.json').read_text())
+APP = json.loads((ROOT / 'app.json').read_text(encoding='utf-8'))
 RECENT_LIMIT = 10
 WATCH_SECONDS = 60
 UPLOAD_LIMIT = 20 * 1024 * 1024
@@ -34,13 +35,16 @@ def default_data_dir() -> Path:
     """Where the cache and model live: the platform's per-user application data folder."""
     if sys.platform == 'darwin':
         return Path.home() / 'Library' / 'Application Support' / APP['slug']
+    if sys.platform == 'win32':
+        # Local rather than roaming, since the model is too large to follow the user between computers.
+        return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / APP['slug']
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / APP['slug']
 
 
 def tilde(path: Path) -> str:
     """A path as people write it: the home folder shortened to ~."""
     try:
-        return '~/' + str(path.relative_to(Path.home())) if path != Path.home() else '~'
+        return '~' + os.sep + str(path.relative_to(Path.home())) if path != Path.home() else '~'
     except ValueError:
         return str(path)
 
@@ -56,12 +60,13 @@ class App:
         self._lock = threading.Lock()
 
     def resolve(self, value) -> Path:
-        text = str(value or '').strip()
+        # Explorer's Copy as path puts the path in quotes, which no folder name on Windows contains.
+        text = str(value or '').strip().strip('"').strip()
         if not text:
             raise ValueError('Enter the path of a folder.')
         path = Path(text).expanduser()
         if not path.is_absolute():
-            raise ValueError('Enter a full path, starting with / or ~.')
+            raise ValueError('Enter a full path, like C:\\Users\\you\\Pictures.' if sys.platform == 'win32' else 'Enter a full path, starting with / or ~.')
         try:
             path = path.resolve(strict=True)
         except (OSError, RuntimeError):
@@ -126,17 +131,17 @@ class App:
 
     def recent(self) -> list[str]:
         try:
-            saved = json.loads(self.recent_path.read_text())
+            saved = json.loads(self.recent_path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             return []
         return [path for path in saved if isinstance(path, str)] if isinstance(saved, list) else []
 
     def remember(self, folder: Path):
         paths = [str(folder)] + [path for path in self.recent() if path != str(folder)]
-        self.recent_path.write_text(json.dumps(paths[:RECENT_LIMIT]))
+        self.recent_path.write_text(json.dumps(paths[:RECENT_LIMIT]), encoding='utf-8')
 
     def forget(self, value):
-        self.recent_path.write_text(json.dumps([path for path in self.recent() if path != str(value)]))
+        self.recent_path.write_text(json.dumps([path for path in self.recent() if path != str(value)]), encoding='utf-8')
 
     def status(self):
         library = self.library
@@ -300,7 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.file(path, cache='no-cache')
                 else:
                     self.file(ROOT / 'dist/index.html', cache='no-cache')
-        except (BrokenPipeError, ConnectionResetError):
+        # The page went away mid-response. Windows reports it as ConnectionAbortedError, others as a broken pipe or reset.
+        except ConnectionError:
             pass
         except (ValueError, RuntimeError) as error:
             self.json({'error': str(error)}, 400)
@@ -354,6 +360,12 @@ class Handler(BaseHTTPRequestHandler):
         with path.open('rb') as stream:
             while chunk := stream.read(256 * 1024):
                 self.wfile.write(chunk)
+
+
+class Server(ThreadingHTTPServer):
+    # On Windows, SO_REUSEADDR lets a second program bind a port that is already taken, so a clash would go unnoticed.
+    # Windows reuses a recently closed port without it.
+    allow_reuse_address = sys.platform != 'win32'
 
 
 def running(url: str):
@@ -422,11 +434,15 @@ def main(argv=None):
         become_app(APP['name'])
     # The port stays fixed: the Dock app, a second launch and the page's saved settings all find the app by it.
     try:
-        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    except OSError:
+        server = Server(('127.0.0.1', args.port), Handler)
+    except OSError as error:
         # Another launch may have started the server since the check above.
         if join_running():
             return
+        if error.errno in (errno.EACCES, getattr(errno, 'WSAEACCES', errno.EACCES)):
+            # Windows reserves ranges of ports for Hyper-V and WSL, and other systems keep ports below 1024 for root.
+            reserved = ' See the reserved ranges with: netsh int ipv4 show excludedportrange protocol=tcp' if sys.platform == 'win32' else ''
+            sys.exit(f'Port {args.port} is reserved by the system. Start {APP["name"]} on another port with --port.{reserved}')
         sys.exit(f'Port {args.port} is used by another program. Quit that program, or start {APP["name"]} on another port with --port.')
     if args.show == 'window' and (reason := unavailable()):
         print(f'{APP["name"]} is opening in the browser, because {reason}', flush=True)

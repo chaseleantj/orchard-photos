@@ -1,6 +1,6 @@
 node_modules/
 .venv/
-.venv.lock*/
+.venv.lock*
 __pycache__/
 *.tsbuildinfo
 .DS_Store

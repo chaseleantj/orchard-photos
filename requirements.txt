@@ -5,3 +5,5 @@ onnxruntime==1.31.0
 tokenizers==0.23.3
 huggingface-hub==2.2.0
 pywebview==6.2.1
+# Windows has no time zone database of its own, which the timeline needs.
+tzdata==2026.5; sys_platform == "win32"

@@ -1,3 +1,4 @@
+import errno
 import io
 import json
 from email.message import Message
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler, arguments, main, picker_command
+from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, picker_command
 
 PORT = APP['port']
 
@@ -36,6 +37,15 @@ class AppTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, message):
                 self.app.open(value)
         self.assertIsNone(self.app.library)
+
+    def test_paths_copied_with_quotes_open_and_windows_gets_a_windows_example(self):
+        self.assertEqual(self.app.open(f'  "{self.folder("photos")}" ').folder, self.home / 'photos')
+        with patch('server.api.sys.platform', 'win32'), self.assertRaisesRegex(ValueError, r'like C:\\Users'):
+            self.app.open('relative/photos')
+
+    def test_windows_keeps_data_in_local_app_data(self):
+        with patch('server.api.sys.platform', 'win32'), patch.dict('os.environ', {'LOCALAPPDATA': str(self.home)}):
+            self.assertEqual(default_data_dir(), self.home / APP['slug'])
 
     def test_each_folder_has_its_own_cache_and_the_old_one_stops(self):
         first = self.app.open(str(self.folder('one')))
@@ -217,6 +227,14 @@ class LaunchTests(unittest.TestCase):
                 hand_over.assert_called_once()
                 window.assert_not_called()
                 self.assertEqual(self.open_browser.called, opens_browser)
+
+    def test_a_port_in_use_or_reserved_is_explained(self):
+        with Server(('127.0.0.1', 0), Handler) as taken, self.assertRaises(OSError):
+            Server(('127.0.0.1', taken.server_port), Handler)
+        for code, message in ((errno.EADDRINUSE, 'used by another program'), (errno.EACCES, 'reserved by the system')):
+            with self.subTest(message=message), patch('server.api.running', return_value=False), \
+                    patch('server.api.Server', side_effect=OSError(code, 'refused')), self.assertRaisesRegex(SystemExit, message):
+                self.launch('--browser')
 
 
 if __name__ == '__main__':

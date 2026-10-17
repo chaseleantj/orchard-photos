@@ -6,19 +6,21 @@ if [ -d "${1:-}" ]; then folder=$(cd "$1" && pwd -P); else folder=${1:-}; fi
 cd "$(dirname "$(readlink -f "$0")")"
 
 installed() { [ -f .venv/.installed ] && [ -z "$(find requirements.txt -newer .venv/.installed)" ]; }
-new_enough() { "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null; }
+# ONNX Runtime has no packages for Python 3.15 yet. Keep these versions in step with orchard.cmd.
+supported() { "$1" -c 'import sys; sys.exit(not (3, 12) <= sys.version_info < (3, 15))' 2>/dev/null; }
 
-# Plain python3 is often too old, like the 3.9 Apple ships or the 3.10 on Ubuntu 22.04, so look for a newer one first.
+# Plain python3 is often too old, like the 3.9 Apple ships or the 3.10 on Ubuntu 22.04, or too new, so look for a
+# supported one first.
 find_python() {
-  for name in python3.13 python3.12 python3; do
-    if command -v "$name" >/dev/null && new_enough "$name"; then echo "$name"; return; fi
+  for name in python3.13 python3.12 python3.14 python3; do
+    if command -v "$name" >/dev/null && supported "$name"; then echo "$name"; return; fi
   done
   found=$(python3 --version 2>/dev/null) || found='no python3'
-  echo "Orchard needs Python 3.12 or later, and found $found." >&2
+  echo "Orchard needs Python 3.12, 3.13 or 3.14, and found $found." >&2
   if [ "$(uname)" = Darwin ]; then
-    echo 'Install it with Homebrew (brew install python) or from https://www.python.org/downloads/, then run Orchard again.' >&2
+    echo 'Install Python 3.13 with Homebrew (brew install python@3.13) or from https://www.python.org/downloads/, then run Orchard again.' >&2
   else
-    echo 'Install it with your package manager. On Ubuntu 24.04 and later: sudo apt install python3 python3-venv' >&2
+    echo 'Install Python 3.12, 3.13 or 3.14 with your package manager. On Ubuntu 24.04 and later: sudo apt install python3 python3-venv' >&2
     echo 'On older Ubuntu, get python3.12 from the deadsnakes PPA: https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa' >&2
   fi
   return 1

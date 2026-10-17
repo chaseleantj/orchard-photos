@@ -9,7 +9,7 @@ Orchard is a private photo browser for a folder on your computer. Point it at a 
 
 ## Quick start
 
-You need macOS or Linux, and Python 3.12 or later. If your Python is older, `./orchard` says which version it found and how to get a newer one. On Debian and Ubuntu, you also need the `python3-venv` package.
+You need macOS, Linux or Windows, and Python 3.12, 3.13 or 3.14. Python 3.15 doesn't work yet, because ONNX Runtime, which runs visual search, has no packages for it. If your Python doesn't fit, `./orchard` says which version it found and how to get a supported one. On Debian and Ubuntu, you also need the `python3-venv` package. For Windows, see [Windows](#windows) below.
 
 ```bash
 git clone https://github.com/chaseleantj/orchard.git
@@ -28,6 +28,25 @@ sudo apt install python3-gi gir1.2-webkit2-4.1
 ```
 
 Without it, Orchard opens in your browser and says why. In the browser, the Choose folder button needs `zenity` or `kdialog`. Without one, type the folder path instead.
+
+### Windows
+
+Install Python 3.13 and the Microsoft Visual C++ Redistributable, which visual search needs, in Command Prompt or PowerShell:
+
+```bat
+winget install Python.Python.3.13
+winget install Microsoft.VCRedist.2015+.x64
+```
+
+On a laptop with an Arm processor, like a Snapdragon, use `Microsoft.VCRedist.2015+.arm64` instead. Then clone or download Orchard, and run `orchard.cmd` in its folder, or double-click it. Open a new Command Prompt first, since the one that ran winget doesn't see the new Python yet. If you downloaded a zip, right-click it, choose Properties, then Unblock before extracting it, or Windows asks before running `orchard.cmd`.
+
+```bat
+orchard.cmd C:\Users\you\Pictures
+```
+
+The first run installs Python packages into the `.venv` folder beside it, which takes about two minutes and 195 MB on disk. The window uses Microsoft Edge's WebView2, which comes with Windows 10 and 11. In the browser, there is no Choose folder button on Windows, so type or paste the folder path instead.
+
+### The Mac app
 
 To open Orchard from the Dock or Spotlight like any Mac app, run this once:
 
@@ -49,7 +68,7 @@ Progress for scanning, downloading and preparing images shows beside the image c
 
 Orchard only reads your photos. It never moves, edits or uploads them. The server listens only on this computer and rejects requests from other sites, so don't expose it through a public proxy.
 
-The cache (thumbnails, the search index and the model) lives in `~/Library/Application Support/orchard/` on macOS, and `~/.local/share/orchard/` on Linux. See [Where data lives](docs/how-it-works.md#where-data-lives) to clear it.
+The cache (thumbnails, the search index and the model) lives in `~/Library/Application Support/orchard/` on macOS, `~/.local/share/orchard/` on Linux, and `%LOCALAPPDATA%\orchard\` on Windows. See [Where data lives](docs/how-it-works.md#where-data-lives) to clear it.
 
 ## Uninstall
 
@@ -57,9 +76,9 @@ Quit Orchard, then delete whichever of these you have:
 
 - The `orchard` folder you cloned or downloaded. Its `.venv` folder holds the Python packages.
 - `~/Applications/Orchard.app`, if you ran `scripts/install-app`.
-- The cache and search model, in `~/Library/Application Support/orchard/` on macOS and `~/.local/share/orchard/` on Linux, and any folder you gave with `--data-dir`.
+- The cache and search model, in `~/Library/Application Support/orchard/` on macOS, `~/.local/share/orchard/` on Linux and `%LOCALAPPDATA%\orchard\` on Windows, and any folder you gave with `--data-dir`.
 - `/tmp/orchard.log`, the Mac app's log. macOS clears it when you restart.
-- pip's download cache, in `~/Library/Caches/pip` on macOS and `~/.cache/pip` on Linux. Other Python projects share it, but deleting it is safe.
+- pip's download cache, in `~/Library/Caches/pip` on macOS, `~/.cache/pip` on Linux and `%LOCALAPPDATA%\pip\Cache` on Windows. Other Python projects share it, but deleting it is safe.
 - npm's cache in `~/.npm`, if you built the page yourself. Deleting it is also safe.
 
 ## Documentation

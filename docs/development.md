@@ -4,7 +4,7 @@ This guide is for working on Orchard's code. To understand how the parts fit tog
 
 ## Setup
 
-Orchard runs on macOS and Linux, and needs Python 3.12+. Running `./orchard` once installs the Python packages. To do it by hand:
+Orchard runs on macOS, Linux and Windows, and needs Python 3.12 to 3.14. ONNX Runtime has no packages for 3.15 yet. Running `./orchard`, or `orchard.cmd` on Windows, once installs the Python packages. To do it by hand:
 
 ```bash
 python3 -m venv .venv
@@ -12,6 +12,8 @@ python3 -m venv .venv
 ```
 
 On Linux, `./orchard` makes `.venv` with `--system-site-packages`, so the window can use the distribution's GTK bindings (`python3-gi` and `gir1.2-webkit2-4.1`), which pip can't install. The pinned packages in `requirements.txt` install into `.venv`, but pip may reuse a distribution package for one of their unpinned dependencies.
+
+On Windows, the environment's Python is `.venv\Scripts\python.exe`, and `orchard.cmd` doesn't rebuild the page, so run `npm run build` yourself after changing the frontend. ONNX Runtime needs the Microsoft Visual C++ Redistributable there. Without it, visual search says how to install it.
 
 Search runs CLIP with ONNX Runtime on the CPU. To use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
 
@@ -65,8 +67,9 @@ The server takes these options:
 | `dist/` | The built page. Committed, so running Orchard needs no Node. |
 | `tests/` | Python tests, one file per server module. |
 | `scripts/install-app` | Builds the macOS app that opens Orchard's window from the Dock. Mac only. |
+| `orchard`, `orchard.cmd` | The launchers for macOS and Linux, and for Windows. They find a supported Python, install the packages, and start the server with `--window`. |
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
-| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu and macOS. |
+| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows. |
 | `app.json` | The app's name, command name and ports. |
 
 ## Tests
@@ -77,19 +80,23 @@ Run the Python tests and the TypeScript build check:
 npm test
 ```
 
+`npm test` runs `.venv/bin/python`, which Windows doesn't have. There, run `.venv\Scripts\python -m unittest discover -s tests`. Tests that need symlinks or folder permissions are skipped on Windows.
+
 ```bash
 npm run build
 ```
 
 The tests never download CLIP. They replace the model with fixed vectors.
 
-The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard --browser` on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
+The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
 
 ```bash
 scripts/smoke-test
 ```
 
-Add `--visual` to also download the search model and check that a search finds the right image. CI runs the smoke test and the Python tests on Ubuntu and macOS, and checks that `dist/` matches the sources. To run the visual check there, start the workflow by hand with **visual** ticked.
+On Windows, run `python scripts\smoke-test`.
+
+Add `--visual` to also download the search model and check that a search finds the right image. CI runs the smoke test and the Python tests on Ubuntu, macOS and Windows, and checks that `dist/` matches the sources. To run the visual check there, start the workflow by hand with **visual** ticked.
 
 ## Renaming
 
@@ -97,7 +104,7 @@ The app's name, command name and ports live in `app.json`. The window title, wor
 
 - The logo, in `web/src/Logo.tsx`, `public/` and `docs/`.
 - The package name in `package.json`.
-- The `orchard` launcher file.
+- The `orchard` and `orchard.cmd` launcher files.
 - The Mac app in `scripts/install-app`: its name, bundle identifier, icon and log file.
 - `server/window.py`: the `ORCHARD_BUNDLE` variable the Mac app sets, and the icon path.
 - The docs.
