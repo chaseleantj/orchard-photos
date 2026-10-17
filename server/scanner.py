@@ -3,11 +3,13 @@
 Originals are only ever read. Identical files share one image, so thumbnails and vectors survive renames and moves.
 """
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import logging
 import os
 from pathlib import Path
+import threading
 import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
@@ -30,6 +32,10 @@ BATCH = 48
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
+# The most bytes of decoded pixels held at once, so huge PNGs and TIFFs, which unlike JPEG can't decode straight to a
+# smaller scale, decode in turn rather than all together. Pillow keeps most modes at 4 bytes a pixel.
+DECODE_BYTES = 1 << 30
+PIXEL_BYTES = 4
 EXIF_TAKEN, EXIF_DIGITIZED, EXIF_OFFSET = 36867, 36868, 36881
 EXIF_MAKE, EXIF_MODEL = 271, 272
 logger = logging.getLogger(__name__)
@@ -120,6 +126,42 @@ def displayable(image):
         return image.point(lambda value: value * 255 / extent).convert('L')
     has_alpha = image.mode in ('LA', 'PA', 'RGBa', 'La') or 'transparency' in image.info
     return image.convert('RGBA' if has_alpha else 'RGB')
+
+
+class Budget:
+    """Room shared by threads that each hold some amount for a while. One amount larger than all of it waits to be
+    held alone."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.used = 0
+        self._changed = threading.Condition()
+
+    @contextmanager
+    def hold(self, amount: int):
+        amount = min(amount, self.limit)
+        with self._changed:
+            self._changed.wait_for(lambda: self.used + amount <= self.limit)
+            self.used += amount
+        try:
+            yield
+        finally:
+            with self._changed:
+                self.used -= amount
+                self._changed.notify_all()
+
+
+DECODING = Budget(DECODE_BYTES)
+
+
+def scaled(image, edge: int):
+    """An open image decoded to fit within edge pixels each way and turned upright, in a mode WebP and JPEG can
+    store. It is shrunk before it is turned, so the full-size pixels are only ever held once."""
+    # JPEG can decode straight to a smaller scale, which is much faster for large photos.
+    image.draft('RGB', (edge, edge))
+    with DECODING.hold(image.width * image.height * PIXEL_BYTES):
+        image.thumbnail((edge, edge))
+    return displayable(ImageOps.exif_transpose(image))
 
 
 def failure(error: Exception) -> str:
@@ -221,16 +263,14 @@ class Scanner:
                 width, height = image.size
                 if width * height > Image.MAX_IMAGE_PIXELS:
                     raise Image.DecompressionBombError(f'{width} x {height} pixels')
+                # Drawn before the EXIF is read, since reading a PNG's EXIF decodes the whole image.
+                display = scaled(image, THUMBNAIL_SIZE)
                 if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                     width, height = height, width
                 taken, camera = exif_details(image)
-                # JPEG can decode straight to a smaller scale, which is much faster for large photos.
-                image.draft('RGB', (THUMBNAIL_SIZE, THUMBNAIL_SIZE))
-                display = ImageOps.exif_transpose(image)
-                display.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
                 target = thumbnail_path(self.directory, digest)
                 temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
-                displayable(display).save(temporary, 'WEBP', quality=82)
+                display.save(temporary, 'WEBP', quality=82)
                 while_open(temporary.replace, target)
             return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
         except Exception as error:

@@ -4,13 +4,14 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 import warnings
 
 from PIL import Image
 
 from server.cache import connect, thumbnail_path
-from server.scanner import FolderUnavailable, Scanner, exif_details, walk
+from server.scanner import Budget, FolderUnavailable, Scanner, exif_details, walk
 
 
 def picture(path: Path, color='red', size=(32, 24), **save):
@@ -143,6 +144,16 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((rows['rotated.jpg']['width'], rows['rotated.jpg']['height']), (20, 40))
         self.assertIsNone(rows['plain.png']['taken'])
 
+    def test_a_rotated_png_is_drawn_upright(self):
+        picture(self.root / 'rotated.png', size=(40, 20), exif=dated(orientation=6))
+        self.scanner.scan()
+        row = self.files()['rotated.png']
+        with connect(self.scanner.directory, rows=True) as db:
+            image = db.execute('SELECT width, height FROM images WHERE id=?', (row['image_id'],)).fetchone()
+        self.assertEqual(tuple(image), (20, 40))
+        with Image.open(thumbnail_path(self.cache, row['image_id'])) as thumbnail:
+            self.assertEqual(thumbnail.size, (20, 40))
+
     def test_exif_without_an_offset_is_local_time(self):
         path = picture(self.root / 'local.jpg', exif=dated('2023:05:04 10:30:00'))
         with Image.open(path) as image:
@@ -166,6 +177,30 @@ class ScannerTests(unittest.TestCase):
         inside.scan()
         with connect(inside.directory, rows=True) as db:
             self.assertEqual([row[0] for row in db.execute('SELECT path FROM files')], ['one.png'])
+
+
+class BudgetTests(unittest.TestCase):
+    def test_holds_that_do_not_fit_together_take_turns(self):
+        budget, first_held, overlapped = Budget(10), threading.Event(), []
+
+        def second():
+            first_held.wait()
+            with budget.hold(8):
+                overlapped.append(budget.used)
+        thread = threading.Thread(target=second)
+        thread.start()
+        with budget.hold(8):
+            first_held.set()
+            thread.join(0.1)
+            self.assertTrue(thread.is_alive())
+        thread.join()
+        self.assertEqual((overlapped, budget.used), ([8], 0))
+
+    def test_a_hold_larger_than_the_budget_runs_alone(self):
+        budget = Budget(10)
+        with budget.hold(25):
+            self.assertEqual(budget.used, 10)
+        self.assertEqual(budget.used, 0)
 
 
 if __name__ == '__main__':
