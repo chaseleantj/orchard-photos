@@ -98,16 +98,24 @@ class SemanticTests(unittest.TestCase):
         self.add("1")
         blobs = self.encoder._folder(REPOSITORY) / "blobs"
         blobs.mkdir(parents=True)
-        (blobs / "weights.incomplete").write_bytes(b"x" * 1000)
         self.encoder.activity = "downloading"
-        status = self.search.status()
-        self.assertEqual((status["state"], status["received"], status["size"]), ("downloading", 1000, self.encoder.size))
+        # Counted while the download still has the file open, as on Windows its folder doesn't see the writes until then.
+        with (blobs / "weights.incomplete").open("wb") as partial:
+            partial.write(b"x" * 1000)
+            partial.flush()
+            status = self.search.status()
+            self.assertEqual((status["state"], status["received"], status["size"]), ("downloading", 1000, self.encoder.size))
+        # A finished file is counted where the hub leaves it. Without symlinks, as on Windows, that is a file in the snapshot.
+        finished = self.encoder._path(*_files(False)[2])
+        finished.parent.mkdir(parents=True)
+        finished.write_bytes(b"x" * 200)
+        self.assertEqual(self.search.status()["received"], 1200)
         # With Core ML, the image encoder comes from its own repository, and both count.
         self.encoder.core_ml = True
         other = self.encoder._path(*_files(True)[0]).parents[2] / "blobs"
         other.mkdir(parents=True)
         (other / "weights.incomplete").write_bytes(b"x" * 500)
-        self.assertEqual(self.search.status()["received"], 1500)
+        self.assertEqual(self.search.status()["received"], 1700)
         self.encoder.activity, self.encoder.failure = None, "The search model could not download."
         self.assertEqual((self.search.status()["state"], self.search.status()["error"]), ("error", "The search model could not download."))
 

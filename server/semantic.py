@@ -101,14 +101,18 @@ class Encoder:
         return any(self._folder(repository).is_dir() for repository in EARLIER)
 
     def received(self) -> int:
-        """Bytes downloaded so far, partial files included."""
+        """Bytes downloaded so far, partial files included. A finished file is measured at its snapshot path, since on
+        Windows, without symlinks, the hub moves it there out of the blobs folder."""
+        files = _files(self.core_ml)
+        partial = [blob for repository in {repository for repository, _, _ in files}
+                   for blob in (self._folder(repository) / "blobs").glob("*.incomplete")]
         total = 0
-        for repository in {repository for repository, _, _ in _files(self.core_ml)}:
+        for path in [self._path(*file) for file in files] + partial:
             try:
-                with os.scandir(self._folder(repository) / "blobs") as entries:
-                    total += sum(entry.stat().st_size for entry in entries if entry.is_file())
+                # A path's own size: on Windows, a directory listing's stays at 0 while the file is open for writing.
+                total += path.stat().st_size
             except OSError:
-                pass
+                pass  # Not downloaded yet, or finished and moved since the listing.
         return min(self.size, total)
 
     def _fetch(self):
