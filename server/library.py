@@ -126,7 +126,7 @@ class Library:
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
         return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unlistedFolders': self.stats.get('unlisted_folders', 0),
-                'photoLibraries': self.stats.get('photo_libraries', []),
+                'photoLibraries': self.stats.get('photo_libraries', []), 'skipped': self.stats.get('skipped', {}),
                 'scan': self.scan_state, 'search': self.search_status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
 

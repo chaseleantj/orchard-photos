@@ -6,8 +6,9 @@ import { megabytes } from './types';
 /** One piece of background work: what it is, how far along in words, and how far as a fraction when known. */
 interface Work { key: string; label: string; detail: string; value: number | null; error?: boolean }
 
-// How long "Visual search is ready" stays after setting up finishes.
-const DONE_FOR = 6000;
+// How long the tip that visual search is ready stays after setting up finishes.
+const DONE_FOR = 10000;
+const READY = 'Visual search is ready. Describe or drop an image above.';
 
 function scanWork(scan: Scan): Work | null {
   if (scan.state !== 'scanning' || !scan.changed) return null;
@@ -42,10 +43,10 @@ export function Activity({ library, gathering, hideError, onOpen }: { library: L
   const ready = done && !jobs.length;
   return <div className="activity">
     {/* Announces what is happening when that changes, not every tick of the numbers. */}
-    <span className="sr-only" aria-live="polite">{ready ? 'Visual search is ready' : jobs.map(job => job.label).join(', ')}</span>
+    <span className="sr-only" aria-live="polite">{ready ? READY : jobs.map(job => job.label).join(', ')}</span>
     {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
       {!job.error && <Progress value={job.value} label={job.label} />}<span>{job.label}{job.detail && <span className="numbers"> · {job.detail}</span>}</span>
     </button>)}
-    {ready && <button className="activity-item" onClick={onOpen}><span>Visual search is ready</span></button>}
+    {ready && <button className="activity-item" title={READY} onClick={onOpen}><span>{READY}</span></button>}
   </div>;
 }

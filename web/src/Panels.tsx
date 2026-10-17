@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
-import type { Facets, Filters, Model, Range, SearchMode, SearchStatus, Status } from './types';
+import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
 import { APP_NAME, RANGES, SET_UP, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
@@ -8,6 +8,8 @@ import { searchWork } from './Activity';
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
 const EDGE = 16;
+// How long Copy diagnostics says it copied.
+const COPIED_FOR = 4000;
 
 /** A popover opened from `anchor`: under it, lined up with its right edge, or with its left edge and width for `menu`. */
 function Popover({ label, anchor, menu, className, onClose, children }: { label: string; anchor: HTMLElement | null; menu?: boolean; className: string; onClose: () => void; children: React.ReactNode }) {
@@ -94,7 +96,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const [busy, setBusy] = useState(false);
   const action = async (url: string) => { setBusy(true); setError(''); try { await post(url); onRefresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const library = status.library!;
-  const { counts, scan, search } = library;
+  const { counts, scan, search, skipped } = library;
   const scanning = scan.state === 'scanning';
   const complete = search.state === 'ready';
   const work = searchWork(search);
@@ -107,6 +109,8 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
   ].filter(row => row.shown);
   const totalLabel = ledger.length < 2 ? 'Images' : narrowed ? 'In the library' : 'In the grid';
+  const raw = skipped.raw ?? 0, videos = skipped.video ?? 0;
+  const unsupported = [raw && plural(raw, 'RAW photo'), videos && plural(videos, 'video')].filter(Boolean).join(' and ');
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <p className="path">{status.folder!.label}</p>
     <p>Subfolders included, hidden ones skipped. Your files are never changed.</p>
@@ -115,6 +119,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
     {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
+    {unsupported && <p>{unsupported} {raw + videos === 1 ? 'isn’t' : 'aren’t'} shown yet.</p>}
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped, since macOS keeps {library.photoLibraries.length === 1 ? 'it' : 'them'} closed to other apps. Export photos to a folder to include them.</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
@@ -129,7 +134,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     </> : search.state === 'error' ? <>
       <p className="error-copy" role="alert">{search.error}</p>
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>
-    </> : complete ? <p>Every image can be found by a description or a similar image. Search runs on this computer.</p>
+    </> : complete ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
     : search.downloaded && !counts.images && !scanning ? <p>Visual search is set up. Images added to this folder are prepared automatically.</p>
     : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} to prepare once reading finishes.</p>
     : search.downloaded ? <>
@@ -141,7 +146,54 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     </>}
     {search.error && search.state !== 'error' && <p className="error-copy">{search.error}</p>}
     {error && <p className="error-copy" role="alert">{error}</p>}
+    <hr className="rule" /><h3>{APP_NAME} {status.version}</h3>
+    <About library={library} />
   </Panel>;
+}
+
+/** The update check and Copy diagnostics, under the version in Info. */
+function About({ library }: { library: LibraryStatus }) {
+  const [updates, setUpdates] = useState<Updates | null>(null);
+  const [report, setReport] = useState('');
+  const [copied, setCopied] = useState<'copied' | 'select' | null>(null);
+  const [error, setError] = useState('');
+  const reportArea = useRef<HTMLTextAreaElement>(null);
+  // An update check that fails says nothing; the next day's check tries again.
+  useEffect(() => { request<Updates>('/api/updates').then(setUpdates, () => {}); }, []);
+  // Fetched ahead of the click, since a webview may only allow the copy while the click is being handled.
+  const { scan, search, revision } = library;
+  useEffect(() => { request<{ report: string }>('/api/diagnostics').then(data => setReport(data.report), () => {}); }, [scan.state, scan.error, search.state, search.error, revision]);
+  useEffect(() => { if (copied !== 'copied') return; const timer = setTimeout(() => setCopied(null), COPIED_FOR); return () => clearTimeout(timer); }, [copied]);
+  useEffect(() => { if (copied === 'select') reportArea.current?.select(); }, [copied]);
+  const turn = async (enabled: boolean) => {
+    setError(''); setUpdates(old => old && { ...old, enabled });
+    try { setUpdates(await post<Updates>('/api/updates', { enabled })); } catch (e) { setUpdates(old => old && { ...old, enabled: !enabled }); setError((e as Error).message); }
+  };
+  const copy = async (button: HTMLElement) => setCopied(await copyText(report, button) ? 'copied' : 'select');
+  return <>
+    {updates?.update && <div className="panel-action"><p>Version {updates.update.version} is available.</p><a className="text-button secondary" href={updates.update.url} target="_blank" rel="noreferrer">See the release</a></div>}
+    <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} aria-describedby="updates-note" onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub<span className="muted" id="updates-note">Once a day, {APP_NAME} asks GitHub whether a newer version is out. Nothing about your images is sent.</span></span></label>
+    <div className="panel-action"><p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.' : 'For bug reports, without file names or folders.'}</p><button className="text-button secondary" disabled={!report} onClick={e => void copy(e.currentTarget)}>{copied === 'copied' && <Check />}Copy diagnostics</button></div>
+    {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
+    {error && <p className="error-copy" role="alert">{error}</p>}
+  </>;
+}
+
+/** Put text on the clipboard while a click on `button` is handled. Webviews without the async clipboard, or that refuse
+ *  it, still run the copy command on a selected field. Returns whether either worked. */
+async function copyText(text: string, button: HTMLElement) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* Not offered, or refused. */ }
+  // Inside the open panel, since a modal dialog makes the rest of the page inert.
+  const field = document.createElement('textarea');
+  Object.assign(field, { value: text, readOnly: true });
+  Object.assign(field.style, { position: 'fixed', opacity: '0' });
+  (button.closest('dialog') ?? document.body).append(field);
+  field.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { /* Refused too. */ }
+  field.remove();
+  button.focus();
+  return copied;
 }
 
 /** Open a folder: the system dialog where there is one, a typed path, or a recent folder. `offerSetup` adds the choice
