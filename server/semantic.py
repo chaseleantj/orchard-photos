@@ -490,7 +490,7 @@ class SemanticIndex:
             else:
                 query = self.encoder.features(text=[text.strip()])[0]
         except (ValueError, OSError):
-            raise ValueError("The reference image could not be read or is not indexed yet.")
+            raise ValueError("The reference image could not be read or is not indexed yet.") from None
         except Exception as error:
             self._set_state("error", str(error))
             raise

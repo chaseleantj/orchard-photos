@@ -1,8 +1,8 @@
+from email.message import Message
 import errno
+from http.server import ThreadingHTTPServer
 import io
 import json
-from email.message import Message
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 import subprocess
 import tempfile
@@ -169,7 +169,7 @@ class HandlerTests(unittest.TestCase):
     def test_linux_folder_dialog_uses_zenity_then_kdialog_then_none(self):
         for installed, program in ((['zenity', 'kdialog'], 'zenity'), (['kdialog'], 'kdialog'), ([], None)):
             with self.subTest(installed=installed), patch('server.api.sys.platform', 'linux'), \
-                    patch('server.api.shutil.which', lambda name: name if name in installed else None):
+                    patch('server.api.shutil.which', lambda name: name if name in installed else None):  # noqa: B023
                 command = picker_command(None)
                 self.assertEqual(command and command[0], program)
 

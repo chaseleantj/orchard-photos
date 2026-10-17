@@ -1,5 +1,5 @@
 """One folder's library: its scan, visual index, map, and the queries the API answers from them."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
@@ -34,7 +34,7 @@ def utc_offset(params) -> int:
     try:
         return max(-MAX_OFFSET, min(MAX_OFFSET, int(params.get('tz') or 0)))
     except ValueError:
-        raise ValueError('Use a valid date range.')
+        raise ValueError('Use a valid date range.') from None
 
 
 class Library:
@@ -81,7 +81,7 @@ class Library:
             def committed():
                 self.revision += 1
             self.stats = self.scanner.scan(progress, committed, self.closed.is_set)
-            self.stats['updated'] = datetime.now(timezone.utc).isoformat()
+            self.stats['updated'] = datetime.now(UTC).isoformat()
             self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
             self.scan_state = {'state': 'ready'}
             # Once the model is on this computer, new images are indexed and grouped without asking.

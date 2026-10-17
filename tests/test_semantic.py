@@ -1,16 +1,31 @@
 from pathlib import Path
 import tempfile
-import unittest
 from types import SimpleNamespace
+import unittest
 from unittest.mock import Mock, patch
 
 import numpy as np
 from PIL import Image
 
-from server.cache import connect, thumbnail_path
 from server import semantic
-from server.semantic import (CORE_ML_SHA256, CORE_ML_VISION, IMAGE_SIZE, MAX_TOKENS, MODEL, PARITY_VECTOR, REPOSITORY,
-                             TEXT, TOKENIZER, VISION, Encoder, SemanticIndex, _files, _pixels, parity_pixels)
+from server.cache import connect, thumbnail_path
+from server.semantic import (
+    CORE_ML_SHA256,
+    CORE_ML_VISION,
+    IMAGE_SIZE,
+    MAX_TOKENS,
+    MODEL,
+    PARITY_VECTOR,
+    REPOSITORY,
+    TEXT,
+    TOKENIZER,
+    VISION,
+    Encoder,
+    SemanticIndex,
+    _files,
+    _pixels,
+    parity_pixels,
+)
 
 
 class SemanticTests(unittest.TestCase):

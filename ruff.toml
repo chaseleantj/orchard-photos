@@ -1,0 +1,12 @@
+# Lines run long in places, so E501 stays off. This is the width isort wraps imports at.
+line-length = 160
+target-version = "py312"
+extend-include = ["scripts/smoke-test", "scripts/build-coreml-model"]
+
+[lint]
+select = ["F", "E", "W", "I", "UP", "B"]
+# B905 asks every zip() for strict=, which would change behaviour or add noise.
+ignore = ["E501", "B905"]
+
+[lint.isort]
+force-sort-within-sections = true

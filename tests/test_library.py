@@ -1,13 +1,13 @@
 from pathlib import Path
-from types import SimpleNamespace
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from server.library import Library
 from server.cache import connect, preview_path
+from server.library import Library
 from server.semantic import MODEL, Encoder
 
 

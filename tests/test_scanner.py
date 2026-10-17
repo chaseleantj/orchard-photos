@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import os
 from pathlib import Path
 import shutil
@@ -147,7 +147,7 @@ class ScannerTests(unittest.TestCase):
         path = picture(self.root / 'local.jpg', exif=dated('2023:05:04 10:30:00'))
         with Image.open(path) as image:
             taken, camera = exif_details(image)
-        expected = datetime(2023, 5, 4, 10, 30).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        expected = datetime(2023, 5, 4, 10, 30).astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
         self.assertEqual((taken, camera), (expected, 'Canon EOS R6'))
 
     def test_heic_and_sixteen_bit_images_get_thumbnails(self):

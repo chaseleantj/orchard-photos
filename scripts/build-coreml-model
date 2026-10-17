@@ -24,8 +24,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from server.semantic import (BATCH_SIZE, CORE_ML_VISION, IMAGE_SIZE, PARITY_VECTOR, REPOSITORY, REVISION, VISION,
-                             _unit, parity_pixels)
+from server.semantic import BATCH_SIZE, CORE_ML_VISION, IMAGE_SIZE, PARITY_VECTOR, REPOSITORY, REVISION, VISION, _unit, parity_pixels  # noqa: E402
 
 SOURCE = "onnx/vision_model_fp16.onnx"
 SOURCE_SHA256 = "fe9ad8020a6d3d98d394c9be8f07064066135fc2f87ec11692de0b677c0ac4db"
@@ -60,9 +59,9 @@ def rewrite(source: Path, output: Path):
 
 
 def write_parity_vector(cache):
+    from huggingface_hub import hf_hub_download
     import numpy
     import onnxruntime
-    from huggingface_hub import hf_hub_download
 
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = 4
@@ -79,8 +78,8 @@ def main():
     parser.add_argument("--cache", type=Path, help="Hugging Face cache for the downloads; defaults to the usual one")
     parser.add_argument("--parity", action="store_true", help=f"also write {PARITY_VECTOR.relative_to(ROOT)}")
     args = parser.parse_args()
-    import onnx
     from huggingface_hub import hf_hub_download
+    import onnx
 
     if onnx.__version__ != ONNX_VERSION:
         print(f"Warning: onnx is {onnx.__version__}, not {ONNX_VERSION}, so the SHA-256 may differ.", file=sys.stderr)
