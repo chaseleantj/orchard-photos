@@ -244,18 +244,16 @@ class SemanticTests(unittest.TestCase):
                                   (Path(TEXT).name, ["CPUExecutionProvider"])])
                 self.assertTrue(self.encoder.loaded)
 
-    def test_the_engine_is_named_from_the_image_encoder_s_session_and_the_one_tried_first_from_this_computer(self):
+    def test_the_engine_is_named_from_the_image_encoder_s_session_and_the_one_tried_first_from_its_core_ml_state(self):
         self.assertIsNone(self.encoder.engine)
         for providers, engine in ((["CoreMLExecutionProvider", "CPUExecutionProvider"], "Core ML"), (["CPUExecutionProvider"], "CPU")):
             self.encoder._vision = Mock(**{"get_providers.return_value": providers})
             self.assertEqual(self.encoder.engine, engine)
-        with patch("server.semantic.core_ml_available", return_value=True):
-            self.assertEqual(semantic.preferred_engine(), "Core ML")
+        self.assertEqual(semantic.preferred_engine(True), "Core ML")
         for available, engine in (([semantic.DIRECTML, "CPUExecutionProvider"], "DirectML"), ([semantic.CUDA, "CPUExecutionProvider"], "CUDA"),
                                   (["CPUExecutionProvider"], "CPU")):
-            with self.subTest(engine=engine), patch("server.semantic.core_ml_available", return_value=False), \
-                    patch("onnxruntime.get_available_providers", return_value=available):
-                self.assertEqual(semantic.preferred_engine(), engine)
+            with self.subTest(engine=engine), patch("onnxruntime.get_available_providers", return_value=available):
+                self.assertEqual(semantic.preferred_engine(False), engine)
 
     def test_an_unavailable_core_ml_repository_downloads_the_cpu_encoder_instead(self):
         from huggingface_hub.errors import HFValidationError

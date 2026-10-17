@@ -8,7 +8,7 @@ interface Work { key: string; label: string; detail: string; value: number | nul
 
 // How long the tip that visual search is ready stays after setting up finishes.
 const DONE_FOR = 10000;
-const READY = 'Visual search is ready. Describe an image, or drop one on the search bar.';
+const READY = 'Visual search is ready. Describe or drop an image above.';
 
 function scanWork(scan: Scan): Work | null {
   if (scan.state !== 'scanning' || !scan.changed) return null;
@@ -47,6 +47,6 @@ export function Activity({ library, gathering, hideError, onOpen }: { library: L
     {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
       {!job.error && <Progress value={job.value} label={job.label} />}<span>{job.label}{job.detail && <span className="numbers"> · {job.detail}</span>}</span>
     </button>)}
-    {ready && <button className="activity-item" onClick={onOpen}><span>{READY}</span></button>}
+    {ready && <button className="activity-item" title={READY} onClick={onOpen}><span>{READY}</span></button>}
   </div>;
 }

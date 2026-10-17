@@ -8,7 +8,7 @@ import platform
 import re
 import sys
 
-from server.semantic import preferred_engine
+from server.semantic import core_ml_available, preferred_engine
 
 
 def minute(moment: datetime) -> str:
@@ -16,16 +16,17 @@ def minute(moment: datetime) -> str:
 
 
 class LastError(logging.Handler):
-    """Remembers the last warning or error logged, in one line."""
+    """Remembers the last warning or error logged, in one line. Only the message's template and the exception's type
+    are kept, since the values filled in can be file names or paths."""
 
     def __init__(self):
         super().__init__(logging.WARNING)
         self.message = None
 
     def emit(self, record):
-        message = record.getMessage()
+        message = str(record.msg)
         if record.exc_info and record.exc_info[1]:
-            message += f': {type(record.exc_info[1]).__name__}: {record.exc_info[1]}'
+            message += f': {type(record.exc_info[1]).__name__}'
         self.message = f'{message.splitlines()[0]} ({minute(datetime.fromtimestamp(record.created, timezone.utc))})'
 
 
@@ -45,13 +46,21 @@ def system() -> str:
     return f'{name}, kernel {platform.release()}'
 
 
-def runtime() -> tuple[str, str]:
-    """ONNX Runtime's version and providers, and which engine runs the image encoder when it loads."""
+def runtime() -> str:
+    """ONNX Runtime's version and providers."""
     try:
         import onnxruntime
     except ImportError:
-        return 'not installed', 'none'
-    return f'{onnxruntime.__version__} ({", ".join(onnxruntime.get_available_providers())})', preferred_engine()
+        return 'not installed'
+    return f'{onnxruntime.__version__} ({", ".join(onnxruntime.get_available_providers())})'
+
+
+def encoder_line(encoder) -> str:
+    """Which engine runs the image encoder, and whether it stands in for a faster one this computer has."""
+    if encoder.engine is None:
+        return f'not loaded yet, will try {preferred_engine(encoder.core_ml)}' if runtime() != 'not installed' else 'not loaded yet'
+    best = preferred_engine(core_ml_available())
+    return encoder.engine if encoder.engine == best else f'{encoder.engine}, in place of {best}'
 
 
 def redact(text: str, folder: Path | None) -> str:
@@ -64,21 +73,13 @@ def redact(text: str, folder: Path | None) -> str:
 def report(app, title: str) -> str:
     """The report for `app`, headed by `title`, the app's name and version."""
     library = app.library
-    runtime_version, preferred = runtime()
-    engine = app.encoder.engine
-    if engine is None:
-        encoder = f'not loaded yet, will try {preferred}'
-    elif engine != preferred:
-        encoder = f'{engine}, after {preferred} failed'
-    else:
-        encoder = engine
     shown = f'window (pywebview {metadata.version("pywebview")})' if app.window else 'browser'
     lines = [
         title,
         f'System: {system()}, {platform.machine()}',
         f'Python: {platform.python_version()}',
-        f'ONNX Runtime: {runtime_version}',
-        f'Image encoder: {encoder}',
+        f'ONNX Runtime: {runtime()}',
+        f'Image encoder: {encoder_line(app.encoder)}',
         f'Search model: {"downloaded" if app.encoder.downloaded() else "not downloaded"}',
         f'Shown in: {shown}',
     ]

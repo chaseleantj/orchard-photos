@@ -17,13 +17,14 @@ def library(**status):
     return SimpleNamespace(folder=FOLDER, status=lambda: status)
 
 
-def app(engine='Core ML', folder=None, window=None):
-    return SimpleNamespace(library=folder, window=window, encoder=SimpleNamespace(engine=engine, downloaded=lambda: engine is not None))
+def app(engine='Core ML', folder=None, window=None, core_ml=True):
+    return SimpleNamespace(library=folder, window=window, encoder=SimpleNamespace(engine=engine, core_ml=core_ml, downloaded=lambda: engine is not None))
 
 
 class DiagnosticsTests(unittest.TestCase):
     def setUp(self):
-        for target, value in (('server.diagnostics.Path.home', HOME), ('server.diagnostics.preferred_engine', 'Core ML')):
+        # An Apple Silicon Mac, whose fastest engine is Core ML.
+        for target, value in (('server.diagnostics.Path.home', HOME), ('server.diagnostics.core_ml_available', True)):
             patcher = patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -43,9 +44,11 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertTrue(any(line.startswith(prefix) for line in lines), prefix)
 
     def test_the_encoder_says_when_it_fell_back_or_has_not_loaded(self):
-        self.assertIn('Image encoder: CPU, after Core ML failed', report(app('CPU'), 'Orchard'))
+        self.assertIn('Image encoder: CPU, in place of Core ML', report(app('CPU', core_ml=False), 'Orchard'))
+        self.assertIn('Image encoder: not loaded yet, will try Core ML', report(app(None), 'Orchard'))
+        with patch('onnxruntime.get_available_providers', return_value=['CPUExecutionProvider']):
+            self.assertIn('Image encoder: not loaded yet, will try CPU', report(app(None, core_ml=False), 'Orchard'))
         text = report(app(None), 'Orchard')
-        self.assertIn('Image encoder: not loaded yet, will try Core ML', text)
         self.assertIn('Search model: not downloaded', text)
         self.assertIn('Folder: none open', text)
 
@@ -67,10 +70,12 @@ class DiagnosticsTests(unittest.TestCase):
             raise OSError(f"cannot identify image file '{FOLDER}/Beach day.jpg'")
         except OSError:
             logger.exception('Scan failed')
-        self.assertTrue(handler.message.startswith(f"Scan failed: OSError: cannot identify image file '{FOLDER}/Beach day.jpg' ("))
+        self.assertTrue(handler.message.startswith('Scan failed: OSError ('))
+        logger.warning('Could not draw a map icon for %s', 'Beach day with Anna.jpg')
+        self.assertTrue(handler.message.startswith('Could not draw a map icon for %s ('))
         with patch('server.diagnostics.LAST_ERROR', handler):
             text = report(app(folder=library(scan={'state': 'error', 'error': f'{FOLDER} is not available. Reconnect its drive.'})), 'Orchard')
-        self.assertIn("Last error: Scan failed: OSError: cannot identify image file '<folder>' (", text)
+        self.assertIn('Last error: Could not draw a map icon for %s (', text)
         self.assertIn('Scan: error, <folder> is not available. Reconnect its drive.', text)
         self.assertNotIn('Beach', text)
         self.assertNotIn('Family', text)

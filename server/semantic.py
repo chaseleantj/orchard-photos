@@ -262,9 +262,10 @@ def core_ml_available() -> bool:
     return "CoreMLExecutionProvider" in onnxruntime.get_available_providers()
 
 
-def preferred_engine() -> str:
-    """The engine that loading tries first for the image encoder. Another one in `Encoder.engine` means it fell back."""
-    if core_ml_available():
+def preferred_engine(core_ml: bool) -> str:
+    """The engine loading tries first for the image encoder: Core ML when `core_ml`, as `Encoder.core_ml` says, else the
+    GPU ONNX Runtime offers, else the CPU."""
+    if core_ml:
         return "Core ML"
     import onnxruntime
 
