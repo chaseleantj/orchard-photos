@@ -80,7 +80,9 @@ class Window:
     def __init__(self, name: str, url: str):
         self.name = name
         webview.settings['ALLOW_DOWNLOADS'] = True
-        self.view = webview.create_window(name, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True)
+        # draggable=True, or pywebview cancels every drag that starts on an image or link, like a grid image carried to the
+        # search bar.
+        self.view = webview.create_window(name, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True, draggable=True)
         self.view.events.before_show += self.restore_frame
 
     def restore_frame(self):

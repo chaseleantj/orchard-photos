@@ -62,6 +62,13 @@ class IconTests(unittest.TestCase):
                     self.assertTrue({(16, 16), (32, 32), (256, 256)} <= icon.info['sizes'])
 
 
+class DragTests(unittest.TestCase):
+    def test_images_can_be_dragged_out_of_the_grid(self):
+        # Otherwise pywebview's page script cancels the drag of any image or link.
+        with patch('webview.windows', []):
+            self.assertTrue(window.Window('Orchard', 'http://127.0.0.1:1').view.draggable)
+
+
 class AvailabilityTests(unittest.TestCase):
     def test_linux_without_a_display_uses_the_browser(self):
         with patch('server.window.sys.platform', 'linux'), patch.dict(os.environ, clear=True):
