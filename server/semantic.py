@@ -377,10 +377,14 @@ class SemanticIndex:
                 connection.execute("""
                     DELETE FROM semantic_embeddings WHERE image_id NOT IN (SELECT id FROM images)
                 """)
+                # Newest first, by the date the grid shows, so recent images are searchable soonest.
                 pending = [row[0] for row in connection.execute("""
                     SELECT i.id FROM images i
+                    LEFT JOIN files f ON f.image_id = i.id
                     LEFT JOIN semantic_embeddings e ON i.id = e.image_id AND e.model = ?
                     WHERE e.image_id IS NULL
+                    GROUP BY i.id
+                    ORDER BY max(coalesce(i.taken, f.modified)) DESC
                 """, (MODEL,))]
             if not pending:
                 self._set_state("ready")

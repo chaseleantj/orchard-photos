@@ -25,15 +25,17 @@ class SemanticTests(unittest.TestCase):
             self.encoder = Encoder(self.directory / "models")
         self.search = SemanticIndex(self.directory, self.encoder)
         with closing(sqlite3.connect(self.search.database)) as connection, connection:
-            connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
+            connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY, taken TEXT)")
+            connection.execute("CREATE TABLE files (path TEXT PRIMARY KEY, image_id TEXT, modified TEXT NOT NULL)")
 
-    def add(self, *ids, readable=True):
+    def add(self, *ids, readable=True, taken=None, modified="2026-01-01T00:00:00Z"):
         thumbnail_path(self.directory, "x").parent.mkdir(exist_ok=True)
         with closing(sqlite3.connect(self.search.database)) as connection, connection:
             for image_id in ids:
                 if readable:
                     Image.new("RGB", (8, 8), (len(image_id), 0, 0)).save(thumbnail_path(self.directory, image_id), "WEBP")
-                connection.execute("INSERT INTO images VALUES (?)", (image_id,))
+                connection.execute("INSERT INTO images VALUES (?, ?)", (image_id, taken))
+                connection.execute("INSERT INTO files VALUES (?, ?, ?)", (f"{image_id}.png", image_id, modified))
 
     def place(self, core_ml, content="{}"):
         """Write every file the given engine needs, with the tokenizer as `content`."""
@@ -277,6 +279,21 @@ class SemanticTests(unittest.TestCase):
         pixels = parity_pixels()
         self.assertEqual((pixels.shape, pixels.dtype), ((3, IMAGE_SIZE, IMAGE_SIZE), np.float32))
         self.assertTrue(-1 <= pixels.min() and pixels.max() <= 1)
+
+    def test_newest_images_are_indexed_first(self):
+        self.add("old", modified="2020-01-01T00:00:00Z")
+        self.add("new", modified="2026-06-01T00:00:00Z")
+        self.add("photo", taken="2024-05-01T00:00:00Z", modified="2026-07-01T00:00:00Z")
+        self.add("middle", modified="2023-01-01T00:00:00Z")
+        # A copy of "old" written recently makes it recent.
+        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+            connection.execute("INSERT INTO files VALUES ('copy.png', 'old', '2025-01-01T00:00:00Z')")
+        order = []
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(4, dtype=np.float32)), \
+                patch.object(self.search, "_open_image", side_effect=lambda image_id: order.append(image_id) or Image.new("RGB", (8, 8))):
+            self.search.index()
+        # The photo's capture date counts, not when its file was written.
+        self.assertEqual(order, ["new", "old", "photo", "middle"])
 
     def test_vectors_from_an_earlier_model_are_discarded_and_the_folder_indexed_again(self):
         self.add("1", "2")
