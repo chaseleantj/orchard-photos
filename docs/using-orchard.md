@@ -4,19 +4,27 @@ This guide covers what you can do in Orchard once it's running. To install it, s
 
 ## Opening a folder
 
-Choose a folder with **Folder**, at the right of the line under the search bar. It opens the system folder dialog, or you can type or paste a path, or pick a recent folder. In the browser, the dialog needs `zenity` or `kdialog` on Linux, and Windows has none, so type the path there.
+To choose a folder, click the open folder's name, at the right of the line under the search bar. It opens the system folder dialog, or you can type or paste a path, or pick a recent folder. When Orchard runs in your browser, the folder dialog needs `zenity` or `kdialog` on Linux. On Windows there's no dialog in the browser, so type or paste the path.
 
 You can also open a folder from the terminal, with `./orchard ~/Pictures`, or `orchard.cmd C:\Users\you\Pictures` on Windows. If Orchard is already open, this switches its window to the folder and brings it to the front.
 
-Each folder keeps its own cache, so switching back to a folder you've opened before is quick. If the folder goes away, for example on an unplugged drive, Orchard keeps showing the last scan and says the folder is unavailable.
+Each folder keeps its own cache, so switching back to a folder you've opened before is quick.
 
 ## The window and the browser
 
-Orchard opens in its own window, and closing the window quits it. The window remembers its size and place, and the page remembers settings like the theme and filters.
+Orchard opens in its own window, and closing the window quits it. On a Mac, the window remembers its size and place. The page remembers settings like the theme and filters.
 
 To use your browser instead, start Orchard with `--browser`, like `./orchard ~/Pictures --browser`. Orchard is then at http://127.0.0.1:4400, and stops when you press Ctrl+C in the terminal.
 
-On Linux, the window needs the system's GTK packages, `python3-gi` and `gir1.2-webkit2-4.1`. They work with the system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why. Under WSL, the browser is your Windows one, and Show in folder opens File Explorer.
+On Linux, the window needs the system's GTK packages, `python3-gi` and `gir1.2-webkit2-4.1`. They work with the system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why.
+
+### Under WSL
+
+Orchard runs in WSL with its own window, through WSLg. Some things differ from Linux on its own:
+
+- **Show in folder** opens File Explorer, and `--browser` opens your Windows browser.
+- Folders under `/mnt/c` work, but scanning them is slower than folders inside WSL.
+- The model runs on the CPU, since DirectML isn't available in WSL. Native Windows prepares images faster, on the GPU.
 
 ## The Mac app
 
@@ -26,7 +34,7 @@ The app finds Python the way your terminal did when you ran `scripts/install-app
 
 ## Browsing
 
-Images are shown newest first, grouped by month. A photo is dated by when it was taken, from its EXIF data. Images without EXIF data use the date the file was last changed.
+Images are shown newest first, grouped by month. A photo is dated by when it was taken, from its EXIF data, the details a camera saves inside the file. Images without EXIF data use the date the file was last changed.
 
 The column of years on the right is a timeline of the whole folder, where each year takes space in proportion to its images. Click or drag it to jump to a month. When it's focused, you can use these keys:
 
@@ -69,7 +77,7 @@ Filters also apply to search and the map.
 
 ## Searching
 
-Once visual search is set up, search finds images by what they show. Type a description, like "sunset over water", and press Enter. Until then, search matches file names. The search options button, at the right of the search bar, switches between the two.
+Once visual search is set up, search finds images by what they show. Type a description, like "sunset over water", and press Enter. Until then, search matches file names. The search options button, at the right of the search bar, switches between **Appearance** and **File name**.
 
 You can also search with an image:
 
@@ -89,11 +97,29 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 ## Setting up visual search
 
-Visual search and the map need a model called SigLIP 2. It's a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
+Visual search and the map need a model called SigLIP 2. It's a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
 
 When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own.
 
-Preparing takes a moment per image. On an Apple Silicon Mac, a folder of 20,000 images is ready in a few minutes. On a computer that prepares images on its CPU, it takes from 20 minutes to a few hours. The newest images are prepared first, so you can search recent photos while the rest are still being prepared.
+Preparing takes a moment per image, and how long a whole folder takes depends mostly on whether Orchard can use the computer's [GPU](#which-gpu-orchard-uses). These rough times come from one Mac and one Intel laptop:
+
+| Computer | 10,000 photos |
+| --- | --- |
+| Apple Silicon Mac | A few minutes |
+| Intel laptop with Windows, on its GPU | About 40 minutes |
+| The same laptop, on its CPU | Over an hour |
+
+Before that, Orchard reads each new file and draws its thumbnail, which took about 40 seconds per 1,000 photos on the laptop. You can browse while both run. The newest images are prepared first, so you can search recent photos while the rest are still being prepared. If you quit Orchard, or the computer sleeps, it carries on where it stopped.
+
+### Which GPU Orchard uses
+
+Orchard prepares images on the GPU where it can:
+
+- **Apple Silicon Macs** use Core ML.
+- **Windows on x64** uses DirectML, with any DirectX 12 GPU.
+- **Everything else**, including Linux, WSL and Windows on Arm, uses the CPU. On Linux, an NVIDIA GPU works through CUDA, as described in [Developing Orchard](development.md#setup).
+
+If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, like "Core ML could not run the search model, so the CPU runs it". On a Mac, Orchard then downloads a 372 MB version of the image model for the CPU. [How Orchard works](how-it-works.md#visual-search) explains the check it runs first.
 
 ## Background work and Info
 
@@ -108,7 +134,52 @@ Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can'
 Orchard skips:
 
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
-- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, export them to a folder first.
+- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
 
-Symlinked folders are followed once, so a link loop can't trap the scan.
+## Apple Photos
+
+Orchard can't read a Photos library, so to browse those photos, export them to a folder first:
+
+1. Open Photos and choose **Library** in the sidebar.
+2. Select the photos you want, or press Cmd+A for all of them.
+3. Choose **File › Export › Export Unmodified Originals**, then **Export**.
+4. Choose or make a folder, like `Pictures/Photos export`, and click **Export Originals**.
+5. Open that folder in Orchard.
+
+Unmodified originals keep their EXIF dates, so they land in the right month. They don't include edits made in Photos. To get the edited versions, choose **File › Export › Export Photos** instead. The export is a full copy, so it needs as much free space as the photos themselves.
+
+If **Optimize Mac Storage** is on in Photos' iCloud settings, most originals are only in iCloud. Photos downloads them during the export, which can take a long time for a large library. To download them all first, choose **Download Originals to this Mac** in the same settings.
+
+## Where Orchard keeps its data
+
+Orchard keeps its cache, the search model and the list of recent folders in one data folder, never beside your photos:
+
+| System | Data folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/orchard/` |
+| Windows | `%LOCALAPPDATA%\orchard\` |
+| Linux and WSL | `~/.local/share/orchard/`, or `$XDG_DATA_HOME/orchard/` if that's set |
+
+If you start Orchard with `--data-dir`, it's that folder instead. The Python packages are separate, in `.venv` inside Orchard's own folder, and take about 250 MB.
+
+### Disk space
+
+Each photo needs a thumbnail, its search vector and a map icon. Allow about 600 MB per 10,000 photos. The search model adds one copy, shared by every folder. Each HEIC or TIFF photo you open in the viewer also keeps a JPEG up to 4,096 pixels across, so it opens quickly next time.
+
+### Resetting Orchard
+
+Quit Orchard, then delete, inside the data folder:
+
+- `libraries/<id>/` to clear one folder's cache. Its `folder.txt` names the folder it belongs to. Orchard reads the folder again the next time you open it.
+- `models/` to download the search model again.
+- `recent.json` to clear the list of recent folders.
+- The whole data folder to start over.
+
+To reinstall the Python packages, delete `.venv` in Orchard's own folder. The next run installs them again.
+
+### Uninstalling
+
+Quit Orchard, then delete Orchard's own folder, the cloned or unzipped one, and its data folder. On a Mac, also delete `~/Applications/Orchard.app` if you installed it.
+
+If something goes wrong, see [Questions and problems](questions-and-problems.md).

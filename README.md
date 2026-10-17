@@ -1,5 +1,9 @@
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard Photos" height="56"></picture>
 
+<!-- HERO: a screenshot or GIF of a described search, a dropped image and the map goes here, like
+<p><img src="docs/hero.gif" alt="Searching for &quot;dog on a beach&quot; in Orchard" width="800"></p>
+-->
+
 Orchard Photos is a photo browser that runs entirely on your computer. Point it at a folder, and it shows every image inside, subfolders included, as one timeline you can filter and search. You can find a photo by describing it, like "dog on a beach", or by showing it a similar image.
 
 Most photo apps with this kind of search upload your library to a server. Orchard keeps everything local: the search model runs on your computer, nothing is uploaded, and your files are only ever read, never moved or changed.
@@ -8,7 +12,9 @@ Orchard is a small Python server with a React page, shown in its own window. The
 
 ## Quick start
 
-Orchard runs on macOS, Windows and Linux, with Python 3.12, 3.13 or 3.14.
+<!-- DOWNLOADS: links to the Mac DMG and the Windows zip on the Releases page go here, above the steps for running from source. -->
+
+Orchard runs on macOS, Windows and Linux, with Python 3.12, 3.13 or 3.14. If a step fails, see [Questions and problems](docs/questions-and-problems.md).
 
 ### macOS
 
@@ -62,21 +68,20 @@ The first run installs the Python packages into a `.venv` folder beside the code
 - Identical files show once, and bursts, edits and resized copies share one tile.
 - **Map** lays the whole folder out by similarity, so look-alike images sit together.
 
-Visual search and the map need the search model, a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers. Orchard offers to set it up when you open your first folder. Until then, the search bar matches file names. Orchard has been tested with libraries of up to 25,000 photos.
+Visual search and the map need the search model, a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers. Orchard offers to set it up when you open your first folder. Until then, the search bar matches file names. Orchard has been tested with libraries of up to 25,000 photos.
 
 ## Privacy
 
-Orchard only reads your photos. The server listens only on this computer, and rejects requests from other sites, so don't expose it through a public proxy.
+Orchard only goes online to download the search model from Hugging Face once, and for pip to install its Python packages on the first run and after an update changes them. After that, it works offline. Its cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
 
-The only network requests are the one-time model download from Hugging Face, and pip's when the packages are installed. After that, Orchard works offline.
-
-The cache, which holds thumbnails, the search index and the model, lives in `~/Library/Application Support/orchard/` on macOS, `%LOCALAPPDATA%\orchard\` on Windows, and `~/.local/share/orchard/` on Linux. To uninstall Orchard, delete the cloned folder, the cache, and `~/Applications/Orchard.app` if you installed it.
+The server listens only on this computer, and rejects requests from other sites, so don't expose it through a proxy or tunnel. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Documentation
 
-- [Using Orchard](docs/using-orchard.md): browsing, search, the map, near-duplicates and supported files.
+- [Using Orchard](docs/using-orchard.md): browsing, search, the map, supported files, Apple Photos, and where Orchard keeps its data.
+- [Questions and problems](docs/questions-and-problems.md): installing, the search model, missing photos, drives, and reporting a bug.
 - [How Orchard works](docs/how-it-works.md): scanning, visual search, near-duplicate grouping, the map, and where data lives.
-- [Developing Orchard](docs/development.md): setup, live reload, project layout and tests.
+- [Developing Orchard](docs/development.md): setup, live reload, project layout and tests. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

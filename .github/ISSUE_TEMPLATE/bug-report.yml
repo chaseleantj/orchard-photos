@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Orchard doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. [Questions and problems](https://github.com/chaseleantj/orchard-photos/blob/main/docs/questions-and-problems.md) covers the common ones, so check there first.
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - macOS, Apple Silicon
+        - macOS, Intel
+        - Windows, x64
+        - Windows, Arm
+        - Linux
+        - WSL
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: System version
+      placeholder: macOS 15.5, Windows 11 24H2, Ubuntu 24.04
+    validations:
+      required: true
+  # "The release you downloaded" depends on GitHub Releases existing, which the packaging branch adds before launch.
+  - type: input
+    id: version
+    attributes:
+      label: Orchard version
+      description: The release you downloaded, or if you cloned the repository, the output of `git rev-parse --short HEAD`.
+      placeholder: b38f839
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you did, step by step.
+      placeholder: |
+        1. Ran ./orchard ~/Pictures
+        2. Typed "dog on a beach" in the search bar
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: What the terminal printed. The Mac app writes it to `/tmp/orchard.log`.
+      render: text
+  # INTEGRATION: when Info gains Copy diagnostics, add a Diagnostics field asking for its output.
