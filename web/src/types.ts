@@ -57,7 +57,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) throw new Error(data?.error || `${APP_NAME} could not be reached. Check that it is running, then retry.`);
   return data;
 }
-export const post = <T,>(path: string, body?: unknown) => request<T>(path, { method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) });
+export const post = <T,>(path: string, body: unknown = {}) => request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
 /** Thumbnails are small WebP copies; `display` is the original, or a converted JPEG for formats browsers cannot show. */
 export function imageUrl(id: string, size: 'thumbnail' | 'display' = 'thumbnail') { return `/api/images/${id}/${size}`; }
 export const downloadUrl = (id: string, path: string) => `/api/images/${id}/original?${new URLSearchParams({ path, download: '1' })}`;

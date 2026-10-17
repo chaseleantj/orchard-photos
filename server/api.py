@@ -29,6 +29,14 @@ WATCH_SECONDS = 60
 UPLOAD_LIMIT = 20 * 1024 * 1024
 FORM_LIMIT = 64 * 1024
 IMMUTABLE = 'private, max-age=31536000, immutable'
+HOSTS = ('127.0.0.1', 'localhost', '[::1]')
+# Sent with every response. The page runs only its own scripts, and no page can frame it.
+SECURITY_HEADERS = {
+    'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'none'; "
+                               "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+}
 # How long Show in folder waits to hear whether xdg-open found no app. One still running after this found one.
 OPENER_SECONDS = 3
 
@@ -233,20 +241,22 @@ class Handler(BaseHTTPRequestHandler):
     def app(self) -> App:
         return self.server.app
 
-    def allowed(self):
-        host = self.headers.get('Host', '').split(':')[0]
-        if host not in ('127.0.0.1', 'localhost') or self.headers.get('Sec-Fetch-Site') == 'cross-site':
-            return False
+    def allowed(self, path):
+        """Whether the request comes from this app's own page, or from a program rather than a page. The exact Host
+        turns away DNS rebinding, and Origin and Sec-Fetch-Site turn away every other page, even on another local port.
+        A link on another page may still open the app's page, which can't be framed."""
+        hosts = [f'{host}:{self.server.server_port}' for host in HOSTS]
         origin = self.headers.get('Origin')
-        if origin:
-            try:
-                parsed = urlparse(origin)
-                port = parsed.port
-            except ValueError:
-                return False
-            if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost') or port not in (self.server.server_port, APP['devPort']):
-                return False
-        return True
+        opened = self.headers.get('Sec-Fetch-Dest') == 'document' and not path.startswith('/api/')
+        return (self.headers.get('Host') in hosts and (opened or self.headers.get('Sec-Fetch-Site', 'none') in ('same-origin', 'none'))
+                and (origin is None or origin in [f'http://{host}' for host in hosts]))
+
+    def accepted(self, path):
+        """Whether a POST has a type that a form can't send, so another page can't send one without asking first."""
+        media = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        if path == '/api/search/image':
+            return media.startswith('image/') or media == 'application/octet-stream'
+        return media == 'application/json'
 
     def json(self, data, status=200):
         body = json.dumps(data).encode()
@@ -254,9 +264,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
-        self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
         self.wfile.write(body)
+
+    def end_headers(self):
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        super().end_headers()
 
     def body(self, limit):
         try:
@@ -283,10 +297,15 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch(True)
 
     def dispatch(self, post):
-        if not self.allowed():
+        url = urlparse(self.path)
+        if not self.allowed(url.path):
+            logging.warning('Refused %s %s from Host %s, Origin %s, Sec-Fetch-Site %s', self.command, url.path,
+                            self.headers.get('Host'), self.headers.get('Origin'), self.headers.get('Sec-Fetch-Site'))
             self.json({'error': 'This app is available only on this computer.'}, 403)
             return
-        url = urlparse(self.path)
+        if post and not self.accepted(url.path):
+            self.json({'error': 'The request could not be read.'}, 415)
+            return
         params = {key: values[0] for key, values in parse_qs(url.query).items()}
         route = (url.path, post)
         try:
@@ -387,7 +406,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', mime or mimetypes.guess_type(path)[0] or 'application/octet-stream')
         self.send_header('Content-Length', str(path.stat().st_size))
         self.send_header('Cache-Control', cache)
-        self.send_header('X-Content-Type-Options', 'nosniff')
         if download:
             fallback = re.sub(r'[^A-Za-z0-9._-]', '_', path.name)
             self.send_header('Content-Disposition', f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(path.name)}")

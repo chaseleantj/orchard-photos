@@ -1,18 +1,23 @@
+import contextlib
 import errno
 import io
 import json
 from email.message import Message
+from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from server.api import APP, RECENT_LIMIT, App, Handler, Server, arguments, default_data_dir, main, open_browser, picker_command, reveal, wsl_explorer
+from server.api import APP, RECENT_LIMIT, SECURITY_HEADERS, App, Handler, Server, arguments, default_data_dir, main, open_browser, picker_command, reveal, wsl_explorer
 
 PORT = APP['port']
+LOCAL = {'Host': f'localhost:{PORT}'}
+JSON = {**LOCAL, 'Content-Type': 'application/json'}
 
 
 class AppTests(unittest.TestCase):
@@ -92,11 +97,12 @@ class AppTests(unittest.TestCase):
 
 
 class HandlerTests(unittest.TestCase):
-    def dispatch(self, path, headers=None, post=False, body=b''):
+    def dispatch(self, path, headers=LOCAL, post=False, body=b''):
         handler = Handler.__new__(Handler)
+        handler.command = 'POST' if post else 'GET'
         handler.path = path
         handler.headers = Message()
-        for key, value in (headers if headers is not None else {'Host': f'localhost:{PORT}'}).items():
+        for key, value in headers.items():
             handler.headers[key] = value
         handler.server = SimpleNamespace(app=Mock(), server_port=PORT)
         handler.json = Mock()
@@ -105,21 +111,38 @@ class HandlerTests(unittest.TestCase):
         handler.dispatch(post)
         return handler
 
-    def test_foreign_hosts_origins_and_cross_site_requests_are_rejected(self):
-        for headers in ({}, {'Host': 'attacker.example'}, {'Host': 'localhost.attacker.example'},
-                        {'Host': f'localhost:{PORT}', 'Origin': 'https://attacker.example'},
-                        {'Host': f'localhost:{PORT}', 'Origin': 'null'},
-                        {'Host': f'localhost:{PORT}', 'Sec-Fetch-Site': 'cross-site'}):
-            with self.subTest(headers=headers):
-                handler = self.dispatch('/api/status', headers)
-                self.assertEqual(handler.json.call_args.args[1], 403)
-                handler.server.app.status.assert_not_called()
+    def test_foreign_hosts_origins_and_other_sites_are_refused(self):
+        # Other local ports count as other pages, Vite's included, and a Host without this port may be DNS rebinding.
+        for headers in ({}, {'Host': 'attacker.example'}, {'Host': f'localhost.attacker.example:{PORT}'}, {'Host': 'localhost'},
+                        {'Host': f'localhost:{PORT + 1}'}, {'Host': f'attacker.example:{PORT}'},
+                        {**LOCAL, 'Origin': 'https://attacker.example'}, {**LOCAL, 'Origin': 'null'},
+                        {**LOCAL, 'Origin': f'http://localhost:{APP["devPort"]}'}, {**LOCAL, 'Origin': f'http://127.0.0.1:{PORT + 1}'},
+                        {**LOCAL, 'Origin': f'https://localhost:{PORT}'}, {**LOCAL, 'Origin': f'http://localhost:{PORT}/'},
+                        {**LOCAL, 'Sec-Fetch-Site': 'cross-site'}, {**LOCAL, 'Sec-Fetch-Site': 'same-site'}):
+            for post in (False, True):
+                with self.subTest(headers=headers, post=post), self.assertLogs(level='WARNING') as logs:
+                    handler = self.dispatch('/api/folder' if post else '/api/status', {**headers, 'Content-Type': 'application/json'}, post, b'{}')
+                    self.assertEqual(handler.json.call_args.args[1], 403)
+                    self.assertIn('Refused', logs.output[0])
+                    self.assertEqual(handler.server.app.method_calls, [])
 
-    def test_local_browser_and_dev_server_origins_are_allowed(self):
-        for origin in (f'http://localhost:{PORT}', f'http://127.0.0.1:{PORT}', f'http://localhost:{APP["devPort"]}'):
-            with self.subTest(origin=origin):
-                handler = self.dispatch('/api/status', {'Host': f'127.0.0.1:{PORT}', 'Origin': origin})
-                handler.server.app.status.assert_called_once_with()
+    def test_the_own_page_and_programs_without_a_page_are_allowed(self):
+        for host in (f'127.0.0.1:{PORT}', f'localhost:{PORT}', f'[::1]:{PORT}'):
+            for extra in ({}, {'Origin': f'http://{host}', 'Sec-Fetch-Site': 'same-origin'}, {'Sec-Fetch-Site': 'none'}):
+                with self.subTest(host=host, extra=extra):
+                    handler = self.dispatch('/api/status', {'Host': host, **extra})
+                    handler.server.app.status.assert_called_once_with()
+
+    def test_a_link_on_another_page_opens_the_page_but_reaches_nothing_else(self):
+        link = {**LOCAL, 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'document'}
+        handler = self.dispatch('/', link)
+        handler.file.assert_called_once()
+        for path, headers, post in (('/api/images/abc/original', link, False), ('/', {**link, 'Sec-Fetch-Dest': 'iframe'}, False),
+                                    ('/', {**link, 'Origin': 'https://attacker.example', 'Content-Type': 'application/json'}, True)):
+            with self.subTest(path=path, headers=headers), self.assertLogs(level='WARNING'):
+                handler = self.dispatch(path, headers, post)
+                self.assertEqual(handler.json.call_args.args[1], 403)
+                handler.file.assert_not_called()
 
     def test_custom_port_accepts_same_origin(self):
         handler = Handler.__new__(Handler)
@@ -127,9 +150,46 @@ class HandlerTests(unittest.TestCase):
         handler.headers = Message()
         handler.headers['Host'] = 'localhost:4319'
         handler.headers['Origin'] = 'http://localhost:4319'
-        self.assertTrue(handler.allowed())
+        self.assertTrue(handler.allowed('/api/status'))
         handler.headers.replace_header('Origin', 'http://localhost:bad')
-        self.assertFalse(handler.allowed())
+        self.assertFalse(handler.allowed('/api/status'))
+
+    def test_posts_need_a_type_that_a_form_cannot_send(self):
+        # A form can post these without the browser asking the server first.
+        for kind in (None, 'text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x'):
+            for path in ('/api/folder', '/api/scan', '/api/search/image'):
+                with self.subTest(kind=kind, path=path):
+                    handler = self.dispatch(path, {**LOCAL, **({'Content-Type': kind} if kind else {}), 'Content-Length': '2'}, True, b'{}')
+                    self.assertEqual(handler.json.call_args.args[1], 415)
+                    self.assertEqual(handler.server.app.method_calls, [])
+        for path, kind in (('/api/scan', 'application/json; charset=utf-8'), ('/api/search/image', 'image/png'),
+                           ('/api/search/image', 'application/octet-stream')):
+            with self.subTest(kind=kind, path=path):
+                handler = self.dispatch(path, {**LOCAL, 'Content-Type': kind, 'Content-Length': '2'}, True, b'{}')
+                handler.server.app.current.assert_called_once_with()
+        handler = self.dispatch('/api/folder', {**LOCAL, 'Content-Type': 'image/png', 'Content-Length': '2'}, True, b'{}')
+        self.assertEqual(handler.json.call_args.args[1], 415)
+
+    def test_every_response_says_it_may_not_be_framed_or_sniffed(self):
+        server = Server(('127.0.0.1', 0), Handler)
+        server.app = Mock(**{'status.return_value': {}})
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        own, rebound = f'127.0.0.1:{server.server_port}', f'attacker.example:{server.server_port}'
+        for method, path, host, status in (('GET', '/api/status', own, 200), ('GET', '/', own, 200), ('PUT', '/api/status', own, 501),
+                                           ('GET', '/api/status', rebound, 403)):
+            with self.subTest(method=method, path=path, host=host), self.assertLogs(level='WARNING') if status == 403 else contextlib.nullcontext():
+                connection = HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+                self.addCleanup(connection.close)
+                connection.request(method, path, headers={'Host': host})
+                response = connection.getresponse()
+                response.read()
+                self.assertEqual(response.status, status)
+                for name, value in SECURITY_HEADERS.items():
+                    self.assertEqual(response.getheader(name), value)
+        self.assertIn("frame-ancestors 'none'", SECURITY_HEADERS['Content-Security-Policy'])
+        self.assertEqual(SECURITY_HEADERS['X-Frame-Options'], 'DENY')
 
     def test_static_and_image_path_traversal_cannot_read_files(self):
         for path in ('/../server/api.py', '/../../etc/passwd', '/api/images/../original', '/api/images/%2e%2e/original'):
@@ -142,24 +202,24 @@ class HandlerTests(unittest.TestCase):
     def test_image_upload_limit_is_checked_before_reading(self):
         for size in ('0', str(20 * 1024 * 1024 + 1), 'invalid'):
             with self.subTest(size=size):
-                handler = self.dispatch('/api/search/image', {'Host': f'localhost:{PORT}', 'Content-Length': size}, post=True)
+                handler = self.dispatch('/api/search/image', {**LOCAL, 'Content-Type': 'image/jpeg', 'Content-Length': size}, post=True)
                 self.assertEqual(handler.json.call_args.args[1], 400)
                 handler.server.app.current.return_value.pictures.assert_not_called()
 
     def test_opening_a_folder_reads_its_path_from_the_body(self):
         body = json.dumps({'path': '/Volumes/Photos'}).encode()
-        handler = self.dispatch('/api/folder', {'Host': f'localhost:{PORT}', 'Content-Length': str(len(body))}, post=True, body=body)
+        handler = self.dispatch('/api/folder', {**JSON, 'Content-Length': str(len(body))}, post=True, body=body)
         handler.server.app.open.assert_called_once_with('/Volumes/Photos')
         for broken in (b'not json', b'[1, 2]'):
             with self.subTest(body=broken):
-                handler = self.dispatch('/api/folder', {'Host': f'localhost:{PORT}', 'Content-Length': str(len(broken))}, post=True, body=broken)
+                handler = self.dispatch('/api/folder', {**JSON, 'Content-Length': str(len(broken))}, post=True, body=broken)
                 self.assertEqual(handler.json.call_args.args[1], 400)
                 handler.server.app.open.assert_not_called()
 
     def test_a_second_launch_brings_the_window_forward_when_there_is_one(self):
         for window in (Mock(), None):
             with self.subTest(window=window):
-                handler = self.dispatch('/api/window/front', post=True)
+                handler = self.dispatch('/api/window/front', JSON, post=True)
                 handler.server.app.window = window
                 handler.dispatch(True)
                 self.assertEqual(handler.json.call_args.args[0], {'window': window is not None})
