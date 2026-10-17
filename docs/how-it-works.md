@@ -20,7 +20,7 @@ The scanner walks the whole folder and finds every image file. For each new or c
 2. Reads the width, height, camera and date taken from EXIF.
 3. Draws a 720 px WebP thumbnail.
 
-Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. On later scans, a file whose size and modification time haven't changed is skipped, so rescans are fast. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
+Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
 
 The server rescans the open folder every minute.
 
@@ -28,27 +28,35 @@ The server rescans the open folder every minute.
 
 Orchard uses SigLIP 2 ([`google/siglip2-base-patch16-256`](https://huggingface.co/google/siglip2-base-patch16-256)), a model trained to turn both images and text into vectors. An image and a sentence that describe the same thing get vectors that point in a similar direction. It reads descriptions in many languages.
 
-After a scan, the server runs each new thumbnail through SigLIP 2 and stores the vector, newest images first, by the date the grid shows. On an Apple M5 this takes about 10 ms per image on the GPU, so a folder of 20,000 images is ready in about 3 minutes. On the CPU it takes about 50 ms per image, or about 20 minutes. To search, it turns your description (or your reference image) into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
+After a scan, the server runs each new thumbnail through the model and stores its vector, newest images first. To search, it turns your description, or your example image, into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
 
-Orchard runs SigLIP 2 with ONNX Runtime, from an ONNX export of the same weights ([`onnx-community/siglip2-base-patch16-256-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-256-ONNX)). The image half is full precision and gives the same vectors as the original. The text half is the 8-bit copy, which is a quarter of the size and ranks searches just as well. The model is downloaded once from Hugging Face at a pinned revision, and is shared by every folder. It runs on the CPU, or on an NVIDIA GPU if `onnxruntime-gpu` is installed.
+The model runs with ONNX Runtime, from an ONNX export of the same weights ([`onnx-community/siglip2-base-patch16-256-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-256-ONNX)). The image half is full precision. The text half is the 8-bit copy, which is a quarter of the size and ranks searches just as well. Both are downloaded once from Hugging Face at a pinned revision, and shared by every folder.
 
-On an Apple Silicon Mac, the image half runs on the GPU through Core ML instead, about 7 times faster than on the CPU. Core ML can't compile the published file well, so Orchard downloads a copy rewritten for it, from [`ChaseLean/siglip2-base-patch16-256-coreml-fp16`](https://huggingface.co/ChaseLean/siglip2-base-patch16-256-coreml-fp16). The copy is the export's 16-bit file with three changes that leave the math the same: the batch is fixed at 16, the first layer states its padding, and each weight matrix is stored with an extra dimension of 1. It is half the size of the full-precision file, so the whole download is about 500 MB instead of 690 MB. `scripts/build-coreml-model` builds it, and Orchard checks its SHA-256 after downloading it. Its vectors match the CPU's to a cosine of 0.9997 or more, so both are stored as the same model. Before using Core ML, Orchard runs a fixed test image and compares the vector with the CPU's, stored in `server/parity-vector.npy`. If Core ML fails to load the model or the vector is off, the CPU runs the full-precision file, which is downloaded then if needed. The 16-bit file is slower than the full-precision one on a CPU, so other computers keep the full-precision file.
+Where it can, Orchard runs the image half on the GPU:
 
-On Windows with an x64 processor, the image half runs on the GPU through DirectML, which works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. It runs the same full-precision file as the CPU and gives the same vectors, so the download doesn't change. On a laptop with an Intel Iris Xe, preparing an image took about 300 ms instead of 470 ms on its CPU. Orchard checks the same test image first, and if DirectML fails to load the model or the vector is off, the CPU runs it. The text half stays on the CPU on every computer, where a search takes a few tens of milliseconds, against about 150 through DirectML. Windows on Arm has no DirectML build of ONNX Runtime, so it uses the CPU.
+- **Apple Silicon Macs** use Core ML, about 7 times faster than the CPU. Core ML can't compile the published file well, so Orchard downloads a 16-bit copy rewritten for it from [`ChaseLean/siglip2-base-patch16-256-coreml-fp16`](https://huggingface.co/ChaseLean/siglip2-base-patch16-256-coreml-fp16), and checks its SHA-256. `scripts/build-coreml-model` builds that file, and the math is unchanged.
+- **Windows on x64** uses DirectML, which works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. It runs the same file as the CPU.
+- **Everything else**, including Windows on Arm and Linux, uses the CPU. On Linux, installing `onnxruntime-gpu` in place of `onnxruntime` runs it on an NVIDIA GPU through CUDA.
+
+Before using a GPU, Orchard runs a fixed test image and compares its vector with the CPU's, stored in `server/parity-vector.npy`. If the GPU fails to load the model or its vector is off, the CPU runs it instead, and on a Mac, downloads the full-precision file first. The text half always runs on the CPU, where a search takes a few tens of milliseconds.
+
+Vectors are stored with the name of the model that made them. Vectors from any other model are deleted when a folder opens, along with the map and stacks made from them, since vectors from two models can't be compared.
 
 ## Near-duplicates
 
-Bursts, edits and resized copies are different files, so they have different hashes. Their vectors, however, are almost the same. Orchard groups images whose vectors have a cosine similarity of 0.9775 or more. Versions of one design, like an illustration in two colours, can score nearly that high, so the cut sits close to 1.
+Bursts, edits and resized copies are different files, so they have different hashes, but their vectors are almost the same. Orchard groups images whose vectors have a cosine similarity of 0.9775 or more. Versions of one design, like an illustration in two colours, can score nearly that high, so the cut sits close to 1.
 
-Each group forms around one centre, and every member must match that centre. This stops a slow series, like a plant photographed every day, from chaining into one long group. Crops differ more than resized copies, so Orchard also groups files in the same folder whose names differ only by a size or copy suffix (like `photo-800x400.jpg` and `photo (1).jpg`), as long as they look related, with a cosine similarity of at least 0.72.
+Each group forms around one centre, and every member must match that centre. This stops a slow series, like a plant photographed every day, from chaining into one long group. Crops differ more than resized copies, so Orchard also groups files in the same folder whose names differ only by a size or copy suffix, like `photo-800x400.jpg` and `photo (1).jpg`, as long as their cosine similarity is at least 0.72.
 
 The image that fronts each group is the sharpest one, measured by the variance of the Laplacian. Between copies of one picture, which are about equally sharp, the larger one wins.
 
 ## The map
 
-The map uses UMAP to squeeze the vectors down to two dimensions, so similar images land close together. UMAP links each image to its 15 nearest neighbours, then arranges the images so linked ones pull together while random pairs push apart. Orchard has its own short version in NumPy, which avoids several hundred MB of dependencies. In folders of more than 10,000 images, comparing every image with every other would take most of the time, so Orchard sorts the images into clusters and compares each one only with the clusters around it. That finds about 99.5% of the true neighbours, and a folder of 100,000 images lays out in seconds on an Apple M5. Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard only fits the layout again once new images make up more than a fifth of the map.
+The map uses UMAP to squeeze the vectors down to two dimensions, so similar images land close together. UMAP links each image to its 15 nearest neighbours, then arranges the images so linked ones pull together while random pairs push apart. Orchard has its own short version in NumPy, which saves several hundred MB of dependencies. In folders of more than 10,000 images, it finds neighbours by sorting the images into clusters and comparing each one only with the clusters around it, which keeps the layout to seconds.
 
-To draw thousands of images quickly, the server packs small icons into atlas sheets of 1,024 icons each. The page loads a handful of sheets instead of one request per image.
+Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard fits the layout again only once new images make up more than a fifth of the map.
+
+To draw thousands of images quickly, the server packs small icons into sheets of 1,024 icons each, so the page loads a handful of sheets instead of one image per request.
 
 ## The server
 
@@ -58,7 +66,7 @@ Only one folder is open at a time. Opening another folder closes the current one
 
 ## Where data lives
 
-The cache lives in `~/Library/Application Support/orchard/` on macOS, `~/.local/share/orchard/` on Linux, and `%LOCALAPPDATA%\orchard\` on Windows. You can change it with `--data-dir`.
+The cache lives in `~/Library/Application Support/orchard/` on macOS, `%LOCALAPPDATA%\orchard\` on Windows, and `~/.local/share/orchard/` on Linux. You can change it with `--data-dir`.
 
 | Path | Contents |
 | --- | --- |

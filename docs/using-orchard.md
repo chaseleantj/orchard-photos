@@ -1,40 +1,34 @@
 # Using Orchard
 
-This guide covers everything you can do in Orchard once it's running. To install it, see the [README](../README.md).
+This guide covers what you can do in Orchard once it's running. To install it, see the [README](../README.md).
 
 ## Opening a folder
 
-Choose a folder with **Folder**, at the right of the line under the search bar. This opens the system folder dialog. In the browser on Linux, it needs `zenity` or `kdialog`, and in the browser on Windows there is none. You can also type or paste a path, or pick a recent folder. You can also open a folder from the terminal:
+Choose a folder with **Folder**, at the right of the line under the search bar. It opens the system folder dialog, or you can type or paste a path, or pick a recent folder. In the browser, the dialog needs `zenity` or `kdialog` on Linux, and Windows has none, so type the path there.
 
-```bash
-./orchard ~/Pictures
-```
+You can also open a folder from the terminal, with `./orchard ~/Pictures`, or `orchard.cmd C:\Users\you\Pictures` on Windows. If Orchard is already open, this switches its window to the folder and brings it to the front.
 
-On Windows, run `orchard.cmd C:\Users\you\Pictures` instead.
-
-If Orchard is already open, this switches its window to the folder and brings it to the front, instead of opening a second one.
+Each folder keeps its own cache, so switching back to a folder you've opened before is quick. If the folder goes away, for example on an unplugged drive, Orchard keeps showing the last scan and says the folder is unavailable.
 
 ## The window and the browser
 
-Orchard opens in its own window, and closing the window quits it. To use your browser instead, start it with `--browser`:
+Orchard opens in its own window, and closing the window quits it. The window remembers its size and place, and the page remembers settings like the theme and filters.
 
-```bash
-./orchard ~/Pictures --browser
-```
+To use your browser instead, start Orchard with `--browser`, like `./orchard ~/Pictures --browser`. Orchard is then at http://127.0.0.1:4400, and stops when you press Ctrl+C in the terminal.
 
-Orchard is then at http://127.0.0.1:4400, and stops when you press Ctrl+C in the terminal.
+On Linux, the window needs the system's GTK packages, `python3-gi` and `gir1.2-webkit2-4.1`. They work with the system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why. Under WSL, the browser is your Windows one, and Show in folder opens File Explorer.
 
-The window remembers its size and place, and the page remembers settings like the theme. On a Mac, the Dock app and `./orchard` in a terminal each keep their own, because macOS stores them per app.
+## The Mac app
 
-On Linux, the window needs GTK's web view for Python, which pip can't install. On Ubuntu and Debian, install it with `sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1`. Orchard uses these system packages, so they need to match the Python that runs it. That's the case when it's your system's own `python3`. Without them, or without a display, Orchard opens in the browser and says why.
+`scripts/install-app` installs `~/Applications/Orchard.app`, which opens Orchard's window from the Dock or Spotlight. The first start sets things up, which takes about a minute. If Orchard can't start, the app shows the end of its log, `/tmp/orchard.log`.
 
-Each folder keeps its own cache, so switching back to a folder you've opened before is quick. If the folder goes away, for example on an unplugged drive, Orchard keeps showing the last scan and tells you the folder is unavailable.
+The app finds Python the way your terminal did when you ran `scripts/install-app`, so run it again if you install Python somewhere new. With Python from Homebrew or python.org, the window shows in the Dock as Orchard. With other Pythons, like pyenv's, it shows as Python.
 
 ## Browsing
 
-Images are shown newest first, grouped by month. Each photo is dated by when it was taken, from its EXIF data. Images without EXIF data use the date the file was last changed.
+Images are shown newest first, grouped by month. A photo is dated by when it was taken, from its EXIF data. Images without EXIF data use the date the file was last changed.
 
-The column of years on the right is a timeline of the whole folder. Each year takes up space based on how many images it holds. Click or drag it to jump to a month. When it's focused, you can use these keys:
+The column of years on the right is a timeline of the whole folder, where each year takes space in proportion to its images. Click or drag it to jump to a month. When it's focused, you can use these keys:
 
 | Key | Action |
 | --- | --- |
@@ -49,7 +43,7 @@ Click an image to open it. The viewer shows the file name, date, folder, size an
 From the viewer, you can:
 
 - Find similar images.
-- Copy the image (Cmd+C on a Mac, Ctrl+C elsewhere).
+- Copy the image, with Cmd+C on a Mac or Ctrl+C elsewhere.
 - Download the original. In the window, this asks where to save it.
 - Show it in Finder, in Explorer on Windows, or in your file manager on Linux.
 - Click its folder to show only images from that folder.
@@ -59,9 +53,9 @@ Use the left and right arrow keys to move between images, and Escape to close th
 
 ## Duplicates
 
-Identical files appear once. The viewer lists every place a copy is saved.
+Identical files appear once, and the viewer lists every place a copy is saved.
 
-Images that look almost the same, like bursts, edits and resized copies, share one tile. The tile shows the sharpest and largest one, with a badge for how many there are. Open the tile to see all of them, and use the up and down arrow keys to switch between them.
+Images that look almost the same, like bursts, edits and resized copies, share one tile. The tile shows the sharpest and largest of them, with a badge for how many there are. Open the tile to see them all, and use the up and down arrow keys to switch between them.
 
 ## Filtering
 
@@ -75,19 +69,19 @@ Filters also apply to search and the map.
 
 ## Searching
 
-Once visual search is set up, search finds images by what they look like. Type a description, like "sunset over water", and press Enter. Until visual search is set up, search matches file names instead. The search options button switches between the two.
+Once visual search is set up, search finds images by what they show. Type a description, like "sunset over water", and press Enter. Until then, search matches file names. The search options button, at the right of the search bar, switches between the two.
 
 You can also search with an image:
 
 - Paste an image into the window.
-- Drop an image anywhere along the top of the window. This works with files, images from the grid, and images from the map.
+- Drop an image anywhere along the top of the window. This works with files, and with images from the grid and the map.
 - Choose **Find similar** in the viewer.
 
 Searching with an image shows its 100 closest matches.
 
 ## The map
 
-**Map** lays out the whole folder by similarity, so images that look alike sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. When you search, the matches light up and the rest dim.
+**Map** lays the whole folder out by similarity, so images that look alike sit together. Scroll or pinch to zoom, drag to move, and click an image to open it. When you search, the matches light up and the rest dim.
 
 To search with an image from the map, press and hold it until it lifts, then drag it to the top of the window.
 
@@ -95,29 +89,26 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 ## Setting up visual search
 
-Visual search and the map need a model called SigLIP 2. It's a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that. On an Apple Silicon Mac, preparing a folder takes about 10 ms per image on the GPU, so about 3 minutes for 20,000 images, measured on an Apple M5. On the CPU, it takes about 50 ms per image on the M5 and more on most laptops, so 20,000 images take 20 minutes or longer. On a Windows PC with a DirectX 12 GPU, the GPU prepares images too: on a laptop with Intel Iris Xe graphics, it took about 300 ms per image instead of 470 ms on the CPU, so 20,000 images take about 1 hour 40 minutes instead of 2 hours 40. The newest images are prepared first, so you can search recent photos while the rest of the folder is still being prepared.
+Visual search and the map need a model called SigLIP 2. It's a one-time download of about 500 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
 
-When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, you can set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search automatically.
+When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own.
 
-## Background work and Library
+Preparing takes a moment per image. On an Apple Silicon Mac, a folder of 20,000 images is ready in a few minutes. On a computer that prepares images on its CPU, it takes from 20 minutes to a few hours. The newest images are prepared first, so you can search recent photos while the rest are still being prepared.
 
-Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. You can search images that are already prepared while the rest are still in progress.
+## Background work and Info
 
-Click the progress, or the ⓘ button, to open **Info**. It shows:
-
-- How many images and files the folder holds, and how long background work has left.
-- A button to rescan the folder.
+Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds, how long background work has left, and a button to rescan the folder.
 
 You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own.
 
 ## Supported files
 
-Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG preview of those. **Download** still gives you the original file.
+Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG of those, and **Download** still gives you the original.
 
 Orchard skips:
 
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
-- Photos libraries, since macOS keeps them closed to other apps. Library tells you when it finds one. To browse your Apple Photos, export them to a folder first.
-- Damaged, empty and very large files (over 300 megapixels). These are listed in Library with the reason.
+- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, export them to a folder first.
+- Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
 
 Symlinked folders are followed once, so a link loop can't trap the scan.

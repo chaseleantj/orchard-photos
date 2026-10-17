@@ -1,30 +1,30 @@
 # Developing Orchard
 
-This guide is for working on Orchard's code. To understand how the parts fit together first, read [How Orchard works](how-it-works.md).
+This guide is for working on Orchard's code. To see how the parts fit together first, read [How Orchard works](how-it-works.md).
 
 ## Setup
 
-Orchard runs on macOS, Linux and Windows, and needs Python 3.12 to 3.14. ONNX Runtime has no packages for 3.15 yet. Running `./orchard`, or `orchard.cmd` on Windows, once installs the Python packages. To do it by hand:
+Orchard needs Python 3.12 to 3.14, since ONNX Runtime has no packages for 3.15 yet. Running `./orchard`, or `orchard.cmd` on Windows, once installs the Python packages into `.venv`. It makes a fresh `.venv` whenever `requirements.txt` changes. To do it by hand:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-On Linux, `./orchard` makes `.venv` with `--system-site-packages`, so the window can use the distribution's GTK bindings (`python3-gi` and `gir1.2-webkit2-4.1`), which pip can't install. The pinned packages in `requirements.txt` install into `.venv`, but pip may reuse a distribution package for one of their unpinned dependencies.
+On Linux, `./orchard` makes `.venv` with `--system-site-packages`, so the window can use the distribution's GTK bindings, `python3-gi` and `gir1.2-webkit2-4.1`, which pip can't install.
 
-On Windows, the environment's Python is `.venv\Scripts\python.exe`, and `orchard.cmd` doesn't rebuild the page, so run `npm run build` yourself after changing the frontend. ONNX Runtime needs the Microsoft Visual C++ Redistributable there. Without it, visual search says how to install it.
+On Windows, the environment's Python is `.venv\Scripts\python.exe`, and `requirements.txt` installs `onnxruntime-directml` in place of `onnxruntime` on x64.
 
-Search runs SigLIP 2 with ONNX Runtime on the CPU, or on the GPU: through Core ML on an Apple Silicon Mac, and through DirectML on Windows x64, where `requirements.txt` installs `onnxruntime-directml` in place of `onnxruntime`. DirectML works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. Windows on Arm has no DirectML build, so it uses the CPU. On Linux, to use an NVIDIA GPU, install `onnxruntime-gpu` in place of `onnxruntime`, and search uses CUDA. `./orchard` makes a fresh `.venv` whenever `requirements.txt` changes, so install `onnxruntime-gpu` again after that.
+To use an NVIDIA GPU on Linux, install `onnxruntime-gpu` in place of `onnxruntime` in `.venv`. Install it again after `requirements.txt` changes, since `./orchard` then makes a fresh `.venv`.
 
-The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18+:
+The built page in `dist/` is committed, so running Orchard needs no Node. To work on the frontend, you need Node 18 or later:
 
 ```bash
 npm ci
 npm run build
 ```
 
-Commit `dist/` with your change. CI fails when it doesn't match the sources. Once `node_modules` exists, `./orchard` also rebuilds the page when its sources change.
+Commit `dist/` with your change, since CI fails when it doesn't match the sources. Once `node_modules` exists, `./orchard` rebuilds the page when its sources change. `orchard.cmd` doesn't, so run `npm run build` yourself on Windows.
 
 ## Running with live reload
 
@@ -58,73 +58,68 @@ The server takes these options:
 | `server/api.py` | The HTTP server, API routes and command line. |
 | `server/window.py` | The native window, through pywebview, and its folder dialog. |
 | `server/library.py` | One folder's library, and the queries the API answers from it. |
+| `server/cache.py` | Where a folder's cache keeps its SQLite index, thumbnails and previews. |
 | `server/scanner.py` | Finds image files, reads metadata and draws thumbnails. |
 | `server/semantic.py` | Downloads and runs SigLIP 2 with ONNX Runtime, and stores each folder's vectors. |
 | `server/groups.py` | Groups near-duplicates. |
 | `server/layout.py` | Lays out the map with UMAP, written in NumPy. |
 | `server/atlas.py` | Packs map icons into sheets. |
+| `server/parity-vector.npy` | The vector the CPU gives for the test image that a GPU must match. |
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |
-| `dist/` | The built page. Committed, so running Orchard needs no Node. |
+| `dist/` | The built page. |
 | `tests/` | Python tests, one file per server module. |
-| `scripts/install-app` | Builds the macOS app that opens Orchard's window from the Dock. Mac only. |
 | `orchard`, `orchard.cmd` | The launchers for macOS and Linux, and for Windows. They find a supported Python, install the packages, and start the server with `--window`. |
+| `scripts/install-app` | Builds the Mac app that opens Orchard from the Dock. |
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
-| `scripts/build-coreml-model` | Builds the image encoder Orchard runs through Core ML, and the parity vector Orchard checks it against. |
-| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows. |
+| `scripts/build-coreml-model` | Builds the Core ML image encoder and the parity vector. |
 | `app.json` | The app's name, command name and ports. |
+| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows. |
 
 ## Tests
 
-Run the Python tests and the TypeScript build check:
+Run the Python tests and the TypeScript check:
 
 ```bash
 npm test
-```
-
-`npm test` runs `.venv/bin/python`, which Windows doesn't have. There, run `.venv\Scripts\python -m unittest discover -s tests`. Tests that need symlinks or folder permissions are skipped on Windows.
-
-```bash
 npm run build
 ```
 
-The tests never download the model. They replace the model with fixed vectors.
+On Windows, run `.venv\Scripts\python -m unittest discover -s tests` instead of `npm test`. Tests that need symlinks or folder permissions are skipped there. The tests never download the model. They replace it with fixed vectors.
 
-The smoke test runs Orchard the way a user does. It installs and starts it through `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too:
+The smoke test runs Orchard the way a user does. It starts `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too. Add `--visual` to also download the model and check that a search finds the right image:
 
 ```bash
-scripts/smoke-test
+scripts/smoke-test --visual
 ```
 
-On Windows, run `python scripts\smoke-test`.
-
-Add `--visual` to also download the search model and check that a search finds the right image. CI runs the smoke test and the Python tests on Ubuntu, macOS and Windows, and checks that `dist/` matches the sources. To run the visual check there, start the workflow by hand with **visual** ticked.
+On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows, and checks that `dist/` matches the sources. To run the visual check in CI, start the workflow by hand with **visual** ticked.
 
 ## The Core ML model
 
-On an Apple Silicon Mac, Orchard downloads its image encoder from its own Hugging Face repository instead of the ONNX export, as [How Orchard works](how-it-works.md#visual-search) describes. `scripts/build-coreml-model` makes that file from the export's pinned revision, and prints its SHA-256. The same input always gives the same file. It needs the `onnx` package, which the app doesn't:
+On an Apple Silicon Mac, Orchard downloads its image encoder from its own Hugging Face repository. `scripts/build-coreml-model` makes that file from the ONNX export's pinned revision, and prints its SHA-256. The same input always gives the same file. It needs the `onnx` package, which the app doesn't:
 
 ```bash
 .venv/bin/pip install onnx==1.23.2
 .venv/bin/python scripts/build-coreml-model build/
 ```
 
-To publish a new version, upload the file to the repository named by `CORE_ML_REPOSITORY` in `server/semantic.py`, then set `CORE_ML_REVISION` to the upload's commit, and `CORE_ML_SHA256` and its entry in `SIZES` to what the script printed. If the model or the test image changes, add `--parity` to also write `server/parity-vector.npy`, the vector the full-precision encoder gives on the CPU for the test image.
+To publish a new version, upload the file to `CORE_ML_REPOSITORY` in `server/semantic.py`, then set `CORE_ML_REVISION` to the upload's commit, and `CORE_ML_SHA256` and its entry in `SIZES` to what the script printed. If the model or the test image changes, add `--parity` to also write `server/parity-vector.npy`.
 
-To try the Core ML path without the download, put the built file where the download would go, under the data folder's `models` folder:
+To try the Core ML path without the download, put the built file where the download would go, in the data folder:
 
 ```text
-models--<owner>--<name>/snapshots/<CORE_ML_REVISION>/vision_model_fp16_coreml.onnx
+models/models--<owner>--<name>/snapshots/<CORE_ML_REVISION>/vision_model_fp16_coreml.onnx
 ```
 
 Orchard logs a warning when it falls back to the CPU.
 
 ## Renaming
 
-The app's name, command name and ports live in `app.json`. The window title, wordmark, messages, data folder and browser storage keys all read from it. A few places carry the name directly, and need to change by hand:
+The app's name, command name and ports live in `app.json`, which the window title, wordmark, messages, data folder and browser storage keys read. These carry the name directly, and need to change by hand:
 
 - The logo, in `web/src/Logo.tsx`, `public/` and `docs/`, and the app icons in `assets/`.
 - The package name in `package.json`.
-- The `orchard` and `orchard.cmd` launcher files.
+- The `orchard` and `orchard.cmd` launchers.
 - The Mac app in `scripts/install-app`: its name, bundle identifier, icon and log file.
 - `server/window.py`: the `ORCHARD_BUNDLE` variable the Mac app sets, and the icon paths.
 - The docs.
