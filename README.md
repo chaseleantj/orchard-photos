@@ -14,7 +14,7 @@ Orchard is a small Python server with a React page, shown in its own window. The
 
 <!-- DOWNLOADS: links to the Mac DMG and the Windows zip on the Releases page go here, above the steps for running from source. -->
 
-Orchard runs on macOS, Windows and Linux, with Python 3.12, 3.13 or 3.14. If a step fails, see [Questions and problems](docs/using-orchard.md#questions-and-problems).
+Orchard runs on macOS, Windows and Linux, with Python 3.12, 3.13 or 3.14. If a step fails, see [Questions and problems](docs/questions-and-problems.md).
 
 ### macOS
 
@@ -72,13 +72,14 @@ Visual search and the map need the search model, a one-time download of about 50
 
 ## Privacy
 
-Orchard only goes online to download the search model from Hugging Face once, and for pip to install its Python packages. After that, it works offline. Its cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
+Orchard only goes online to download the search model from Hugging Face once, and for pip to install its Python packages on the first run and after an update changes them. After that, it works offline. Its cache stays in a [data folder](docs/using-orchard.md#where-orchard-keeps-its-data) on your computer.
 
 The server listens only on this computer, and rejects requests from other sites, so don't expose it through a proxy or tunnel. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Documentation
 
-- [Using Orchard](docs/using-orchard.md): browsing, search, the map, supported files, Apple Photos, and [questions and problems](docs/using-orchard.md#questions-and-problems).
+- [Using Orchard](docs/using-orchard.md): browsing, search, the map, supported files, Apple Photos, and where Orchard keeps its data.
+- [Questions and problems](docs/questions-and-problems.md): installing, the search model, missing photos, drives, and reporting a bug.
 - [How Orchard works](docs/how-it-works.md): scanning, visual search, near-duplicate grouping, the map, and where data lives.
 - [Developing Orchard](docs/development.md): setup, live reload, project layout and tests. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and problems
-    url: https://github.com/chaseleantj/orchard-photos/blob/main/docs/using-orchard.md#questions-and-problems
+    url: https://github.com/chaseleantj/orchard-photos/blob/main/docs/questions-and-problems.md
     about: Answers to common install, search and photo questions.
   - name: Report a security vulnerability
     url: https://github.com/chaseleantj/orchard-photos/security/advisories/new
