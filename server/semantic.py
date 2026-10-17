@@ -1,17 +1,15 @@
 """Private, on-device SigLIP 2 search. One encoder is shared by every folder; each folder keeps its own embeddings."""
 
-from contextlib import contextmanager
 import hashlib
 from io import BytesIO
 import logging
 import os
 from pathlib import Path
 import platform
-import sqlite3
 import sys
 import threading
 
-from server.scanner import thumbnail_path
+from server.cache import connect, thumbnail_path
 
 # The embedding space. Stored vectors are keyed by it, so vectors from any other model are never compared with its own.
 MODEL = "google/siglip2-base-patch16-256"
@@ -311,7 +309,6 @@ class SemanticIndex:
 
     def __init__(self, directory: Path, encoder: Encoder):
         self.directory = Path(directory)
-        self.database = self.directory / "library.sqlite"
         self.encoder = encoder
         self._index_lock = threading.Lock()
         self._state_lock = threading.Lock()
@@ -320,7 +317,7 @@ class SemanticIndex:
         # Images the last run could not read, so they don't keep the folder from being ready.
         self._unreadable = frozenset()
         self._matrix = None
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS semantic_embeddings (
                     image_id TEXT NOT NULL,
@@ -330,21 +327,12 @@ class SemanticIndex:
                 )
             """)
 
-    @contextmanager
-    def _connect(self):
-        connection = sqlite3.connect(self.database, timeout=30)
-        try:
-            with connection:
-                yield connection
-        finally:
-            connection.close()
-
     def _set_state(self, state, error=None):
         with self._state_lock:
             self._state, self._error = state, error
 
     def status(self) -> dict:
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             exists = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='images'"
             ).fetchone()
@@ -392,11 +380,11 @@ class SemanticIndex:
 
     def has_other_models(self) -> bool:
         """Whether vectors from another model are stored. They can't be compared with MODEL's."""
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             return connection.execute("SELECT 1 FROM semantic_embeddings WHERE model != ? LIMIT 1", (MODEL,)).fetchone() is not None
 
     def discard_other_models(self):
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             connection.execute("DELETE FROM semantic_embeddings WHERE model != ?", (MODEL,))
 
     def _open_image(self, image_id):
@@ -414,7 +402,7 @@ class SemanticIndex:
             self._set_state("idle")
             unreadable = set()
             while True:
-                with self._connect() as connection:
+                with connect(self.directory) as connection:
                     connection.execute("""
                         DELETE FROM semantic_embeddings WHERE image_id NOT IN (SELECT id FROM images)
                     """)
@@ -439,7 +427,7 @@ class SemanticIndex:
                         continue
                     try:
                         vectors = self.encoder.features(images=images)
-                        with self._connect() as connection:
+                        with connect(self.directory) as connection:
                             connection.executemany(
                                 "INSERT OR REPLACE INTO semantic_embeddings VALUES (?, ?, ?)",
                                 [(image_id, MODEL, vector.astype("<f4").tobytes()) for image_id, vector in zip(ids, vectors)],
@@ -460,7 +448,7 @@ class SemanticIndex:
         """Return (ids, matrix) for indexed images, reloading only when the embeddings table changed."""
         import numpy
 
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             # INSERT OR REPLACE assigns a new rowid, so (count, max rowid) changes on any write.
             # Images can be removed without touching embeddings, so key on both tables.
             version = connection.execute("""

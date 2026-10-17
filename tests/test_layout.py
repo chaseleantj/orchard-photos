@@ -1,5 +1,3 @@
-from contextlib import closing
-import sqlite3
 import tempfile
 import time
 import unittest
@@ -9,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from server import layout
+from server.cache import connect
 from server.layout import Layout, embed
 from server.semantic import MODEL, Encoder, SemanticIndex
 
@@ -21,7 +20,7 @@ class LayoutTests(unittest.TestCase):
         self.layout = Layout(self.search)
         rng = np.random.default_rng(5)
         self.centres = np.linalg.qr(rng.normal(size=(16, 16)))[0][:3]
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
         self.count = 0
         for cluster in range(3):
@@ -32,7 +31,7 @@ class LayoutTests(unittest.TestCase):
         vector = self.centres[cluster] + np.random.default_rng(self.count).normal(scale=0.05, size=16)
         vector = (vector / np.linalg.norm(vector)).astype("<f4")
         identifier = f"{self.count:08x}"
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("INSERT INTO images VALUES (?)", (identifier,))
             connection.execute("INSERT INTO semantic_embeddings VALUES (?, ?, ?)", (identifier, MODEL, vector.tobytes()))
         self.count += 1
@@ -75,11 +74,11 @@ class LayoutTests(unittest.TestCase):
         self.layout.positions()
         while self.layout.status()["state"] == "computing":
             time.sleep(0.05)
-        with closing(sqlite3.connect(self.search.database)) as connection:
+        with connect(self.search.directory) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM umap_positions WHERE fitted=1").fetchone()[0], 160)
 
     def test_tiny_folders_still_get_positions(self):
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("DELETE FROM images WHERE id >= '00000005'")
         self.fit()
         self.assertEqual(set(self.layout.positions()), {f"{n:08x}" for n in range(5)})

@@ -1,13 +1,11 @@
 """Rounded-square icon sheets, so the map can draw thousands of images from a handful of requests."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 import logging
 from pathlib import Path
-import sqlite3
 import threading
 
-from server.scanner import thumbnail_path, while_open
+from server.cache import connect, thumbnail_path, while_open
 
 CELL = 64
 COLUMNS = 32
@@ -21,10 +19,9 @@ class Atlas:
     def __init__(self, directory: Path):
         self.directory = Path(directory)
         self.folder = self.directory / "atlas"
-        self.database = self.directory / "library.sqlite"
         self._lock = threading.Lock()
         self.folder.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with connect(self.directory) as connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS atlas_slots (
                     image_id TEXT PRIMARY KEY, slot INTEGER NOT NULL UNIQUE
@@ -44,7 +41,7 @@ class Atlas:
 
     def ensure(self) -> dict[str, int]:
         """Give every image a slot, drawing icons for the new ones. Returns image id -> slot."""
-        with self._lock, closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with self._lock, connect(self.directory) as connection:
             slots = dict(connection.execute("SELECT image_id, slot FROM atlas_slots"))
             missing = connection.execute("""
                 SELECT id FROM images WHERE id NOT IN (SELECT image_id FROM atlas_slots) ORDER BY rowid

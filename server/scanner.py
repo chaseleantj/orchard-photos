@@ -4,18 +4,16 @@ Originals are only ever read. Identical files share one image entry, so thumbnai
 and moves, and duplicates are indexed once.
 """
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import logging
 import os
 from pathlib import Path
-import sqlite3
-import sys
-import time
 import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
+
+from server.cache import connect, preview_path, thumbnail_path, while_open
 
 try:
     from pillow_heif import register_heif_opener
@@ -30,9 +28,6 @@ THUMBNAIL_SIZE = 720
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 BATCH = 48
-# Windows refuses to replace or delete a file while another thread reads it, as the server does while sending it.
-OPEN_FILE_TRIES = 20
-OPEN_FILE_WAIT = 0.05
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
@@ -47,26 +42,6 @@ class FolderUnavailable(RuntimeError):
 
 class ScanCancelled(Exception):
     pass
-
-
-def thumbnail_path(directory: Path, image_id: str) -> Path:
-    return Path(directory) / 'thumbnails' / f'{image_id}.webp'
-
-
-def preview_path(directory: Path, image_id: str) -> Path:
-    """A full-size JPEG for formats browsers cannot show, drawn when first viewed."""
-    return Path(directory) / 'previews' / f'{image_id}.jpg'
-
-
-def while_open(change, *args, **options):
-    """Replace or delete a file, waiting briefly on Windows for any thread still reading it to finish."""
-    for attempt in range(OPEN_FILE_TRIES):
-        try:
-            return change(*args, **options)
-        except PermissionError:
-            if sys.platform != 'win32' or attempt == OPEN_FILE_TRIES - 1:
-                raise
-            time.sleep(OPEN_FILE_WAIT)
 
 
 def walk(root: Path, skip=frozenset(), found=None):
@@ -165,8 +140,7 @@ class Scanner:
         self.folder = Path(folder)
         self.directory = Path(directory)
         (self.directory / 'thumbnails').mkdir(parents=True, exist_ok=True)
-        self.db_path = self.directory / 'library.sqlite'
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             db.executescript('''
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS images (
@@ -181,16 +155,6 @@ class Scanner:
                 CREATE INDEX IF NOT EXISTS file_folder ON files(folder);
             ''')
 
-    @contextmanager
-    def connect(self):
-        db = sqlite3.connect(self.db_path, timeout=30)
-        db.row_factory = sqlite3.Row
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
-
     def scan(self, progress=None, committed=None, cancelled=lambda: False):
         """Bring the index in line with the folder. Unchanged files are recognised by size and modification time."""
         if not self.folder.is_dir():
@@ -202,7 +166,7 @@ class Scanner:
         found, unreadable, libraries = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         if '' in unreadable:
             raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute('SELECT path, size, mtime_ns FROM files')}
             self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
         changed = [(path, status) for path, status in found if known.get(path) != (status.st_size, status.st_mtime_ns)]
@@ -215,7 +179,7 @@ class Scanner:
                     raise ScanCancelled
                 batch = changed[start:start + BATCH]
                 results = list(pool.map(self._examine, [path for path, _ in batch]))
-                with self.connect() as db:
+                with connect(self.directory, rows=True) as db:
                     for (path, status), result in zip(batch, results):
                         if 'width' in result:
                             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
@@ -234,7 +198,7 @@ class Scanner:
         removed = self._remove_missing({path for path, _ in found}, unreadable)
         if removed and committed:
             committed()
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             stats['images'] = db.execute('SELECT count(*) FROM images').fetchone()[0]
             stats['files'] = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
@@ -280,7 +244,7 @@ class Scanner:
         Files inside a folder that could not be listed are kept: the folder may only be locked for now.
         """
         blocked = tuple(f'{folder}/' for folder in unreadable if folder)
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             gone = [path for (path,) in db.execute('SELECT path FROM files')
                     if path not in present and not path.startswith(blocked)]
             db.executemany('DELETE FROM files WHERE path=?', [(path,) for path in gone])

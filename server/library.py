@@ -1,20 +1,19 @@
 """One folder's library: its scan, visual index, map, and the queries the API answers from them."""
-from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
 import re
-import sqlite3
 import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image, ImageOps
 
 from server.atlas import Atlas
+from server.cache import connect, preview_path, thumbnail_path, while_open
 from server.groups import Groups
 from server.layout import Layout
-from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable, preview_path, thumbnail_path, while_open
+from server.scanner import FolderUnavailable, ScanCancelled, Scanner, displayable
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
@@ -103,13 +102,8 @@ class Library:
             finally:
                 self.semantic_lock.release()
 
-    def connect(self):
-        db = sqlite3.connect(self.scanner.db_path, timeout=30)
-        db.row_factory = sqlite3.Row
-        return closing(db)
-
     def status(self):
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             images = db.execute('SELECT count(*) FROM images').fetchone()[0]
             files = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
@@ -176,7 +170,7 @@ class Library:
                          p.path,p.copies,p.grp AS "group",p.members
                   FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
         # Grouping needs every matching row anyway, so a page is sliced from the whole list rather than counted twice.
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             return [dict(row) for row in db.execute(sql, values)]
 
     def require_search(self):
@@ -209,7 +203,7 @@ class Library:
             self.require_search()
             ranking = dict(self.semantic.search(text=query, image_id=reference, image_bytes=image_bytes))
             # The reference comes first, as the stack of its near-duplicates, so the results start from what was asked.
-            with self.connect() as db:
+            with connect(self.directory, rows=True) as db:
                 own = db.execute('SELECT coalesce((SELECT group_id FROM image_groups WHERE image_id=?), ?)', (reference, reference)).fetchone()[0]
             rows = [row for row in self.library(where, values) if row['id'] in ranking]
             rows.sort(key=lambda row: (row['group'] == own, ranking[row['id']]), reverse=True)
@@ -241,7 +235,7 @@ class Library:
 
     def facets(self):
         """The subfolders and file types present, each with how many distinct images it holds."""
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
             types = [dict(row) for row in db.execute(
                 'SELECT mime, count(*) AS count FROM images GROUP BY mime ORDER BY count DESC, mime')]
@@ -255,7 +249,7 @@ class Library:
                 'types': types}
 
     def details(self, image_id):
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             image = db.execute('SELECT * FROM images WHERE id=?', (image_id,)).fetchone()
             if not image:
                 return None
@@ -265,7 +259,7 @@ class Library:
 
     def original(self, image_id, relative=None):
         """The file on disk for an image: the named copy if given (and it holds this image), else the first."""
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             if relative is not None:
                 row = db.execute('SELECT path FROM files WHERE image_id=? AND path=?', (image_id, relative)).fetchone()
             else:
@@ -280,7 +274,7 @@ class Library:
         path = self.original(image_id)
         if path is None:
             return None
-        with self.connect() as db:
+        with connect(self.directory, rows=True) as db:
             mime = db.execute('SELECT mime FROM images WHERE id=?', (image_id,)).fetchone()['mime']
         if mime in WEB_TYPES or not path.is_file():
             return path

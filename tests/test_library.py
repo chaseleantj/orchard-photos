@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from PIL import Image
 
 from server.library import Library
-from server.scanner import preview_path
+from server.cache import connect, preview_path
 from server.semantic import MODEL, Encoder
 
 
@@ -22,7 +22,7 @@ class LibraryTests(unittest.TestCase):
     def image(self, number, path=None, modified='2026-09-20T12:00:00Z', taken=None, mime='image/jpeg'):
         image_id = f'{number:064x}'
         path = path or f'photo-{number}.jpg'
-        with self.library.scanner.connect() as db:
+        with connect(self.library.directory, rows=True) as db:
             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)', (image_id, 32, 24, mime, 100, taken, None))
             db.execute('INSERT INTO files VALUES (?,?,?,?,?,?,?)', (path, path.rpartition('/')[0], image_id, 100, 0, modified, None))
         return image_id
@@ -78,7 +78,7 @@ class LibraryTests(unittest.TestCase):
 
     def group(self, *members):
         """Store near-duplicates as the grouping would, best first."""
-        with self.library.scanner.connect() as db:
+        with connect(self.library.directory, rows=True) as db:
             db.executemany('INSERT INTO image_groups VALUES (?,?,?)',
                            [(image_id, members[0], len(members) - place) for place, image_id in enumerate(members)])
 
@@ -223,12 +223,12 @@ class LibraryTests(unittest.TestCase):
 
     def test_reopening_after_a_model_change_drops_the_old_vectors_and_map(self):
         old, kept = self.image(1), self.image(2)
-        with self.library.scanner.connect() as db:
+        with connect(self.library.directory, rows=True) as db:
             db.executemany('INSERT INTO semantic_embeddings VALUES (?,?,?)', [(old, 'another/model', b'old'), (kept, MODEL, b'new')])
             db.executemany('INSERT INTO umap_positions VALUES (?,?,?,1)', [(old, 0.1, 0.2), (kept, 0.3, 0.4)])
             db.execute('INSERT INTO image_groups VALUES (?,?,1)', (old, kept))
         reopened = Library(self.folder, self.library.directory, self.library.semantic.encoder)
-        with reopened.scanner.connect() as db:
+        with connect(reopened.directory, rows=True) as db:
             self.assertEqual([tuple(row) for row in db.execute('SELECT image_id, model FROM semantic_embeddings')], [(kept, MODEL)])
             self.assertEqual(db.execute('SELECT count(*) FROM umap_positions').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT count(*) FROM image_groups').fetchone()[0], 0)
@@ -237,10 +237,10 @@ class LibraryTests(unittest.TestCase):
             reopened.scan()
         thread.assert_not_called()
         # Reopening once the vectors all match keeps the map.
-        with reopened.scanner.connect() as db:
+        with connect(reopened.directory, rows=True) as db:
             db.execute('INSERT INTO umap_positions VALUES (?,?,?,1)', (kept, 0.3, 0.4))
         Library(self.folder, self.library.directory, self.library.semantic.encoder)
-        with reopened.scanner.connect() as db:
+        with connect(reopened.directory, rows=True) as db:
             self.assertEqual(db.execute('SELECT count(*) FROM umap_positions').fetchone()[0], 1)
 
     def test_preparing_asked_for_midway_runs_again_afterwards(self):
@@ -253,7 +253,7 @@ class LibraryTests(unittest.TestCase):
 
     def test_visual_search_is_not_ready_while_the_scan_has_files_to_read(self):
         image = self.image(1)
-        with self.library.scanner.connect() as db:
+        with connect(self.library.directory, rows=True) as db:
             db.execute('INSERT INTO semantic_embeddings VALUES (?,?,?)', (image, MODEL, b'vector'))
         self.assertEqual(self.library.status()['search']['state'], 'ready')
         self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 144, 'changed': 1000}

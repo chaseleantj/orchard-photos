@@ -1,6 +1,4 @@
-from contextlib import closing
 from pathlib import Path
-import sqlite3
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -9,7 +7,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 from PIL import Image
 
-from server.scanner import thumbnail_path
+from server.cache import connect, thumbnail_path
 from server import semantic
 from server.semantic import (CORE_ML_SHA256, CORE_ML_VISION, IMAGE_SIZE, MAX_TOKENS, MODEL, PARITY_VECTOR, REPOSITORY,
                              TEXT, TOKENIZER, VISION, Encoder, SemanticIndex, _files, _pixels, parity_pixels)
@@ -28,13 +26,13 @@ class SemanticTests(unittest.TestCase):
         with patch("server.semantic.core_ml_available", return_value=False):
             self.encoder = Encoder(self.directory / "models")
         self.search = SemanticIndex(self.directory, self.encoder)
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY, taken TEXT)")
             connection.execute("CREATE TABLE files (path TEXT PRIMARY KEY, image_id TEXT, modified TEXT NOT NULL)")
 
     def add(self, *ids, readable=True, taken=None, modified="2026-01-01T00:00:00Z"):
         thumbnail_path(self.directory, "x").parent.mkdir(exist_ok=True)
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             for image_id in ids:
                 if readable:
                     Image.new("RGB", (8, 8), (len(image_id), 0, 0)).save(thumbnail_path(self.directory, image_id), "WEBP")
@@ -316,7 +314,7 @@ class SemanticTests(unittest.TestCase):
         self.add("photo", taken="2024-05-01T00:00:00Z", modified="2026-07-01T00:00:00Z")
         self.add("middle", modified="2023-01-01T00:00:00Z")
         # A copy of "old" written recently makes it recent.
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("INSERT INTO files VALUES ('copy.png', 'old', '2025-01-01T00:00:00Z')")
         order = []
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(4, dtype=np.float32)), \
@@ -327,7 +325,7 @@ class SemanticTests(unittest.TestCase):
 
     def test_vectors_from_another_model_are_ignored_then_discarded(self):
         self.add("1", "2")
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.executemany("INSERT INTO semantic_embeddings VALUES (?, ?, ?)",
                                    [(image_id, "another/model", np.ones(512, "<f4").tobytes()) for image_id in ("1", "2")])
         self.assertEqual(self.search.status()["indexed"], 0)
@@ -337,7 +335,7 @@ class SemanticTests(unittest.TestCase):
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(2, dtype=np.float32)) as encode:
             self.search.index()
         self.assertEqual(len(encode.call_args.kwargs["images"]), 2)
-        with closing(sqlite3.connect(self.search.database)) as connection:
+        with connect(self.search.directory) as connection:
             self.assertEqual(connection.execute("SELECT DISTINCT model FROM semantic_embeddings").fetchall(), [(MODEL,)])
 
     def test_model_failure_is_reported_and_can_be_retried(self):
@@ -367,13 +365,13 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(reopened.status()["indexed"], 2)
         self.assertEqual(reopened.status()["state"], "ready")
         self.assertEqual(reopened.search(image_id="2"), [("2", 1.0), ("1", 0.0)])
-        with closing(sqlite3.connect(self.search.database)) as connection, connection:
+        with connect(self.search.directory) as connection:
             connection.execute("DELETE FROM images WHERE id = '1'")
         self.assertEqual(reopened.search(image_id="2"), [("2", 1.0)])
         with patch.object(self.encoder, "load") as load:
             reopened.index()
             load.assert_not_called()
-        with closing(sqlite3.connect(self.search.database)) as connection:
+        with connect(self.search.directory) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM semantic_embeddings WHERE model=?", (MODEL,)).fetchone()[0], 1)
 
     def test_ready_only_once_every_image_has_a_vector_including_ones_a_scan_adds_later(self):
@@ -404,7 +402,8 @@ class SemanticTests(unittest.TestCase):
     def test_unreadable_image_is_reported_without_discarding_good_images(self):
         self.add("1")
         self.add("2", readable=False)
-        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.array([[1, 0]], dtype=np.float32)):
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.array([[1, 0]], dtype=np.float32)), \
+                self.assertLogs("server.semantic", level="WARNING"):
             self.search.index()
         status = self.search.status()
         self.assertEqual((status["indexed"], status["total"]), (1, 2))
@@ -424,7 +423,7 @@ class SemanticTests(unittest.TestCase):
     def test_folders_share_one_encoder_but_keep_their_own_embeddings(self):
         (self.directory / "other").mkdir()
         other = SemanticIndex(self.directory / "other", self.encoder)
-        with closing(sqlite3.connect(other.database)) as connection, connection:
+        with connect(other.directory) as connection:
             connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
         self.add("1")
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.array([[1, 0]], dtype=np.float32)):

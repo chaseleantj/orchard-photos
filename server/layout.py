@@ -9,12 +9,12 @@ which keeps the map from rearranging each time a few photos are added.
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 import logging
-import sqlite3
 import threading
 
 import numpy
+
+from server.cache import connect
 
 NEIGHBOURS = 15
 # UMAP's curve 1 / (1 + a d^2b) for how strongly two points attract at distance d, fitted for min_dist 0.25.
@@ -199,11 +199,11 @@ def embed(matrix):
 class Layout:
     def __init__(self, semantic):
         self.semantic = semantic
-        self.database = semantic.database
+        self.directory = semantic.directory
         self._lock = threading.Lock()
         self._state = {"state": "idle"}
         self._cache = None
-        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with connect(self.directory) as connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS umap_positions (
                     image_id TEXT PRIMARY KEY, x REAL NOT NULL, y REAL NOT NULL, fitted INTEGER NOT NULL
@@ -215,7 +215,7 @@ class Layout:
 
     def clear(self):
         """Forget every position, so the next map is fitted afresh."""
-        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with connect(self.directory) as connection:
             connection.execute("DELETE FROM umap_positions")
         self._cache = None
 
@@ -237,7 +237,7 @@ class Layout:
                 self._set("idle")
                 return
             points = self._normalise(embed(matrix))
-            with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+            with connect(self.directory) as connection:
                 connection.execute("DELETE FROM umap_positions")
                 connection.executemany("INSERT INTO umap_positions VALUES (?, ?, ?, 1)",
                                        [(i, float(x), float(y)) for i, (x, y) in zip(ids, points)])
@@ -263,7 +263,7 @@ class Layout:
             return {}
         if self._cache and self._cache[0] is matrix:
             return self._cache[1]
-        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with connect(self.directory) as connection:
             stored = {i: (x, y, fitted) for i, x, y, fitted in connection.execute("SELECT * FROM umap_positions")}
         rows = [n for n, i in enumerate(ids) if i in stored]
         if not rows:
@@ -291,7 +291,7 @@ class Layout:
             seed = int(ids[n][:8], 16)
             jitter = numpy.random.default_rng(seed).normal(scale=0.006, size=2)
             placed[ids[n]] = tuple(float(v) for v in centre + jitter)
-        with closing(sqlite3.connect(self.database, timeout=30)) as connection, connection:
+        with connect(self.directory) as connection:
             connection.executemany("INSERT OR REPLACE INTO umap_positions VALUES (?, ?, ?, 0)",
                                    [(i, x, y) for i, (x, y) in placed.items()])
         return placed

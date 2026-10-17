@@ -5,11 +5,13 @@ import shutil
 import sys
 import tempfile
 import unittest
+import warnings
 from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from server.scanner import FolderUnavailable, Scanner, exif_details, thumbnail_path, walk, while_open
+from server.cache import connect, thumbnail_path
+from server.scanner import FolderUnavailable, Scanner, exif_details, walk
 
 
 def picture(path: Path, color='red', size=(32, 24), **save):
@@ -40,7 +42,7 @@ class ScannerTests(unittest.TestCase):
         self.scanner = Scanner(self.root, self.cache)
 
     def files(self):
-        with self.scanner.connect() as db:
+        with connect(self.scanner.directory, rows=True) as db:
             return {row['path']: dict(row) for row in db.execute('SELECT * FROM files')}
 
     def test_nested_folders_hidden_entries_and_extensions(self):
@@ -91,7 +93,10 @@ class ScannerTests(unittest.TestCase):
         Image.MAX_IMAGE_PIXELS, limit = 1000, Image.MAX_IMAGE_PIXELS
         self.addCleanup(setattr, Image, 'MAX_IMAGE_PIXELS', limit)
         picture(self.root / 'big.png', size=(40, 30))
-        self.scanner.scan()
+        with warnings.catch_warnings():
+            # Pillow warns below twice its limit, where the scanner refuses the image itself.
+            warnings.simplefilter('ignore', Image.DecompressionBombWarning)
+            self.scanner.scan()
         self.assertEqual(self.files()['big.png']['error'], 'Too large to open')
 
     def test_rescan_follows_added_changed_and_removed_files(self):
@@ -132,7 +137,7 @@ class ScannerTests(unittest.TestCase):
         picture(self.root / 'rotated.jpg', size=(40, 20), exif=dated(orientation=6))
         picture(self.root / 'plain.png')
         self.scanner.scan()
-        with self.scanner.connect() as db:
+        with connect(self.scanner.directory, rows=True) as db:
             rows = {row['path']: row for row in db.execute('SELECT f.path, i.* FROM files f JOIN images i ON i.id=f.image_id')}
         self.assertEqual(rows['offset.jpg']['taken'], '2023-05-04T08:30:00Z')
         self.assertEqual(rows['offset.jpg']['camera'], 'Canon EOS R6')
@@ -160,16 +165,8 @@ class ScannerTests(unittest.TestCase):
         inside = Scanner(self.root, self.root / 'cache')
         picture(self.root / 'one.png')
         inside.scan()
-        with inside.connect() as db:
+        with connect(inside.directory, rows=True) as db:
             self.assertEqual([row[0] for row in db.execute('SELECT path FROM files')], ['one.png'])
-
-    def test_windows_waits_for_a_reader_before_replacing_a_file(self):
-        change = Mock(side_effect=[PermissionError, PermissionError, None])
-        with patch('server.scanner.sys.platform', 'win32'), patch('server.scanner.time.sleep'):
-            while_open(change, 'target')
-        self.assertEqual(change.call_count, 3)
-        with patch('server.scanner.sys.platform', 'darwin'), self.assertRaises(PermissionError):
-            while_open(Mock(side_effect=PermissionError))
 
 
 if __name__ == '__main__':

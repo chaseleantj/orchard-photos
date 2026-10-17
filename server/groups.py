@@ -6,16 +6,15 @@ too. Each group gathers around one centre and every member must match it, so a s
 photographed every day, cannot chain into one long group.
 """
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from pathlib import Path
 import re
-import sqlite3
 import threading
 
 import numpy
 from PIL import Image
 
-from server.scanner import WORKERS, thumbnail_path
+from server.cache import connect, thumbnail_path
+from server.scanner import WORKERS
 
 # Cosine similarity between image embeddings. Re-encoded and resized copies and the closest frames of a burst score
 # above it; most bursts score from 0.86, and different shots of one subject, like one plant on two days, 0.74 to
@@ -89,26 +88,16 @@ class Groups:
 
     def __init__(self, directory: Path, semantic):
         self.directory = Path(directory)
-        self.database = self.directory / 'library.sqlite'
         self.semantic = semantic
         self._lock = threading.Lock()
         self._grouped = None
-        with self._connect() as connection:
+        with connect(self.directory) as connection:
             # Only images with near-duplicates have a row; every other image is a group of one.
             connection.execute('''
                 CREATE TABLE IF NOT EXISTS image_groups (
                     image_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, score REAL NOT NULL
                 )
             ''')
-
-    @contextmanager
-    def _connect(self):
-        connection = sqlite3.connect(self.database, timeout=30)
-        try:
-            with connection:
-                yield connection
-        finally:
-            connection.close()
 
     def _score(self, image_id: str, pixels: int) -> float:
         """How good a cover the image makes. Sharpness picks the best frame of a burst; between copies of one
@@ -122,7 +111,7 @@ class Groups:
     def clear(self):
         """Forget every group, so each image stands alone until the next update."""
         with self._lock:
-            with self._connect() as connection:
+            with connect(self.directory) as connection:
                 connection.execute('DELETE FROM image_groups')
             self._grouped = None
 
@@ -133,7 +122,7 @@ class Groups:
             # The index hands back the same matrix until an embedding is added or an image removed.
             if matrix is self._grouped:
                 return False
-            with self._connect() as connection:
+            with connect(self.directory) as connection:
                 files = connection.execute('SELECT path, image_id FROM files WHERE image_id IS NOT NULL').fetchall()
             position = {image_id: index for index, image_id in enumerate(ids)}
             families = {}
@@ -144,7 +133,7 @@ class Groups:
             centres = gather(matrix, related) if matrix is not None else []
             sizes = numpy.bincount(centres, minlength=len(ids)) if len(ids) else []
             grouped = [index for index, centre in enumerate(centres) if sizes[centre] > 1]
-            with self._connect() as connection:
+            with connect(self.directory) as connection:
                 before = {row[0]: row[1:] for row in connection.execute('SELECT image_id, group_id, score FROM image_groups')}
                 pixels = dict(connection.execute('SELECT id, width * height FROM images'))
             # An image's content never changes under its id, so neither does its score.
@@ -153,7 +142,7 @@ class Groups:
             with ThreadPoolExecutor(WORKERS) as pool:
                 scores.update(zip(missing, pool.map(lambda image_id: self._score(image_id, pixels.get(image_id, 0)), missing)))
             after = {ids[index]: (ids[centres[index]], scores[ids[index]]) for index in grouped}
-            with self._connect() as connection:
+            with connect(self.directory) as connection:
                 connection.execute('DELETE FROM image_groups')
                 connection.executemany('INSERT INTO image_groups VALUES (?,?,?)',
                                        [(image_id, group, score) for image_id, (group, score) in after.items()])

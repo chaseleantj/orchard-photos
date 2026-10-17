@@ -1,23 +1,17 @@
 from pathlib import Path
-import importlib.util
-import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
 
-HAS_PILLOW = importlib.util.find_spec("PIL")
-if HAS_PILLOW:
-    from server.atlas import CELL, COLUMNS, Atlas
-    from server.scanner import thumbnail_path
+from server.atlas import CELL, COLUMNS, Atlas
+from server.cache import connect, thumbnail_path
 
 
-@unittest.skipUnless(HAS_PILLOW, "Install Pillow first")
 class AtlasTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.data = Path(self.directory.name)
-        with closing(sqlite3.connect(self.data / "library.sqlite")) as connection, connection:
+        with connect(self.data) as connection:
             connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
         self.atlas = Atlas(self.data)
 
@@ -27,7 +21,7 @@ class AtlasTests(unittest.TestCase):
         path = thumbnail_path(self.data, name)
         path.parent.mkdir(exist_ok=True)
         Image.new("RGB", (40, 20), color).save(path, "WEBP")
-        with closing(sqlite3.connect(self.data / "library.sqlite")) as connection, connection:
+        with connect(self.data) as connection:
             connection.execute("INSERT INTO images VALUES (?)", (name,))
 
     def test_slots_are_stable_and_only_new_images_are_drawn(self):
@@ -52,5 +46,6 @@ class AtlasTests(unittest.TestCase):
     def test_an_unreadable_image_still_gets_a_placeholder_slot(self):
         self.add("a", (1, 2, 3))
         thumbnail_path(self.data, "a").write_bytes(b"not an image")
-        self.assertEqual(self.atlas.ensure(), {"a": 0})
+        with self.assertLogs("server.atlas", level="WARNING"):
+            self.assertEqual(self.atlas.ensure(), {"a": 0})
         self.assertEqual(len(self.atlas.versions()), 1)

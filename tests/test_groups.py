@@ -6,7 +6,8 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 from server.groups import THRESHOLD, Groups, gather, sharpness, stem
-from server.scanner import Scanner, thumbnail_path
+from server.cache import connect, thumbnail_path
+from server.scanner import Scanner
 from server.semantic import MODEL, Encoder, SemanticIndex
 
 
@@ -78,13 +79,13 @@ class GroupsTests(unittest.TestCase):
     def add(self, number, vector, image, width=32):
         image_id = f'{number:064x}'
         image.save(thumbnail_path(self.directory, image_id), 'WEBP', lossless=True)
-        with self.scanner.connect() as db:
+        with connect(self.scanner.directory, rows=True) as db:
             db.execute('INSERT INTO images VALUES (?,?,?,?,?,?,?)', (image_id, width, width, 'image/jpeg', 100, None, None))
             db.execute('INSERT INTO semantic_embeddings VALUES (?,?,?)', (image_id, MODEL, vector.tobytes()))
         return image_id
 
     def stored(self):
-        with self.scanner.connect() as db:
+        with connect(self.scanner.directory, rows=True) as db:
             return {row['image_id']: (row['group_id'], row['score']) for row in db.execute('SELECT * FROM image_groups')}
 
     def test_only_near_duplicates_are_stored_and_the_sharpest_scores_highest(self):
