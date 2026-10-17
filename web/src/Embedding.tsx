@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
-import { APP_NAME, UPDATE_REASON, filterParams, megabytes, request, setUpLabel, storageKey } from './types';
+import { APP_NAME, SET_UP, filterParams, megabytes, request, storageKey } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
 import type { Filters, Model, SearchStatus } from './types';
@@ -146,7 +146,7 @@ export default function Embedding({ root, filters, highlight, search, model, sca
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}
     {unprepared && !preparing && (search.state === 'error'
       ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
-      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. {model.update ? `${UPDATE_REASON} It downloads once (${megabytes(model.size)} MB), then prepares this folder again.` : `Setting up visual search downloads a ${megabytes(model.size)} MB model once, which runs on this computer.`}</p><button className="text-button primary" onClick={onSetUp}>{setUpLabel(model)}</button></div>)}
+      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a {megabytes(model.size)} MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>{SET_UP}</button></div>)}
     {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
       <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} images ready. The map opens when they all are.`}{left && ` ${left}.`}</p>
       <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" /></div></div>}

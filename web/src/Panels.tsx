@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
 import type { Facets, Filters, Model, Range, SearchMode, SearchStatus, Status } from './types';
-import { APP_NAME, RANGES, UPDATE_REASON, defaults, megabytes, plural, post, request, searchable, setUpLabel, settingUp, typeLabel } from './types';
+import { APP_NAME, RANGES, SET_UP, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
 
@@ -135,12 +135,9 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     : search.downloaded ? <>
       <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} still to prepare. New images are prepared automatically.</p>
       <button className="text-button primary" onClick={onSetUp}>Finish preparing</button>
-    </> : status.model.update ? <>
-      <p>{UPDATE_REASON} It downloads once (about {megabytes(status.model.size)} MB), then prepares this folder’s images again. Until then, the search bar searches file names.</p>
-      <button className="text-button primary" onClick={onSetUp}>{setUpLabel(status.model)}</button>
     </> : <>
       <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>
-      <button className="text-button primary" onClick={onSetUp}>{setUpLabel(status.model)}</button>
+      <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
     </>}
     {search.error && search.state !== 'error' && <p className="error-copy">{search.error}</p>}
     {error && <p className="error-copy" role="alert">{error}</p>}
@@ -170,7 +167,7 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
       <button className="recent-open" disabled={!!busy || !folder.available} title={folder.available ? folder.path : `${folder.path} is not available. Reconnect its drive to open it.`} onClick={() => open(folder.path, () => post('/api/folder', { path: folder.path }))}><span className="path">{folder.label}</span>{!folder.available && <span className="muted">Not available</span>}{busy === folder.path && <span className="muted">Opening…</span>}</button>
       <button className="icon-button" aria-label={`Forget ${folder.label}`} title="Remove from recent" onClick={() => forget(folder.path)}><X /></button>
     </li>)}</ul></div>}
-    {offerSetup && <label className="check"><input type="checkbox" checked={setup} aria-describedby="setup-note" onChange={e => setSetup(e.target.checked)} /><span>{setUpLabel(status.model)} too<span className="muted" id="setup-note">Find images by describing them. Downloads a {megabytes(status.model.size)} MB model once, which runs on this computer.</span></span></label>}
+    {offerSetup && <label className="check"><input type="checkbox" checked={setup} aria-describedby="setup-note" onChange={e => setSetup(e.target.checked)} /><span>{SET_UP} too<span className="muted" id="setup-note">Find images by describing them. Downloads a {megabytes(status.model.size)} MB model once, which runs on this computer.</span></span></label>}
   </div>;
 }
 
@@ -192,12 +189,12 @@ export function SearchMenu({ mode, search, model, anchor, onMode, onSetUp, onUpl
       <div className="menu-label" id="search-by">Search by</div>
       {ready ? option('visual', 'Appearance') : <>
         <button className="text-button menu-item" aria-pressed={false} aria-describedby="appearance-note" disabled={busy} onClick={() => { onSetUp(); onClose(); }}><Check />Appearance</button>
-        <div className="menu-note" id="appearance-note">{busy ? 'Getting ready. Progress shows under the search bar.' : search?.state === 'error' ? 'The last try failed. Choose it to try again.' : `${model.update ? 'Updates visual search to its new model' : 'Sets up visual search'}: a ${megabytes(model.size)} MB download, once.`}</div>
+        <div className="menu-note" id="appearance-note">{busy ? 'Getting ready. Progress shows under the search bar.' : search?.state === 'error' ? 'The last try failed. Choose it to try again.' : `Sets up visual search: a ${megabytes(model.size)} MB download, once.`}</div>
       </>}
       {option('name', 'File name')}
     </div>
     <hr className="menu-rule" />
     <button className="text-button menu-item" disabled={!ready} onClick={() => { onClose(); onUpload(); }}><ImageIcon />Find images like a file…</button>
-    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : `Works once visual search is ${model.update ? 'updated' : 'set up'}.`}</div>
+    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : 'Works once visual search is set up.'}</div>
   </Popover>;
 }

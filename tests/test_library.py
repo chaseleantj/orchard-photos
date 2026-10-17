@@ -8,7 +8,7 @@ from PIL import Image
 
 from server.library import Library
 from server.scanner import preview_path
-from server.semantic import EARLIER, MODEL, Encoder
+from server.semantic import MODEL, Encoder
 
 
 class LibraryTests(unittest.TestCase):
@@ -224,7 +224,7 @@ class LibraryTests(unittest.TestCase):
     def test_reopening_after_a_model_change_drops_the_old_vectors_and_map(self):
         old, kept = self.image(1), self.image(2)
         with self.library.scanner.connect() as db:
-            db.executemany('INSERT INTO semantic_embeddings VALUES (?,?,?)', [(old, EARLIER[0], b'old'), (kept, MODEL, b'new')])
+            db.executemany('INSERT INTO semantic_embeddings VALUES (?,?,?)', [(old, 'another/model', b'old'), (kept, MODEL, b'new')])
             db.executemany('INSERT INTO umap_positions VALUES (?,?,?,1)', [(old, 0.1, 0.2), (kept, 0.3, 0.4)])
             db.execute('INSERT INTO image_groups VALUES (?,?,1)', (old, kept))
         reopened = Library(self.folder, self.library.directory, self.library.semantic.encoder)
@@ -232,7 +232,7 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual([tuple(row) for row in db.execute('SELECT image_id, model FROM semantic_embeddings')], [(kept, MODEL)])
             self.assertEqual(db.execute('SELECT count(*) FROM umap_positions').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT count(*) FROM image_groups').fetchone()[0], 0)
-        # Without the current model on disk, a scan doesn't start preparing: setting up or updating is the user's choice.
+        # Without the model on disk, a scan doesn't start preparing: setting up is the user's choice.
         with patch('server.library.threading.Thread') as thread:
             reopened.scan()
         thread.assert_not_called()

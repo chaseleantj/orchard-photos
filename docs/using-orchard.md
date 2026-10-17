@@ -99,8 +99,6 @@ Visual search and the map need a model called SigLIP 2. It's a one-time download
 
 When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, you can set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search automatically.
 
-Earlier versions of Orchard used a model called CLIP. If you used one, Orchard asks you to **Update visual search**: the new model finds images more accurately and understands more languages. Until you update, the search bar searches file names, near-duplicates aren’t stacked, and the map waits. Updating downloads the new model, deletes the old one, and prepares your folders again.
-
 ## Background work and Library
 
 Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. You can search images that are already prepared while the rest are still in progress.

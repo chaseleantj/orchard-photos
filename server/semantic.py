@@ -7,7 +7,6 @@ import logging
 import os
 from pathlib import Path
 import platform
-import shutil
 import sqlite3
 import sys
 import threading
@@ -43,9 +42,6 @@ DIRECTML = "DmlExecutionProvider"
 PARITY_VECTOR = Path(__file__).with_name("parity-vector.npy")
 PARITY_COSINE = 0.999
 SIZES = {VISION: 371_992_072, TEXT: 283_438_275, TOKENIZER: 34_363_039, CORE_ML_VISION: 186_092_579}
-# Models earlier versions ran: CLIP, first in PyTorch and then in ONNX. A finished download deletes them, and while
-# one is still on disk, setting up visual search is an update.
-EARLIER = ["openai/clip-vit-base-patch32", "Xenova/clip-vit-base-patch32"]
 # SigLIP 2's inputs: images squashed to a square with no crop, and lowercased descriptions of exactly 64 tokens, since
 # the text encoder reads the last position. The tokenizer pads, but the lowercasing it was trained with is left to us.
 IMAGE_SIZE = 256
@@ -96,10 +92,6 @@ class Encoder:
         """Whether every file is on disk, so indexing needs no download and can start on its own."""
         return self._complete(_files(self.core_ml))
 
-    def replaces(self) -> bool:
-        """Whether an earlier model is still on disk, so setting up visual search updates it."""
-        return any(self._folder(repository).is_dir() for repository in EARLIER)
-
     def received(self) -> int:
         """Bytes downloaded so far, partial files included. A finished file is measured at its snapshot path, since on
         Windows, without symlinks, the hub moves it there out of the blobs folder."""
@@ -135,8 +127,6 @@ class Encoder:
                               allow_patterns=[name for repository, _, name in _files(self.core_ml) if repository == REPOSITORY])
         except Exception as error:
             raise RuntimeError("The search model could not download. Check your internet connection, then try again.") from error
-        for repository in EARLIER:
-            shutil.rmtree(self._folder(repository), ignore_errors=True)
 
     @staticmethod
     def _verified(path: Path) -> bool:
@@ -400,12 +390,12 @@ class SemanticIndex:
             ORDER BY max(coalesce(i.taken, f.modified)) DESC
         """, (MODEL,))]
 
-    def has_earlier(self) -> bool:
+    def has_other_models(self) -> bool:
         """Whether vectors from another model are stored. They can't be compared with MODEL's."""
         with self._connect() as connection:
             return connection.execute("SELECT 1 FROM semantic_embeddings WHERE model != ? LIMIT 1", (MODEL,)).fetchone() is not None
 
-    def discard_earlier(self):
+    def discard_other_models(self):
         with self._connect() as connection:
             connection.execute("DELETE FROM semantic_embeddings WHERE model != ?", (MODEL,))
 

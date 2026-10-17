@@ -36,8 +36,6 @@ On an Apple Silicon Mac, the image half runs on the GPU through Core ML instead,
 
 On Windows with an x64 processor, the image half runs on the GPU through DirectML, which works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. It runs the same full-precision file as the CPU and gives the same vectors, so the download doesn't change. On a laptop with an Intel Iris Xe, preparing an image took about 300 ms instead of 470 ms on its CPU. Orchard checks the same test image first, and if DirectML fails to load the model or the vector is off, the CPU runs it. The text half stays on the CPU on every computer, where a search takes a few tens of milliseconds, against about 150 through DirectML. Windows on Arm has no DirectML build of ONNX Runtime, so it uses the CPU.
 
-Vectors from different models can't be compared. Earlier versions of Orchard used CLIP, so when a folder opens, any CLIP vectors are deleted, along with the map and near-duplicate stacks made from them. Orchard then offers to update visual search, which downloads the new model, deletes the old one, and prepares each folder again.
-
 ## Near-duplicates
 
 Bursts, edits and resized copies are different files, so they have different hashes. Their vectors, however, are almost the same. Orchard groups images whose vectors have a cosine similarity of 0.9775 or more. Versions of one design, like an illustration in two colours, can score nearly that high, so the cut sits close to 1.

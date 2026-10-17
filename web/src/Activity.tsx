@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Progress } from './Progress';
-import type { LibraryStatus, Model, Scan, SearchStatus } from './types';
+import type { LibraryStatus, Scan, SearchStatus } from './types';
 import { megabytes } from './types';
 
 /** One piece of background work: what it is, how far along in words, and how far as a fraction when known. */
@@ -26,9 +26,8 @@ export function searchWork(search: SearchStatus): Work | null {
 export const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}` : work.label;
 
 /** Background work, in the line under the search bar. Each item opens Library, where the details are. A first scan
- *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen.
- *  A model left by an earlier version is mentioned too, since until it is updated, searches quietly match file names. */
-export function Activity({ library, model, gathering, hideError, onOpen }: { library: LibraryStatus; model: Model; gathering: boolean; hideError: boolean; onOpen: () => void }) {
+ *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen. */
+export function Activity({ library, gathering, hideError, onOpen }: { library: LibraryStatus; gathering: boolean; hideError: boolean; onOpen: () => void }) {
   const search = searchWork(library.search);
   const jobs = [gathering ? null : scanWork(library.scan), search?.error && hideError ? null : search].filter((job): job is Work => !!job);
   // Setting up visual search ends with a word that it worked; routine preparing of new images ends quietly.
@@ -48,6 +47,5 @@ export function Activity({ library, model, gathering, hideError, onOpen }: { lib
       {!job.error && <Progress value={job.value} label={job.label} />}<span>{job.label}{job.detail && <span className="numbers"> · {job.detail}</span>}</span>
     </button>)}
     {ready && <button className="activity-item" onClick={onOpen}><span>Visual search is ready</span></button>}
-    {model.update && !model.present && !jobs.length && <button className="activity-item" title="Show in Library" onClick={onOpen}><span>Visual search needs an update</span></button>}
   </div>;
 }

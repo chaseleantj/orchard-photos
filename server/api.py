@@ -152,7 +152,7 @@ class App:
                   for path in self.recent() if not library or path != str(library.folder)]
         result = {'app': APP['name'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
                   'model': {'present': self.encoder.downloaded() or self.encoder.activity is not None,
-                            'size': self.encoder.size, 'update': self.encoder.replaces()}}
+                            'size': self.encoder.size}}
         if library:
             result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
                                 'name': library.folder.name or str(library.folder), 'id': library.directory.name}

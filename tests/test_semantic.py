@@ -11,7 +11,7 @@ from PIL import Image
 
 from server.scanner import thumbnail_path
 from server import semantic
-from server.semantic import (CORE_ML_SHA256, CORE_ML_VISION, EARLIER, IMAGE_SIZE, MAX_TOKENS, MODEL, PARITY_VECTOR, REPOSITORY,
+from server.semantic import (CORE_ML_SHA256, CORE_ML_VISION, IMAGE_SIZE, MAX_TOKENS, MODEL, PARITY_VECTOR, REPOSITORY,
                              TEXT, TOKENIZER, VISION, Encoder, SemanticIndex, _files, _pixels, parity_pixels)
 
 
@@ -119,25 +119,10 @@ class SemanticTests(unittest.TestCase):
         self.encoder.activity, self.encoder.failure = None, "The search model could not download."
         self.assertEqual((self.search.status()["state"], self.search.status()["error"]), ("error", "The search model could not download."))
 
-    def test_an_earlier_model_makes_setup_an_update_until_the_download_removes_it(self):
-        self.assertFalse(self.encoder.replaces())
-        for repository in EARLIER:
-            blobs = self.directory / "models" / f"models--{repository.replace('/', '--')}" / "blobs"
-            blobs.mkdir(parents=True)
-            (blobs / "weights").write_bytes(b"x")
-        self.assertTrue(self.encoder.replaces())
+    def test_the_download_fetches_only_the_files_this_computer_runs(self):
         with patch("huggingface_hub.snapshot_download") as download:
             self.encoder._fetch()
         self.assertEqual(download.call_args.kwargs["allow_patterns"], [VISION, TEXT, TOKENIZER])
-        self.assertFalse(self.encoder.replaces())
-        self.assertEqual(list((self.directory / "models").iterdir()), [])
-
-    def test_a_failed_download_keeps_the_earlier_model(self):
-        earlier = self.directory / "models" / f"models--{EARLIER[-1].replace('/', '--')}"
-        earlier.mkdir(parents=True)
-        with patch("huggingface_hub.snapshot_download", side_effect=OSError("offline")), self.assertRaisesRegex(RuntimeError, "could not download"):
-            self.encoder._fetch()
-        self.assertTrue(self.encoder.replaces())
 
     def test_a_failed_download_is_kept_for_the_status_and_cleared_on_retry(self):
         with patch.object(self.encoder, "_fetch", side_effect=RuntimeError("No connection")):
@@ -340,15 +325,15 @@ class SemanticTests(unittest.TestCase):
         # The photo's capture date counts, not when its file was written.
         self.assertEqual(order, ["new", "old", "photo", "middle"])
 
-    def test_vectors_from_an_earlier_model_are_discarded_and_the_folder_indexed_again(self):
+    def test_vectors_from_another_model_are_ignored_then_discarded(self):
         self.add("1", "2")
         with closing(sqlite3.connect(self.search.database)) as connection, connection:
             connection.executemany("INSERT INTO semantic_embeddings VALUES (?, ?, ?)",
-                                   [(image_id, EARLIER[0], np.ones(512, "<f4").tobytes()) for image_id in ("1", "2")])
+                                   [(image_id, "another/model", np.ones(512, "<f4").tobytes()) for image_id in ("1", "2")])
         self.assertEqual(self.search.status()["indexed"], 0)
-        self.assertTrue(self.search.has_earlier())
-        self.search.discard_earlier()
-        self.assertFalse(self.search.has_earlier())
+        self.assertTrue(self.search.has_other_models())
+        self.search.discard_other_models()
+        self.assertFalse(self.search.has_other_models())
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(2, dtype=np.float32)) as encode:
             self.search.index()
         self.assertEqual(len(encode.call_args.kwargs["images"]), 2)
