@@ -39,18 +39,18 @@ class Atlas:
             result.append(f"{stat.st_mtime_ns:x}-{stat.st_size:x}")
         return result
 
-    def ensure(self, order=()) -> dict[str, int]:
-        """Give every image a slot, drawing icons for the new ones. Returns image id -> slot. New images listed in
-        `order` take their slots in that order, so a map of some of them needs only the sheets they fill."""
+    def ensure(self) -> dict[str, int]:
+        """Give every image a slot, drawing icons for the new ones. Returns image id -> slot. New images take their
+        slots newest first, by the date the grid shows, so a map of the newest needs only the first sheets."""
         with self._lock, connect(self.directory) as connection:
             slots = dict(connection.execute("SELECT image_id, slot FROM atlas_slots"))
             missing = connection.execute("""
-                SELECT id FROM images WHERE id NOT IN (SELECT image_id FROM atlas_slots) ORDER BY rowid
+                SELECT i.id FROM images i LEFT JOIN files f ON f.image_id = i.id
+                WHERE i.id NOT IN (SELECT image_id FROM atlas_slots)
+                GROUP BY i.id ORDER BY max(coalesce(i.taken, f.modified)) DESC, i.rowid
             """).fetchall()
             if not missing:
                 return slots
-            place = {image_id: rank for rank, image_id in enumerate(order)}
-            missing.sort(key=lambda row: place.get(row[0], len(place)))
             first = max(slots.values(), default=-1) + 1
             assigned = {image_id: first + offset for offset, (image_id,) in enumerate(missing)}
             with ThreadPoolExecutor(max_workers=4) as pool:

@@ -12,17 +12,18 @@ class AtlasTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.data = Path(self.directory.name)
         with connect(self.data) as connection:
-            connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY)")
+            connection.execute("CREATE TABLE images (id TEXT PRIMARY KEY, taken TEXT)")
+            connection.execute("CREATE TABLE files (image_id TEXT, modified TEXT)")
         self.atlas = Atlas(self.data)
 
-    def add(self, name, color):
+    def add(self, name, color, taken=None):
         from PIL import Image
 
         path = thumbnail_path(self.data, name)
         path.parent.mkdir(exist_ok=True)
         Image.new("RGB", (40, 20), color).save(path, "WEBP")
         with connect(self.data) as connection:
-            connection.execute("INSERT INTO images VALUES (?)", (name,))
+            connection.execute("INSERT INTO images VALUES (?, ?)", (name, taken))
 
     def test_slots_are_stable_and_only_new_images_are_drawn(self):
         from PIL import Image
@@ -50,7 +51,7 @@ class AtlasTests(unittest.TestCase):
             self.assertEqual(self.atlas.ensure(), {"a": 0})
         self.assertEqual(len(self.atlas.versions()), 1)
 
-    def test_new_images_take_slots_in_the_order_asked(self):
-        for name in "abc":
-            self.add(name, (0, 0, 0))
-        self.assertEqual(self.atlas.ensure(["c", "a"]), {"c": 0, "a": 1, "b": 2})
+    def test_new_images_take_slots_newest_first(self):
+        for name, taken in zip("abc", ("2024-01-01T00:00:00Z", "2022-01-01T00:00:00Z", "2026-01-01T00:00:00Z")):
+            self.add(name, (0, 0, 0), taken)
+        self.assertEqual(self.atlas.ensure(), {"c": 0, "a": 1, "b": 2})

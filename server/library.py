@@ -321,7 +321,7 @@ class Library:
             self.layout.start()
             return {'points': [], 'pending': 0, 'sheets': [], 'layout': self.layout.status()}
         shown = rows[:MAP_LIMIT]
-        slots = self.atlas.ensure([row['id'] for row in rows])
+        slots = self.atlas.ensure()
         points = []
         for row in shown:
             if row['id'] in positions and row['id'] in slots:
