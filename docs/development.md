@@ -73,7 +73,7 @@ The server takes these options:
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
 | `scripts/build-coreml-model` | Builds the Core ML image encoder and the parity vector. |
 | `app.json` | The app's name, command name and ports. |
-| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows. |
+| `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows, and the linters and UI test on Ubuntu. |
 
 ## Tests
 
@@ -92,7 +92,7 @@ The smoke test runs Orchard the way a user does. It starts `./orchard --browser`
 scripts/smoke-test --visual
 ```
 
-On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows, and checks that `dist/` matches the sources. To run the visual check in CI, start the workflow by hand with **visual** ticked.
+On Windows, run `python scripts\smoke-test`. CI runs the Python tests and the smoke test on Ubuntu, macOS and Windows. On Ubuntu, it also runs the linters with `npm run lint`, the UI test with `npm run test:ui`, and checks that `dist/` matches the sources. `npm run lint` runs ruff from `.venv/bin`, so on Windows, leave linting to CI. To run the visual check in CI, start the workflow by hand with **visual** ticked.
 
 ## The Core ML model
 

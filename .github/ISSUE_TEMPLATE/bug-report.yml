@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a problem. [Questions and problems](https://github.com/chaseleantj/orchard-photos/blob/main/docs/using-orchard.md#questions-and-problems) covers the common ones, so check there first.
+        Thanks for reporting a problem. [Questions and problems](https://github.com/chaseleantj/orchard-photos/blob/main/docs/questions-and-problems.md) covers the common ones, so check there first.
   - type: dropdown
     id: os
     attributes:
@@ -26,6 +26,7 @@ body:
       placeholder: macOS 15.5, Windows 11 24H2, Ubuntu 24.04
     validations:
       required: true
+  # "The release you downloaded" depends on GitHub Releases existing, which the packaging branch adds before launch.
   - type: input
     id: version
     attributes:
