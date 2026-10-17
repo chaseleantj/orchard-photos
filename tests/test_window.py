@@ -48,6 +48,20 @@ class AppBundleTests(unittest.TestCase):
         execv.assert_not_called()
 
 
+class IconTests(unittest.TestCase):
+    def test_each_platform_gets_an_icon_its_toolkit_can_read(self):
+        from PIL import Image
+
+        for platform, format in (('darwin', 'ICNS'), ('win32', 'ICO'), ('linux', 'PNG')):
+            with patch('server.window.sys.platform', platform), patch('server.window.signal.signal'), patch('server.window.webview.start') as start:
+                window.Window.run(None)
+            with Image.open(start.call_args.kwargs['icon']) as icon:
+                self.assertEqual(icon.format, format)
+                if format == 'ICO':
+                    # Windows picks the size it needs, from the title bar's 16 px to 256 px in Explorer.
+                    self.assertTrue({(16, 16), (32, 32), (256, 256)} <= icon.info['sizes'])
+
+
 class AvailabilityTests(unittest.TestCase):
     def test_linux_without_a_display_uses_the_browser(self):
         with patch('server.window.sys.platform', 'linux'), patch.dict(os.environ, clear=True):

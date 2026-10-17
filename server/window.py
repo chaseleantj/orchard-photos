@@ -1,4 +1,4 @@
-"""The page in its own native window, through pywebview: WebKit on macOS, and GTK or Qt on Linux."""
+"""The page in its own native window, through pywebview: WebKit on macOS, WebView2 on Windows, and GTK or Qt on Linux."""
 import logging
 import os
 from pathlib import Path
@@ -16,6 +16,9 @@ MIN_SIZE = (720, 520)
 BUNDLE_VARIABLE = 'ORCHARD_BUNDLE'
 # The app's Contents/MacOS/python links to this file in the environment, a link to Python's own app binary.
 APP_PYTHON = 'app-python'
+# The window's icon, in the format each toolkit reads: Windows' WinForms takes only an .ico, and GTK or Qt a PNG.
+ICONS = {'darwin': ROOT / 'assets' / 'orchard.icns', 'win32': ROOT / 'assets' / 'orchard.ico'}
+DEFAULT_ICON = ROOT / 'public' / 'apple-touch-icon.png'
 
 
 def become_app(name: str):
@@ -88,7 +91,7 @@ class Window:
 
     def run(self):
         """Show the window, and return once it is closed."""
-        icon = ROOT / 'assets' / 'orchard.icns' if sys.platform == 'darwin' else ROOT / 'public' / 'apple-touch-icon.png'
+        icon = ICONS.get(sys.platform, DEFAULT_ICON)
         # Ctrl+C in the terminal quits at once, like the window's own Quit. GTK's loop would otherwise hold Python's
         # handler back until the window next has an event. pywebview sets its own on macOS.
         signal.signal(signal.SIGINT, signal.SIG_DFL)
