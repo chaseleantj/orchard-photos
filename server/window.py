@@ -19,6 +19,10 @@ APP_PYTHON = 'app-python'
 # Windows' WinForms crashes on anything but an .ico, and GTK and Qt take a PNG.
 ICONS = {'darwin': ROOT / 'assets' / 'orchard.icns', 'win32': ROOT / 'assets' / 'orchard.ico'}
 DEFAULT_ICON = ROOT / 'public' / 'apple-touch-icon.png'
+# The Mac's standard Window menu, which pywebview leaves out, as (title, action, key) with None for a separator.
+# pywebview's page view has its own ⌘W, but the key never reaches it, so Close Window carries it.
+WINDOW_MENU = (('Minimize', 'performMiniaturize:', 'm'), ('Zoom', 'performZoom:', ''), None, ('Bring All to Front', 'arrangeInFront:', ''),
+               ('Close Window', 'performClose:', 'w'))
 
 
 def become_app(name: str):
@@ -75,6 +79,32 @@ def enter_app_bundle():
     os.execv(executable, [str(executable), *sys.orig_argv[1:]])
 
 
+def window_menu():
+    import AppKit
+
+    menu = AppKit.NSMenu.alloc().initWithTitle_('Window')
+    for item in WINDOW_MENU:
+        if item:
+            menu.addItemWithTitle_action_keyEquivalent_(*item)
+        else:
+            menu.addItem_(AppKit.NSMenuItem.separatorItem())
+    return menu
+
+
+def add_window_menu(window):
+    """Add the Window menu to the menu bar, and list the window in it."""
+    import AppKit
+
+    app = AppKit.NSApplication.sharedApplication()
+    menu = window_menu()
+    item = AppKit.NSMenuItem.alloc().init()
+    item.setSubmenu_(menu)
+    app.mainMenu().addItem_(item)
+    app.setWindowsMenu_(menu)
+    # macOS lists windows as they open, and this one is already open.
+    app.addWindowsItem_title_filename_(window, window.title(), False)
+
+
 class Window:
     def __init__(self, name: str, url: str):
         self.name = name
@@ -82,6 +112,12 @@ class Window:
         # draggable=True, or pywebview cancels every drag that starts on an image, like one carried to the search bar.
         self.view = webview.create_window(name, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True, draggable=True)
         self.view.events.before_show += self.restore_frame
+        if sys.platform == 'darwin':
+            from PyObjCTools import AppHelper
+
+            # before_show runs on the main thread just before pywebview builds the menu bar and starts its loop,
+            # so the call waits in the loop's queue until the bar is there.
+            self.view.events.before_show += lambda: AppHelper.callAfter(add_window_menu, self.view.native)
 
     def restore_frame(self):
         """Reopen at the size and place the window had last time. Only macOS has this built in."""

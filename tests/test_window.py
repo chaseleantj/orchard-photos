@@ -69,6 +69,16 @@ class DragTests(unittest.TestCase):
             self.assertTrue(window.Window('Orchard', 'http://127.0.0.1:1').view.draggable)
 
 
+@unittest.skipUnless(sys.platform == 'darwin', 'Only macOS has the Window menu')
+class WindowMenuTests(unittest.TestCase):
+    def test_the_window_menu_has_the_standard_items_and_keys(self):
+        menu = window.window_menu()
+        items = [(item.title(), item.action(), item.keyEquivalent()) for item in menu.itemArray() if not item.isSeparatorItem()]
+        self.assertEqual(items, [('Minimize', 'performMiniaturize:', 'm'), ('Zoom', 'performZoom:', ''),
+                                 ('Bring All to Front', 'arrangeInFront:', ''), ('Close Window', 'performClose:', 'w')])
+        self.assertTrue(menu.itemAtIndex_(2).isSeparatorItem())
+
+
 class AvailabilityTests(unittest.TestCase):
     def test_linux_without_a_display_uses_the_browser(self):
         with patch('server.window.sys.platform', 'linux'), patch.dict(os.environ, clear=True):
