@@ -79,6 +79,8 @@ Filters also apply to search and the map.
 
 Once visual search is set up, search finds images by what they show. Type a description, like "sunset over water", and press Enter. Until then, search matches file names. The search options button, at the right of the search bar, switches between **Appearance** and **File name**.
 
+Press / to go to the search bar from the grid, the map or the viewer. An open viewer or panel closes first. Cmd+K on a Mac, or Ctrl+K elsewhere, does the same.
+
 You can also search with an image:
 
 - Paste an image into the window.

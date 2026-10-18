@@ -77,4 +77,41 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await page.getByRole('button', { name: 'Clear search' }).click();
     await expect(pictures).toHaveCount(FIXTURE.images);
   });
+
+  await test.step('slash goes to the search bar from the grid, the viewer and the map', async () => {
+    const box = page.getByRole('textbox', { name: 'Search images' });
+    const selection = () => box.evaluate((input: HTMLInputElement) => input.value.slice(input.selectionStart!, input.selectionEnd!));
+    await box.fill('red');
+    await pictures.first().focus();
+    await page.keyboard.press('/');
+    await expect(box).toBeFocused();
+    await expect(box).toHaveValue('red');
+    expect(await selection()).toBe('red');
+    // In the search bar, a slash is typed like any other character.
+    await page.keyboard.press('/');
+    await expect(box).toHaveValue('/');
+    await box.fill('');
+    // Held with a modifier, or typed in another field, a slash is left alone.
+    await pictures.first().focus();
+    await page.keyboard.press('Control+/');
+    await expect(box).not.toBeFocused();
+    await page.getByRole('button', { name: 'photos', exact: true }).click();
+    const path = page.getByRole('dialog', { name: 'Folder' }).getByPlaceholder('~/Pictures');
+    await path.fill('~');
+    await page.keyboard.press('/');
+    await expect(path).toHaveValue('~/');
+    await page.keyboard.press('Escape');
+
+    await pictures.first().click();
+    const viewer = page.getByRole('dialog', { name: 'Image viewer' });
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press('/');
+    await expect(viewer).toBeHidden();
+    await expect(box).toBeFocused();
+
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await page.keyboard.press('/');
+    await expect(box).toBeFocused();
+    await page.getByRole('button', { name: 'Grid', exact: true }).click();
+  });
 });

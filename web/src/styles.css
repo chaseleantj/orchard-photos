@@ -10,7 +10,7 @@
   --radius: 4px; --control-radius: 8px; --surface-radius: 12px; --pill: 100px;
   /* Two control heights: one nested inside another control, one for everything else. */
   --control: 40px; --control-nested: 32px; --motion: 180ms; --motion-slow: 320ms; --ease: cubic-bezier(.2,.7,.2,1); --shadow: 0 8px 40px #00000014;
-  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --panel-width: 360px; --detail-width: 300px; --empty-height: 55vh; --icon: 18px;
+  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --detail-width: 300px; --empty-height: 55vh; --icon: 18px;
   color: var(--ink); background: var(--bg); color-scheme: light;
 }
 :root[data-theme='dark'] { --bg: #171816; --surface: #21221f; --soft: #292a26; --ink: #ebebe5; --muted: #a6a89e; --line: #44453e; --focus: #b1bea5; --danger: #ef9c88; --shadow: 0 8px 40px #00000040; color-scheme: dark; }
@@ -40,7 +40,7 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .header { display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
 /* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step. */
-html { scroll-padding-top: calc(var(--s4) + var(--s12) + var(--s2) * 2); }
+html { scroll-padding-top: calc(var(--s4) + var(--search-height) + var(--s2) * 2); }
 .wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
@@ -48,20 +48,26 @@ html { scroll-padding-top: calc(var(--s4) + var(--s12) + var(--s2) * 2); }
 @media (max-width: 480px) { .wordmark .lockup { display: none; } .compact-mark { display: block; } }
 .welcome-mark { width: var(--s16); height: var(--s16); margin-bottom: var(--s4); }
 .header-actions { grid-column: -2; display: flex; gap: var(--s1); justify-content: flex-end; }
-.search { height: var(--s12); display: flex; align-items: center; gap: var(--s3); background: var(--soft); border-radius: var(--pill); padding: 0 var(--s4); }
-.search:focus-within { outline: 1px solid var(--line); }
+/* The bar is a pill and its buttons are discs inset by the same amount on every side, so the last one is concentric
+   with the bar's rounded end. The leading icon or image fills a slot of the same size, so both ends balance. */
+.search { --search-button: calc(var(--search-height) - var(--search-inset) * 2); height: var(--search-height); display: flex; align-items: center; gap: var(--search-inset); background: var(--soft); border-radius: var(--pill); padding: 0 var(--search-inset); }
 .search { transition: background var(--motion) var(--ease), outline-color var(--motion) var(--ease); }
 .search[data-drop] { outline: 1px dashed var(--focus); outline-offset: 2px; }
 .carried { position: fixed; z-index: 10; width: var(--s16); height: var(--s16); object-fit: cover; border-radius: var(--radius); box-shadow: var(--shadow); transform: translate(-50%, -50%); pointer-events: none; animation: lift var(--motion) var(--ease); }
 @keyframes lift { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
 .search[data-drop='over'] { background: var(--surface); outline: 2px solid var(--focus); }
-.search:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-.search > svg { color: var(--muted); }
-.search-reference { width: var(--s8); height: var(--s8); margin-left: calc(var(--s2) * -1); border-radius: var(--radius); object-fit: cover; flex-shrink: 0; }
+/* While an image is carried over the window, the drop states replace the focus ring. */
+.search:not([data-drop]):has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.search > svg { color: var(--muted); margin-inline: calc((var(--search-button) - var(--icon)) / 2); }
+.search-reference { width: var(--search-button); height: var(--search-button); border-radius: var(--radius); object-fit: cover; flex-shrink: 0; }
 .search input { width: 100%; min-width: 0; background: none; border: none; outline: none; }
 .search input::placeholder { color: var(--muted); }
-.search .icon-button { width: var(--control-nested); height: var(--control-nested); border-radius: var(--pill); }
-.search .icon-button:hover, .search .icon-button[aria-expanded='true'] { background: var(--surface); }
+.search .icon-button { width: var(--search-button); height: var(--search-button); border-radius: var(--pill); }
+.search .icon-button:hover, .search .icon-button:focus-visible, .search [aria-haspopup] { background: var(--surface); }
+/* Clear shows its disc on hover or focus; search options keeps its disc, outlined like a secondary button when hovered
+   or open. On the bar's drop state, which is the disc's colour, the disc takes the bar's usual colour instead. */
+.search [aria-haspopup]:hover, .search [aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--line); }
+.search[data-drop='over'] .icon-button { background: var(--soft); }
 .library-meta { display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); color: var(--muted); }
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
@@ -241,9 +247,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 @media (max-width: 720px) {
  :root { --page: 16px; --gap: 4px; --panel-width: min(360px, calc(100vw - 32px)); }
  .header { grid-template-columns: 1fr auto; gap: var(--s3); padding-top: var(--s4); }
- .search { grid-row: 2; grid-column: 1/-1; height: var(--s10); }
- /* The header's two rows of controls, the gap and padding between them, then a step. */
- html { scroll-padding-top: calc(var(--s4) + var(--s10) * 2 + var(--s3) + var(--s2) * 2); }
+ .search { grid-row: 2; grid-column: 1/-1; }
+ /* The header's two rows, the controls and the search bar, the gap and padding between them, then a step. */
+ html { scroll-padding-top: calc(var(--s4) + var(--control) + var(--search-height) + var(--s3) + var(--s2) * 2); }
  .view-switch { margin-right: 0; }
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }

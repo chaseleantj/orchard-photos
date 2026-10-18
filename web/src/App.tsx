@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Search, SlidersHorizontal, Moon, Sun, Info, ChevronDown, X, LayoutGrid, ChartScatter, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import Gallery from './Gallery';
 import type { GalleryHandle } from './Gallery';
@@ -14,6 +15,7 @@ import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, Vi
 const initial = readPreferences();
 const IMAGE_ID = /^[a-f0-9]{64}$/;
 const droppable = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(IMAGE_DRAG);
+const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
 // An image dropped anywhere across the top of the window, down to this far below the search bar, counts as
 // dropped on it.
 const DROP_REACH = 96;
@@ -213,10 +215,20 @@ export default function App() {
   const showFolder = (path: string) => { setSelected(null); setPicked(null); clearSearch(); setView('grid'); setFilters(f => ({ ...f, folder: path })); };
   useEffect(() => {
     const paste = (e: ClipboardEvent) => { const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/')); if (file && ready) { e.preventDefault(); searchWithImage(file); } };
-    const keyboard = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); if (selected === null && !picked && !panel) searchRef.current?.focus(); } };
+    // Slash, or Cmd or Ctrl and K, goes to the search bar from anywhere but a text field. A viewer or panel over it
+    // closes first, since searching replaces what it shows; flushSync lets it hand focus back before the bar takes it.
+    const keyboard = (e: KeyboardEvent) => {
+      const slash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target);
+      const command = (e.metaKey || e.ctrlKey) && e.key === 'k';
+      const input = searchRef.current;
+      if (!(slash || command) || !input) return;
+      e.preventDefault();
+      flushSync(() => { setSelected(null); setPicked(null); setPanel(null); });
+      input.focus(); input.select();
+    };
     window.addEventListener('paste', paste); window.addEventListener('keydown', keyboard);
     return () => { window.removeEventListener('paste', paste); window.removeEventListener('keydown', keyboard); };
-  }, [searchWithImage, panel, selected, picked, ready]);
+  }, [searchWithImage, ready]);
   const filtered = isFiltered(filters);
   const searching = !!submitted || !!similar || !!upload;
   // An image search that failed because visual search is not set up offers to set it up instead of retrying.
@@ -257,7 +269,7 @@ export default function App() {
     <header ref={headerRef} className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
       {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setAskedMode(effectiveMode); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
-        {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : effectiveMode === 'visual' ? 'Describe an image, or drop one' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
+        {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" aria-keyshortcuts="/ Meta+K Control+K" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : effectiveMode === 'visual' ? 'Describe an image, or drop one' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
         {(query || searching) && <button className="icon-button" type="button" aria-label="Clear search" onClick={clearSearch}><X /></button>}
         <button className="icon-button" type="button" aria-label="Search options" title="Search options" aria-haspopup="dialog" aria-expanded={panel === 'search'} onClick={() => setPanel('search')}><ChevronDown /></button>
       </form>}
