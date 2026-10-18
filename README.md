@@ -1,8 +1,8 @@
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard Photos" height="56"></picture>
 
-<!-- HERO: a screenshot or GIF of a described search, a dropped image and the map goes here, like
-<p><img src="docs/hero.gif" alt="Searching for &quot;dog on a beach&quot; in Orchard" width="800"></p>
--->
+<p align="center"><img src="docs/hero.gif" width="800" alt="Orchard Photos: a photo of the Colosseum is dragged onto the search bar and similar photos of Rome fill the grid; typing &quot;a bowl of noodles&quot; brings up photos of noodles; the map then lights up those noodle photos, grouped together among similar food."></p>
+
+<!-- FILM: add <p align="center"><a href="FILM_URL">Watch the 60-second film</a></p> once the film is hosted. -->
 
 Orchard Photos is a photo browser that runs entirely on your computer. Point it at a folder, and it shows every image inside, subfolders included, as one timeline you can filter and search. You can find a photo by describing it, like "dog on a beach", or by showing it a similar image.
 
