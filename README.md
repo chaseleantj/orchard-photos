@@ -2,8 +2,6 @@
 
 <p align="center"><img src="docs/hero.gif" width="800" alt="Orchard Photos: a photo of the Colosseum is dragged onto the search bar and similar photos of Rome fill the grid; typing &quot;a bowl of noodles&quot; brings up photos of noodles; the map then lights up those noodle photos, grouped together among similar food."></p>
 
-<!-- FILM: add <p align="center"><a href="FILM_URL">Watch the 60-second film</a></p> once the film is hosted. -->
-
 Orchard Photos is a photo browser that runs entirely on your computer. Point it at a folder, and it shows every image inside, subfolders included, as one timeline you can filter and search. You can find a photo by describing it, like "dog on a beach", or by showing it a similar image.
 
 Most photo apps with this kind of search upload your library to a server. Orchard keeps everything local: the search model runs on your computer, nothing is uploaded, and your files are only ever read, never moved or changed.
