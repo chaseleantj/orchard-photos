@@ -74,6 +74,10 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(meta).toHaveText(plural(1, 'match', 'matches'));
     await expect(pictures).toHaveCount(1);
     await expect(pictures.first()).toHaveAccessibleName('Open beach.png');
+    // The map counts the same file-name matches it lights.
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await expect(meta).toHaveText(plural(1, 'match', 'matches'));
+    await page.getByRole('button', { name: 'Grid', exact: true }).click();
     await page.getByRole('button', { name: 'Clear search' }).click();
     await expect(pictures).toHaveCount(FIXTURE.images);
   });

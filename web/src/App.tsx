@@ -27,6 +27,16 @@ const MAX_PAGE = 2500;
 // UPLOAD_LIMIT on the server.
 const UPLOAD_LIMIT = 20 * 1024 * 1024;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
+type Asked = 'nothing' | 'name' | 'words' | 'image';
+// The count under the search bar. The map counts the matches it lights; a ranked grid's total runs through the whole
+// folder, so a search in words says how it is ordered instead of claiming them all as most similar.
+function countLabel(asked: Asked, mapped: boolean, total: number, lit: number) {
+  const count = mapped ? lit : total;
+  if (asked === 'nothing') return plural(total, 'image');
+  if (asked === 'name') return plural(count, 'match', 'matches');
+  if (asked === 'words' && !mapped) return `${plural(total, 'image')}, most similar first`;
+  return plural(count, 'most similar image', 'most similar images');
+}
 export default function App() {
   const [filters, setFilters] = useState(initial.filters);
   const [theme, setTheme] = useState(initial.theme);
@@ -256,7 +266,8 @@ export default function App() {
   // While new results load, the map keeps lighting the previous matches instead of flashing back to everything.
   const lastHighlight = useRef<string[] | null>(null);
   const highlight = useMemo(() => { if (!searching) lastHighlight.current = null; else if (!loading) lastHighlight.current = items.map(item => item.id); return lastHighlight.current; }, [searching, loading, items]);
-  const subtitle = (similar || upload) && !mapped ? `${total.toLocaleString()} most similar ${total === 1 ? 'image' : 'images'}` : mapped && searching ? `Closest ${plural(items.length, 'match', 'matches')}` : searching ? (queryMode === 'visual' ? `${plural(total, 'image')} by similarity` : plural(total, 'match', 'matches')) : plural(total, 'image');
+  const asked: Asked = similar || upload ? 'image' : queryMode === 'visual' ? 'words' : queryMode === 'name' ? 'name' : 'nothing';
+  const subtitle = countLabel(asked, mapped, total, items.length);
   // Visual results only come from prepared images, so while the rest are being prepared the line says how many.
   const partial = queryMode === 'visual' || similar || upload ? search && search.indexed < search.total && `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} prepared` : '';
   const scope = [filters.folder && `in ${filters.folder}`, filters.type && typeLabel(filters.type), rangeLabel(filters), searching && !loading && partial].filter(Boolean).map(part => ` · ${part}`).join('');
