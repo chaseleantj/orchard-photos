@@ -20,7 +20,6 @@ PAGE_SIZE = 80
 # The most one request returns, so a jump far down the timeline loads the pages above it in a few requests.
 MAX_PAGE = 2500
 IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
-SIMILAR_LIMIT = 100
 # The most images the map shows, the newest. Each is a decoded icon in the page, and drawn every frame.
 MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
@@ -230,9 +229,6 @@ class Library:
                 own = db.execute('SELECT coalesce((SELECT group_id FROM image_groups WHERE image_id=?), ?)', (reference, reference)).fetchone()[0]
             rows = [row for row in self.tiles(where, values) if row['id'] in ranking]
             rows.sort(key=lambda row: (row['group'] == own, ranking[row['id']]), reverse=True)
-            if reference or image_bytes:
-                # Beyond the closest matches, similarity to a single image is noise.
-                rows = rows[:SIMILAR_LIMIT]
         return {'items': [dict(row) for row in rows[offset:offset + limit]], 'total': len(rows), 'offset': offset,
                 'hasMore': offset + limit < len(rows)}
 

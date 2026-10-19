@@ -127,7 +127,7 @@ export default function Embedding({ root, filters, highlight, search, model, sca
     // The map reloads when the folder or filters change, a scan lands, or the user retries; search only lights points up.
   }, [key, revision, retry, unprepared, preparing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const lit = highlight && highlight.length ? highlight : null;
+  const lit = highlight;
   useEffect(() => { if (phase === 'ready') engine.current?.setHighlight(lit); }, [lit, phase, data]);
 
   // Bring the view back to everything once a search is cleared.

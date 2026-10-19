@@ -157,8 +157,9 @@ export class MapEngine {
 
   setHighlight(ids: string[] | null) {
     const set = ids && new Set(ids.map(id => this.index.get(id)).filter((i): i is number => i !== undefined));
-    this.members = set && set.size ? set : null;
-    if (this.members) this.flyTo([...this.members]);
+    // A search that matched nothing fades every image.
+    this.members = set;
+    if (set?.size) this.flyTo([...set]);
     this.invalidate();
   }
 

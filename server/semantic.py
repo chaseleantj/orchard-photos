@@ -13,6 +13,12 @@ from server.cache import connect, thumbnail_path
 
 # The embedding space. Vectors are stored under this key, so vectors from another model are never mixed with its own.
 MODEL = "google/siglip2-base-patch16-256"
+# The lowest cosine similarity that counts as a match, measured for MODEL on real photo folders. SigLIP scores are
+# absolute rather than relative to the folder, so a subject the folder lacks finds nothing instead of its closest misses.
+# A text query scores 0.10 to 0.15 against images that show it, and below 0.085 against folders without it.
+TEXT_MATCH = 0.08
+# Images 0.70 or more alike share their subject or scene; the reference itself scores 1.
+IMAGE_MATCH = 0.70
 # MODEL exported to ONNX, at a fixed revision so every install runs the same weights.
 REPOSITORY = "onnx-community/siglip2-base-patch16-256-ONNX"
 REVISION = "d1114256522a37ffa257a0a58017348ab0058db2"
@@ -485,7 +491,7 @@ class SemanticIndex:
         return ids, matrix
 
     def search(self, text: str = "", image_id: str = "", image_bytes: bytes | None = None) -> list[tuple[str, float]]:
-        """Return every indexed image ranked by cosine similarity, best first."""
+        """Return the indexed images that match, ranked by cosine similarity, best first."""
         import numpy
         from PIL import Image, ImageOps
 
@@ -521,4 +527,5 @@ class SemanticIndex:
             raise
         scores = matrix @ query
         order = numpy.argsort(-scores, kind="stable")
+        order = order[scores[order] >= (TEXT_MATCH if text.strip() else IMAGE_MATCH)]
         return [(ids[index], float(scores[index])) for index in order]

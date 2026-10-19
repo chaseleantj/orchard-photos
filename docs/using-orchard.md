@@ -87,7 +87,7 @@ You can also search with an image:
 - Drop an image anywhere along the top of the window. This works with files, and with images from the grid and the map.
 - Choose **Find similar** in the viewer.
 
-Searching with an image shows its 100 closest matches.
+A search shows only real matches, closest first, so the count depends on what the folder holds. If nothing in the folder fits a description, the search says so instead of showing the nearest misses.
 
 ## The map
 

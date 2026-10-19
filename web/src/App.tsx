@@ -28,13 +28,12 @@ const MAX_PAGE = 2500;
 const UPLOAD_LIMIT = 20 * 1024 * 1024;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
 type Asked = 'nothing' | 'name' | 'words' | 'image';
-// The count under the search bar. The map counts the matches it lights; a ranked grid's total runs through the whole
-// folder, so a search in words says how it is ordered instead of claiming them all as most similar.
+// The count under the search bar. The map counts the matches it lights.
 function countLabel(asked: Asked, mapped: boolean, total: number, lit: number) {
   const count = mapped ? lit : total;
   if (asked === 'nothing') return plural(total, 'image');
+  if (!count) return 'No matches';
   if (asked === 'name') return plural(count, 'match', 'matches');
-  if (asked === 'words' && !mapped) return `${plural(total, 'image')}, most similar first`;
   return plural(count, 'most similar image', 'most similar images');
 }
 export default function App() {
@@ -265,7 +264,10 @@ export default function App() {
   const scanBusy = scan?.state === 'scanning';
   // While new results load, the map keeps lighting the previous matches instead of flashing back to everything.
   const lastHighlight = useRef<string[] | null>(null);
-  const highlight = useMemo(() => { if (!searching) lastHighlight.current = null; else if (!loading) lastHighlight.current = items.map(item => item.id); return lastHighlight.current; }, [searching, loading, items]);
+  // The map lights every match, so it loads the pages the grid would only load on scrolling.
+  const loadingMatches = mapped && searching && more && !error;
+  useEffect(() => { if (loadingMatches && !loading) void reach(total - 1); }, [loadingMatches, loading, total, reach]);
+  const highlight = useMemo(() => { if (!searching) lastHighlight.current = null; else if (!loading && !loadingMatches) lastHighlight.current = items.map(item => item.id); return lastHighlight.current; }, [searching, loading, loadingMatches, items]);
   const asked: Asked = similar || upload ? 'image' : queryMode === 'visual' ? 'words' : queryMode === 'name' ? 'name' : 'nothing';
   const subtitle = countLabel(asked, mapped, total, items.length);
   // Visual results only come from prepared images, so while the rest are being prepared the line says how many.
@@ -286,7 +288,7 @@ export default function App() {
       </form>}
       <div className="header-actions">{ready && <><div className="view-switch" role="group" aria-label="View"><button className="text-button" aria-pressed={!mapped} aria-label="Grid" title="Grid" onClick={() => setView('grid')}><LayoutGrid /><span>Grid</span></button><button className="text-button" aria-pressed={mapped} aria-label="Map" title="Map by appearance" onClick={() => setView('map')}><ChartScatter /><span>Map</span></button></div><button ref={anchors.filters} className={filtered ? 'text-button filter-on' : 'text-button'} aria-label={filtered ? 'Filters, on' : 'Filters'} title={filtered ? 'Filters are on' : 'Filters'} aria-expanded={panel === 'filters'} onClick={() => setPanel('filters')}><SlidersHorizontal /><span>Filter</span></button></>}{ready && <button ref={anchors.library} className="icon-button" aria-label="Info" title="Info" aria-expanded={panel === 'library'} onClick={() => setPanel('library')}><Info /></button>}<button className="icon-button" aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} title={theme === 'light' ? 'Dark mode' : 'Light mode'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon /> : <Sun />}</button></div>
     </header>
-    {ready && <div className="library-meta"><p aria-live="polite">{loading ? 'Finding images…' : error && !items.length ? 'No results' : subtitle}{scope}</p>{library && <Activity library={library} gathering={!!gathering} hideError={!!seenError && seenError === search?.error} onOpen={() => setPanel('library')} />}<button ref={anchors.folder} className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
+    {ready && <div className="library-meta"><p aria-live="polite">{loading || loadingMatches ? 'Finding images…' : error && !items.length ? 'No results' : subtitle}{scope}</p>{library && <Activity library={library} gathering={!!gathering} hideError={!!seenError && seenError === search?.error} onOpen={() => setPanel('library')} />}<button ref={anchors.folder} className="text-button folder-button" title={`${folder!.path}. Choose another folder`} aria-expanded={panel === 'folder'} onClick={() => setPanel('folder')}><FolderOpen /><span>{folder!.name}</span></button></div>}
     <main aria-busy={loading} data-timeline={timelineShown || undefined}>
       {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. If you quit it or closed its Terminal window, start it again.</span><button className="text-button secondary" onClick={refreshStatus}>Retry</button></div>}
       {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p>{status.platform === 'darwin' && <p>Apple Photos libraries are skipped. Export photos to a folder to include them.</p>}<FolderChooser status={status} offerSetup={!status.model.present} onOpened={applyStatus} onSetUp={setUpSearch} /></div>

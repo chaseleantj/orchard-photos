@@ -391,15 +391,27 @@ class SemanticTests(unittest.TestCase):
         reopened = SemanticIndex(self.directory, self.encoder)
         self.assertEqual(reopened.status()["indexed"], 2)
         self.assertEqual(reopened.status()["state"], "ready")
-        self.assertEqual(reopened.search(image_id="2"), [("2", 1.0), ("1", 0.0)])
-        with connect(self.search.directory) as connection:
-            connection.execute("DELETE FROM images WHERE id = '1'")
         self.assertEqual(reopened.search(image_id="2"), [("2", 1.0)])
+        with connect(self.search.directory) as connection:
+            connection.execute("DELETE FROM images WHERE id = '2'")
+        self.assertEqual(reopened.search(image_id="1"), [("1", 1.0)])
         with patch.object(self.encoder, "load") as load:
             reopened.index()
             load.assert_not_called()
         with connect(self.search.directory) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM semantic_embeddings WHERE model=?", (MODEL,)).fetchone()[0], 1)
+
+    def test_search_keeps_only_matches_above_the_models_floor(self):
+        self.add("1", "2", "3")
+        vectors = np.array([[1, 0], [0.75, 0.66], [0.6, 0.8]], dtype=np.float32)
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=vectors):
+            self.search.index()
+        self.assertEqual([image_id for image_id, _ in self.search.search(image_id="1")], ["1", "2"])
+        # A text query scores far lower than an image does, against a floor of its own.
+        with patch.object(self.encoder, "features", return_value=np.array([[0.12, -0.05]], dtype=np.float32)):
+            self.assertEqual([image_id for image_id, _ in self.search.search(text="a cat")], ["1"])
+        with patch.object(self.encoder, "features", return_value=np.array([[0.05, 0.04]], dtype=np.float32)):
+            self.assertEqual(self.search.search(text="a xylophone"), [])
 
     def test_ready_only_once_every_image_has_a_vector_including_ones_a_scan_adds_later(self):
         # The startup run can start on a partial scan. Images the scan commits afterwards keep it from reading ready.

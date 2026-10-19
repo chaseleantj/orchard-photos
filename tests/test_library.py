@@ -147,14 +147,14 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.ids({'similar': reference, 'folder': 'a'}), [reference, match])
         self.assertEqual(self.ids({'similar': reference}), [reference, elsewhere, match])
 
-    def test_image_similarity_returns_only_the_closest_hundred_but_text_is_not_capped(self):
+    def test_every_visual_match_is_returned(self):
         ids = [self.image(number) for number in range(1, 106)]
         ranking = [(image_id, 1 - index / 200) for index, image_id in enumerate(ids)]
-        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 105}, search=lambda **kwargs: ranking)
-        result = self.library.pictures({'similar': ids[0], 'limit': '200'})
-        self.assertEqual((result['total'], result['hasMore']), (100, False))
-        self.assertEqual([row['id'] for row in result['items']][:2], ids[:2])
-        self.assertEqual(self.library.pictures({'q': 'x', 'mode': 'visual', 'limit': '200'})['total'], 105)
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 105}, search=lambda **kwargs: ranking[:-5])
+        for params in ({'similar': ids[0]}, {'q': 'x', 'mode': 'visual'}):
+            result = self.library.pictures({**params, 'limit': '200'})
+            self.assertEqual((result['total'], result['hasMore']), (100, False))
+            self.assertEqual([row['id'] for row in result['items']][:2], ids[:2])
 
     def test_visual_search_before_preparation_explains_itself(self):
         self.image(1)
