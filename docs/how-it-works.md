@@ -77,7 +77,7 @@ The cache lives in Orchard's [data folder](using-orchard.md#where-orchard-keeps-
 | Path | Contents |
 | --- | --- |
 | `models/` | The SigLIP 2 weights, shared by all folders. |
-| `libraries/<id>/` | One folder's cache: its SQLite index, thumbnails, previews, vectors, map positions and icon sheets. `folder.txt` names the folder it belongs to. |
+| `libraries/<id>/` | One folder's cache: its SQLite index, thumbnails, previews, vectors, map positions and icon sheets. `folder.txt` names the folder it belongs to. The Photos library's cache also has `exports/`, the photos written out to view or download, which go with each scan. |
 | `recent.json` | The recently opened folders. |
 
 Deleting a `libraries/<id>` folder clears that folder's cache. Orchard rebuilds it the next time you open the folder.

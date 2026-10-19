@@ -1,7 +1,7 @@
 {
   "name": "Orchard",
   "slug": "orchard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "port": 4400,
   "devPort": 5173
 }
