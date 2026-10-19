@@ -196,6 +196,8 @@ class ScannerTests(unittest.TestCase):
     def test_the_cache_inside_the_folder_is_not_scanned(self):
         inside = Scanner(self.root, self.root / 'cache')
         picture(self.root / 'one.png')
+        # The second scan would find the thumbnail the first one drew.
+        inside.scan()
         inside.scan()
         with connect(inside.directory, rows=True) as db:
             self.assertEqual([row[0] for row in db.execute('SELECT path FROM files')], ['one.png'])

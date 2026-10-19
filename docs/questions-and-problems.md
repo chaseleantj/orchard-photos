@@ -59,7 +59,7 @@ Check these, in order:
 
 - **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files, videos and Live Photo videos aren't shown, and Info counts them.
 - **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open.
-- **Hidden files and Photos libraries.** Both are skipped. See [Apple Photos](using-orchard.md#apple-photos).
+- **Hidden files and Photos libraries.** Both are skipped inside a folder. To browse your Photos library, see [Apple Photos](using-orchard.md#apple-photos).
 - **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.
 - **Filters.** Info says how many images your filters show.
 - **The date.** A photo without EXIF data is dated by when the file last changed, so a copied photo may sit in a later month than you expect.
@@ -72,6 +72,10 @@ On a Mac, a folder macOS keeps Orchard out of can't be read at all. See [Orchard
 The first time Orchard opens your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow it. If you chose **Don't Allow**, Orchard says macOS is blocking access to the folder. If the clone itself is in one of those folders, the Mac app from `scripts/install-app` instead stops with "Operation not permitted" in its log.
 
 To allow it, open **System Settings › Privacy & Security › Files & Folders**, and turn on the folder for Orchard, or for the app you started Orchard from, like Terminal. If it isn't listed there, add it to **Full Disk Access** instead. Then choose **Rescan now** in Info, or open Orchard again. Each update of the downloaded app counts as a new app to macOS, so it may ask again.
+
+## Orchard says macOS hasn't allowed it to read your Photos library
+
+macOS asks once whether Orchard may access your photos. If you chose **Don't Allow**, open **System Settings › Privacy & Security › Photos**, turn on Orchard, then choose **Rescan now** in Info. Started from Terminal, Orchard can't ask at all, so open it from its app instead. See [Apple Photos](using-orchard.md#apple-photos).
 
 ## Orchard says "This app is available only on this computer"
 

@@ -141,6 +141,10 @@ def build_mac(build: Path) -> Path:
         'CFBundleShortVersionString': APP['version'], 'CFBundleVersion': APP['version'],
         'LSMinimumSystemVersion': oldest, 'LSArchitecturePriority': ['arm64'],
         'NSHighResolutionCapable': True,
+        # Shown when Orchard first asks to read the Photos library. Without it, macOS refuses without asking.
+        # Shown the first time Show in Photos asks Photos to open a photo.
+        'NSAppleEventsUsageDescription': 'Orchard opens Photos at a photo when you choose Show in Photos.',
+        'NSPhotoLibraryUsageDescription': 'Orchard shows and searches the photos in your Photos library. It never changes them.',
     }
     with open(contents / 'Info.plist', 'wb') as file:
         plistlib.dump(plist, file)

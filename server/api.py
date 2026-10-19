@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, quote, urlparse
 import urllib.request
 import webbrowser
 
+from server import photos
 from server.diagnostics import LAST_ERROR, report
 from server.library import IMAGE_ID, Library
 from server.semantic import Encoder
@@ -56,6 +57,11 @@ def default_data_dir() -> Path:
     return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / APP['slug']
 
 
+def reachable(path: str) -> bool:
+    """Whether a remembered folder can be opened now. The Photos library opens through Photos, not as a folder."""
+    return photos.available() if photos.is_library(Path(path)) else Path(path).is_dir()
+
+
 def tilde(path: Path) -> str:
     """A path as people write it: the home folder shortened to ~."""
     try:
@@ -81,6 +87,8 @@ class App:
         if not text:
             raise ValueError('Enter the path of a folder.')
         path = Path(text).expanduser()
+        if photos.is_library(path):
+            return self.photos_library(path)
         if not path.is_absolute():
             raise ValueError('Enter a full path, like C:\\Users\\you\\Pictures.' if sys.platform == 'win32' else 'Enter a full path, starting with / or ~.')
         try:
@@ -93,6 +101,16 @@ class App:
             raise ValueError(f'{text} cannot be read. Check its permissions.')
         if path == self.data_dir or self.data_dir in path.parents:
             raise ValueError(f'{text} is where {APP["name"]} keeps its cache. Choose a folder of images.')
+        return path
+
+    @staticmethod
+    def photos_library(path: Path) -> Path:
+        """The System Photo Library, the one Photos library Orchard can read, by the name Orchard keeps for it."""
+        if not photos.available():
+            raise ValueError('Only a Mac can open a Photos library. Export the photos to a folder instead.')
+        if path != photos.LIBRARY:
+            raise ValueError(f'{APP["name"]} can only open the library Photos uses as its System Photo Library. Choose '
+                             'Photos library instead, or make this one the System Photo Library in Photos › Settings.')
         return path
 
     def open(self, value) -> Library:
@@ -161,14 +179,16 @@ class App:
 
     def status(self):
         library = self.library
-        recent = [{'path': path, 'label': tilde(Path(path)), 'available': Path(path).is_dir()}
+        recent = [{'path': path, 'label': photos.NAME if photos.is_library(Path(path)) else tilde(Path(path)), 'available': reachable(path)}
                   for path in self.recent() if not library or path != str(library.folder)]
         result = {'app': APP['name'], 'version': APP['version'], 'platform': sys.platform, 'picker': self.window is not None or picker_command(None) is not None, 'recent': recent, 'folder': None, 'library': None,
+                  'photos': str(photos.LIBRARY) if photos.available() else None,
                   'model': {'present': self.encoder.downloaded() or self.encoder.activity is not None,
                             'size': self.encoder.size}}
         if library:
-            result['folder'] = {'path': str(library.folder), 'label': tilde(library.folder),
-                                'name': library.folder.name or str(library.folder), 'id': library.directory.name}
+            result['folder'] = {'path': str(library.folder), 'id': library.directory.name, 'photos': library.photos,
+                                **({'label': photos.NAME, 'name': photos.NAME} if library.photos else
+                                   {'label': tilde(library.folder), 'name': library.folder.name or str(library.folder)})}
             result['library'] = library.status()
         return result
 
@@ -397,6 +417,10 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 1 and not post:
             self.json(details)
         elif action == 'reveal' and post:
+            if library.photos:
+                photos.show(library.path(image_id, self.form().get('path')) or '')
+                self.json({'revealed': True})
+                return
             path = library.original(image_id, self.form().get('path'))
             if not path or not path.exists():
                 raise ValueError('This file is no longer there. Rescan to refresh.')
@@ -518,7 +542,7 @@ def main(argv=None):
     try:
         if folder:
             app.open(folder)
-        elif app.recent() and Path(app.recent()[0]).is_dir():
+        elif app.recent() and reachable(app.recent()[0]):
             app.open(app.recent()[0])
     except ValueError as error:
         sys.exit(str(error))
