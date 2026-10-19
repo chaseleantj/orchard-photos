@@ -7,5 +7,7 @@ onnxruntime-directml==1.24.4; sys_platform == "win32" and platform_machine == "A
 tokenizers==0.23.3
 huggingface-hub==2.2.0
 pywebview==6.2.1
+# PhotoKit, for reading the Photos library on a Mac. pywebview already brings PyObjC there.
+pyobjc-framework-Photos==12.2.2; sys_platform == "darwin"
 # Windows has no time zone database of its own, which the timeline needs.
 tzdata==2026.5; sys_platform == "win32"

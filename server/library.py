@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
+from server import photos
 from server.atlas import Atlas
 from server.cache import connect, preview_path, thumbnail_path, while_open
 from server.groups import Groups
@@ -42,7 +43,8 @@ class Library:
     def __init__(self, folder: Path, directory: Path, encoder):
         self.folder = Path(folder)
         self.directory = Path(directory)
-        self.scanner = Scanner(self.folder, self.directory)
+        self.photos = photos.is_library(self.folder)
+        self.scanner = Scanner(self.folder, self.directory, photos.PhotosLibrary(self.directory) if self.photos else None)
         self.semantic = SemanticIndex(self.directory, encoder)
         self.atlas = Atlas(self.directory)
         self.layout = Layout(self.semantic)
@@ -273,16 +275,29 @@ class Library:
                 return None
             files = [dict(row) for row in db.execute(
                 'SELECT path, modified FROM files WHERE image_id=? ORDER BY modified DESC, path', (image_id,))]
-        return {**dict(image), 'root': str(self.folder), 'files': files, 'preview': image['mime'] not in WEB_TYPES}
+        return {**dict(image), 'root': photos.NAME if self.photos else str(self.folder), 'source': 'photos' if self.photos else 'folder',
+                'files': files, 'preview': image['mime'] not in WEB_TYPES}
 
-    def original(self, image_id, relative=None):
-        """The file on disk for an image: the named copy if given and it holds this image, else the first."""
+    def path(self, image_id, relative=None):
+        """An image's path in the folder: the named copy if given and it holds this image, else the first."""
         with connect(self.directory, rows=True) as db:
             if relative is not None:
                 row = db.execute('SELECT path FROM files WHERE image_id=? AND path=?', (image_id, relative)).fetchone()
             else:
                 row = db.execute('SELECT path FROM files WHERE image_id=? ORDER BY path LIMIT 1', (image_id,)).fetchone()
-        return self.folder / row['path'] if row else None
+        return row['path'] if row else None
+
+    def original(self, image_id, relative=None):
+        """The file on disk for an image, as path() picks it. A photo in Photos is written out first, and is None if
+        Photos can't provide it."""
+        path = self.path(image_id, relative)
+        if path is None:
+            return None
+        try:
+            return self.scanner.source.file(path)
+        except OSError as error:
+            logger.info('Could not read %s: %s', path, error)
+            return None
 
     def thumbnail(self, image_id):
         return thumbnail_path(self.directory, image_id)

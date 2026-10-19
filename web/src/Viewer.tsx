@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
 import { Disclosure } from './Panels';
 import { dateLabel, downloadUrl, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
 
 interface Props {
   items: Picture[]; index: number; total: number; hasMore: boolean; loadingMore: boolean; pageError: string; rootName: string; platform: string; filters: Filters;
+  /** The Photos library has no folders, and its photos are shown in Photos rather than Finder. */
+  photos: boolean;
   onChange: (index: number) => void; onClose: () => void; onSimilar: ((id: string) => void) | null; onFolder: (folder: string) => void;
 }
 // The deepest folders name a place; the rest of a long path is in the tooltip and under Details.
@@ -13,7 +15,7 @@ const CRUMBS = 3;
 // Browsers refuse canvases much larger than this.
 const CLIPBOARD_PIXELS = 50_000_000;
 
-export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, onChange, onClose, onSimilar, onFolder }: Props) {
+export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [details, setDetails] = useState<Details | null>(null);
   const [error, setError] = useState('');
@@ -25,8 +27,9 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const [shown, setShown] = useState(0);
   const front = items[index];
   const item = members[shown] ?? front;
-  const folder = folderOf(item.path);
-  const reveal = platform === 'darwin' ? 'Show in Finder' : 'Show in folder';
+  const folder = photos ? '' : folderOf(item.path);
+  const reveal = photos ? 'Show in Photos' : platform === 'darwin' ? 'Show in Finder' : 'Show in folder';
+  const RevealIcon = photos ? Images : FolderOpen;
   useEffect(() => {
     const node = dialog.current!;
     const focus = document.activeElement as HTMLElement;
@@ -102,7 +105,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
           <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>
           <a className="text-button" href={downloadUrl(item.id, item.path)} download><Download />Download original</a>
-          <button className="text-button" onClick={() => show(item.path)}><FolderOpen />{reveal}</button>
+          <button className="text-button" onClick={() => show(item.path)}><RevealIcon />{reveal}</button>
         </div>
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
         {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
@@ -110,10 +113,10 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => setShown(place)}><img src={imageUrl(member.id)} alt="" decoding="async" /></button></li>)}</ul>
         </section>}
         {details && <Disclosure summary="Details">
-          <p className="path">{details.root}/{item.path}</p>
+          <p className="path">{photos ? `In your ${details.root} library` : `${details.root}/${item.path}`}</p>
           {otherDate && <p>{otherDate}</p>}
           {details.camera && <p>{details.camera}</p>}
-          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{other.path}</span><button className="icon-button" aria-label={`${reveal}: ${other.path}`} title={reveal} onClick={() => show(other.path)}><FolderOpen /></button></li>)}</ul></>}
+          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{photos ? fileName(other.path) : other.path}</span><button className="icon-button" aria-label={`${reveal}: ${photos ? fileName(other.path) : other.path}`} title={reveal} onClick={() => show(other.path)}><RevealIcon /></button></li>)}</ul></>}
         </Disclosure>}
       </aside>
     </div>

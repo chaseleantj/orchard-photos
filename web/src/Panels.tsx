@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
 import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
 import { APP_NAME, RANGES, SET_UP, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
 import { Progress } from './Progress';
@@ -113,14 +113,15 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const unsupported = [raw && plural(raw, 'RAW photo'), videos && plural(videos, 'video')].filter(Boolean).join(' and ');
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <p className="path">{status.folder!.label}</p>
-    <p>Subfolders included, hidden ones skipped. Your files are never changed.</p>
+    <p>{status.folder!.photos ? 'Read through Photos, with your edits. Hidden photos are skipped, and your library is never changed.' : 'Subfolders included, hidden ones skipped. Your files are never changed.'}</p>
     <dl className="counts">
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
     {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
     {unsupported && <p>{unsupported} {raw + videos === 1 ? 'isn’t' : 'aren’t'} shown yet.</p>}
-    {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped, since macOS keeps {library.photoLibraries.length === 1 ? 'it' : 'them'} closed to other apps. Export photos to a folder to include them.</p>}
+    {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud.</p>}
+    {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
     <div className="panel-action"><p>{scanning ? scanLabel : 'Checks every minute.'}</p><button className="text-button secondary" disabled={busy || scanning} onClick={() => action('/api/scan')}>Rescan now</button></div>
@@ -210,6 +211,7 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
   const forget = async (folder: string) => { try { onOpened(await post<Status>('/api/folder/forget', { path: folder })); } catch (e) { setError((e as Error).message); } };
   return <div className="chooser">
     {status.picker && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
+    {status.photos && !status.folder?.photos && <button className="text-button secondary" disabled={!!busy} onClick={() => open('photos', () => post('/api/folder', { path: status.photos }))}><Images />{busy === 'photos' ? 'Opening…' : 'Photos library'}</button>}
     <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
       <label htmlFor="folder-path">{status.picker ? 'Or type its path' : 'Folder path'}</label>
       <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button secondary" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>

@@ -26,6 +26,8 @@ cat > $app/Contents/Info.plist <<'PLIST'
   <key>CFBundleIconFile</key><string>Orchard.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Orchard opens Photos at a photo when you choose Show in Photos.</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>Orchard shows and searches the photos in your Photos library. It never changes them.</string>
 </dict>
 </plist>
 PLIST

@@ -147,17 +147,17 @@ Orchard skips:
 
 ## Apple Photos
 
-Orchard can't read a Photos library, so to browse those photos, export them to a folder first:
+On a Mac, Orchard can show and search your Photos library. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
 
-1. Open Photos and choose **Library** in the sidebar.
-2. Select the photos you want, or press Cmd+A for all of them.
-3. Choose **File › Export › Export Unmodified Originals**, then **Export**.
-4. Choose or make a folder, like `Pictures/Photos export`, and click **Export Originals**.
-5. Open that folder in Orchard.
+- Orchard reads each photo through Photos, with your edits, and never changes your library.
+- Hidden photos and videos are skipped.
+- Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
+- **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
+- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**.
+- Orchard opens the library Photos uses as its System Photo Library. To browse another one, make it the system library in **Photos › Settings › General**.
+- Started from Terminal, Orchard can't ask for access, since macOS only asks apps that say why they want it. Open Orchard from its app, or from the one [`scripts/install-app`](#the-mac-app-from-a-clone) makes.
 
-Unmodified originals keep their EXIF dates, so they land in the right month. They don't include edits made in Photos. To get the edited versions, choose **File › Export › Export Photos** instead. The export is a full copy, so it needs as much free space as the photos themselves.
-
-If **Optimize Mac Storage** is on in Photos' iCloud settings, most originals are only in iCloud. Photos downloads them during the export, which can take a long time for a large library. To download them all first, choose **Download Originals to this Mac** in the same settings.
+On another computer, export the photos to a folder instead: in Photos, select them, choose **File › Export › Export Unmodified Originals**, and open that folder in Orchard. Unmodified originals keep their dates but not your edits. **File › Export › Export Photos** includes the edits.
 
 ## Where Orchard keeps its data
 

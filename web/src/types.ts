@@ -9,7 +9,7 @@ export interface Filters { folder: string; type: string; range: Range; from: str
  *  In the grid it fronts its `group` of near-duplicates, `members` images in all, counting itself. */
 export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 interface FileCopy { path: string; modified: string }
-export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; files: FileCopy[]; preview: boolean }
+export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; source: 'folder' | 'photos'; files: FileCopy[]; preview: boolean }
 /** `received` and `size` are bytes, sent while the model downloads. */
 export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
 /** Visual queries can be answered: some images are prepared. */
@@ -22,14 +22,16 @@ export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
   unlistedFolders: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
-export interface Folder { path: string; label: string; name: string; id: string }
+/** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
+export interface Folder { path: string; label: string; name: string; id: string; photos: boolean }
 interface RecentFolder { path: string; label: string; available: boolean }
 /** The visual search model, shared by every folder. `present` says it is downloaded or on its way, and `size` is its
  *  download in bytes. */
 export interface Model { present: boolean; size: number }
 /** What setting up visual search is called, the same wherever it is offered. */
 export const SET_UP = 'Set up visual search';
-export interface Status { app: string; version: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[] }
+/** `photos` is the path that opens the Photos library, on a Mac that can read it. */
+export interface Status { app: string; version: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[]; photos: string | null }
 /** The opt-in check for a newer release, and the release it found, if any. */
 export interface Updates { enabled: boolean; update: { version: string; url: string } | null }
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }

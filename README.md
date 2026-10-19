@@ -11,6 +11,7 @@ Most photo apps with this kind of search upload your library to a server. Orchar
 - **Search by describing a photo**, in English or another language.
 - **Find similar photos** by dropping one onto the search bar.
 - **See your photos on a map**, where photos that look alike sit together.
+- **Open your Apple Photos library** on a Mac, without exporting it.
 - **Filter** by subfolder, file type and date.
 - **See fewer duplicates.** Copies, bursts and edits of the same photo share one tile.
 

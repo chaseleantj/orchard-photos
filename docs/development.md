@@ -63,6 +63,7 @@ The server takes these options:
 | `server/library.py` | One folder's library, and the queries the API answers from it. |
 | `server/cache.py` | Where a folder's cache keeps its SQLite index, thumbnails and previews. |
 | `server/scanner.py` | Finds image files, reads metadata and draws thumbnails. |
+| `server/photos.py` | Reads the Mac's Photos library through PhotoKit, as a source the scanner reads like a folder. |
 | `server/semantic.py` | Downloads and runs SigLIP 2 with ONNX Runtime, and stores each folder's vectors. |
 | `server/groups.py` | Groups near-duplicates. |
 | `server/layout.py` | Lays out the map with UMAP, written in NumPy. |

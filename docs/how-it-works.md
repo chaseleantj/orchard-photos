@@ -24,6 +24,8 @@ Images are stored by their hash, so identical files share one entry, and a renam
 
 Large images are decoded in turn, within a shared memory budget, and shrunk before they're turned upright, so a folder of huge PNGs or TIFFs doesn't run out of memory. Images over 300 megapixels are refused.
 
+On a Mac, the scanner can read the Photos library instead of a folder. macOS keeps the library's files closed to other apps, so `server/photos.py` asks Photos for them through PhotoKit, with the user's permission. It lists every photo with its asset id, original file name and modification date, and hands over each new or edited photo's current version, which the scanner hashes, reads and draws like a file. A photo whose modification date hasn't changed isn't read again.
+
 The server rescans the open folder every minute. A folder that's slow to list, like one on a network drive, is rechecked less often: the wait is at least 20 times as long as the last listing took.
 
 ## Visual search
@@ -75,7 +77,7 @@ The cache lives in Orchard's [data folder](using-orchard.md#where-orchard-keeps-
 | Path | Contents |
 | --- | --- |
 | `models/` | The SigLIP 2 weights, shared by all folders. |
-| `libraries/<id>/` | One folder's cache: its SQLite index, thumbnails, previews, vectors, map positions and icon sheets. `folder.txt` names the folder it belongs to. |
+| `libraries/<id>/` | One folder's cache: its SQLite index, thumbnails, previews, vectors, map positions and icon sheets. `folder.txt` names the folder it belongs to. The Photos library's cache also has `exports/`, the photos written out to view or download, which go with each scan. |
 | `recent.json` | The recently opened folders. |
 
 Deleting a `libraries/<id>` folder clears that folder's cache. Orchard rebuilds it the next time you open the folder.

@@ -69,6 +69,10 @@ class ScanCancelled(Exception):
     pass
 
 
+class OnlyInCloud(OSError):
+    """A photo whose original is in iCloud, not on this computer."""
+
+
 def walk(root: Path, skip=frozenset(), found=None):
     """Every image file below root as (relative posix path, stat), the folders that could not be listed, the Photos
     libraries passed over, and how many RAW and video files were skipped. `found` hears the running count of image
@@ -114,6 +118,33 @@ def walk(root: Path, skip=frozenset(), found=None):
                 raise blocked(root) from None
             unreadable.append(relative)
     return files, unreadable, libraries, skipped
+
+
+class Folder:
+    """Images as files under a folder: the source a scan reads from, unless it is a Photos library."""
+
+    def __init__(self, root: Path, skip=frozenset()):
+        self.root = Path(root)
+        self.skip = skip
+
+    def check(self):
+        if not self.root.is_dir():
+            raise FolderUnavailable(f'{self.root} is not available. Reconnect its drive, or choose another folder.')
+
+    def list(self, found=None):
+        """Every image as (path, folder, size, mtime_ns), with walk's unreadable folders, Photos libraries and
+        skipped counts."""
+        files, unreadable, libraries, skipped = walk(self.root, self.skip, found)
+        if '' in unreadable:
+            raise FolderUnavailable(f'{self.root} could not be read. Check its permissions, or choose another folder.')
+        entries = [(path, path.rpartition('/')[0], status.st_size, status.st_mtime_ns) for path, status in files]
+        return entries, unreadable, libraries, skipped
+
+    def open(self, path: str):
+        return (self.root / path).open('rb')
+
+    def file(self, path: str) -> Path:
+        return self.root / path
 
 
 def utc(moment: datetime) -> str:
@@ -200,6 +231,8 @@ def scaled(image, edge: int):
 
 
 def failure(error: Exception) -> str:
+    if isinstance(error, OnlyInCloud):
+        return 'Only in iCloud'
     if isinstance(error, Image.DecompressionBombError):
         return 'Too large to open'
     if isinstance(error, UnidentifiedImageError):
@@ -214,10 +247,15 @@ def failure(error: Exception) -> str:
 
 
 class Scanner:
-    def __init__(self, folder: Path, directory: Path):
+    def __init__(self, folder: Path, directory: Path, source=None):
         self.folder = Path(folder)
         self.directory = Path(directory)
         (self.directory / 'thumbnails').mkdir(parents=True, exist_ok=True)
+        if source is None:
+            # The cache may sit inside the folder, and isn't scanned.
+            status = self.directory.stat()
+            source = Folder(self.folder, {(status.st_dev, status.st_ino)})
+        self.source = source
         with connect(self.directory, rows=True) as db:
             db.executescript('''
                 PRAGMA journal_mode=WAL;
@@ -234,22 +272,15 @@ class Scanner:
             ''')
 
     def scan(self, progress=None, committed=None, cancelled=lambda: False):
-        """Bring the index in line with the folder. Unchanged files are recognised by size and modification time."""
-        if not self.folder.is_dir():
-            raise FolderUnavailable(f'{self.folder} is not available. Reconnect its drive, or choose another folder.')
-        skip = set()
-        if self.directory.exists():
-            status = self.directory.stat()
-            skip.add((status.st_dev, status.st_ino))
+        """Bring the index in line with the source. Unchanged files are recognised by size and modification time."""
+        self.source.check()
         started = time.monotonic()
-        found, unreadable, libraries, skipped = walk(self.folder, skip, progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
+        found, unreadable, libraries, skipped = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         listed = time.monotonic() - started
-        if '' in unreadable:
-            raise FolderUnavailable(f'{self.folder} could not be read. Check its permissions, or choose another folder.')
         with connect(self.directory, rows=True) as db:
             known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute('SELECT path, size, mtime_ns FROM files')}
             self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
-        changed = [(path, status) for path, status in found if known.get(path) != (status.st_size, status.st_mtime_ns)]
+        changed = [entry for entry in found if known.get(entry[0]) != (entry[2], entry[3])]
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
         if progress:
             progress(dict(stats))
@@ -258,26 +289,26 @@ class Scanner:
                 if cancelled():
                     raise ScanCancelled
                 batch = changed[start:start + BATCH]
-                results = list(pool.map(self._examine, [path for path, _ in batch]))
+                results = list(pool.map(self._examine, batch))
                 if any(result.get('error') == BLOCKED for result in results):
                     raise blocked(self.folder)
                 with connect(self.directory, rows=True) as db:
-                    for (path, status), result in zip(batch, results):
+                    for (path, folder, size, mtime_ns), result in zip(batch, results):
                         if 'width' in result:
                             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
                                        (result['id'], result['width'], result['height'], result['mime'],
-                                        status.st_size, result['taken'], result['camera']))
-                        modified = utc(datetime.fromtimestamp(status.st_mtime_ns / 1e9, UTC))
+                                        size, result['taken'], result['camera']))
+                        modified = utc(datetime.fromtimestamp(mtime_ns / 1e9, UTC))
                         db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
-                                   (path, path.rpartition('/')[0], result.get('id') if 'error' not in result else None,
-                                    status.st_size, status.st_mtime_ns, modified, result.get('error')))
+                                   (path, folder, result.get('id') if 'error' not in result else None,
+                                    size, mtime_ns, modified, result.get('error')))
                 self._seen.update(result['id'] for result in results if 'width' in result)
                 stats['done'] += len(batch)
                 if committed:
                     committed()
                 if progress:
                     progress(dict(stats))
-        removed = self._remove_missing({path for path, _ in found}, unreadable)
+        removed = self._remove_missing({entry[0] for entry in found}, unreadable)
         if removed and committed:
             committed()
         with connect(self.directory, rows=True) as db:
@@ -291,33 +322,38 @@ class Scanner:
         stats['skipped'] = skipped
         return stats
 
-    def _examine(self, relative: str) -> dict:
+    def _examine(self, entry) -> dict:
         """Hash one file and, if its content is new, read its metadata and draw its thumbnail."""
-        path = self.folder / relative
+        relative, _, size, _ = entry
         try:
-            if path.stat().st_size == 0:
+            if size == 0:
                 return {'error': 'Empty file'}
-            with path.open('rb') as stream:
+            with self.source.open(relative) as stream:
                 digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-            if digest in self._seen:
-                return {'id': digest}
-            with Image.open(path) as image:
-                mime = Image.MIME.get(image.format or '', 'application/octet-stream')
-                refuse_oversized(image)
-                width, height = image.size
-                # Drawn before the EXIF is read, since reading a PNG's EXIF decodes the whole image.
-                display = scaled(image, THUMBNAIL_SIZE)
-                if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
-                    width, height = height, width
-                taken, camera = exif_details(image)
-                target = thumbnail_path(self.directory, digest)
-                temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
-                display.save(temporary, 'WEBP', quality=82)
-                while_open(temporary.replace, target)
-            return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
+                if digest in self._seen:
+                    return {'id': digest}
+                stream.seek(0)
+                return self._describe(stream, digest)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
             return {'error': failure(error)}
+
+    def _describe(self, stream, digest: str) -> dict:
+        """Read a new image's metadata and draw its thumbnail."""
+        with Image.open(stream) as image:
+            mime = Image.MIME.get(image.format or '', 'application/octet-stream')
+            refuse_oversized(image)
+            width, height = image.size
+            # Drawn before the EXIF is read, since reading a PNG's EXIF decodes the whole image.
+            display = scaled(image, THUMBNAIL_SIZE)
+            if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
+                width, height = height, width
+            taken, camera = exif_details(image)
+            target = thumbnail_path(self.directory, digest)
+            temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
+            display.save(temporary, 'WEBP', quality=82)
+            while_open(temporary.replace, target)
+        return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
 
     def _remove_missing(self, present: set, unreadable: list) -> int:
         """Forget files that are gone, and the images and thumbnails nothing refers to. Files inside a folder that
