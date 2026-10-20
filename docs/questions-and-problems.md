@@ -85,9 +85,9 @@ The terminal, or the app's log, shows a line starting with `Refused` for each re
 
 ## Photos on external, network and cloud drives
 
-The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. If the drive or network drops partway through a scan, Orchard stops reading, and carries on from where it was once the folder is back. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
+The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. If the drive or network drops partway through a scan, Orchard stops reading, and carries on from where it was once the folder is back. Info counts any files it couldn't reach, and each scan tries them again. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
 
-The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos.
+The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos, or to carry on a scan the network interrupted.
 
 Cloud folders, like iCloud Drive, OneDrive, Dropbox and Google Drive, work best when their files are kept on the computer. A file that's only online is downloaded when Orchard reads it, so the first scan may download the whole folder, or fail to read files that aren't available.
 

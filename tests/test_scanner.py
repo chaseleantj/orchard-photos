@@ -108,19 +108,43 @@ class ScannerTests(unittest.TestCase):
         dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
         with patch('pathlib.Path.open', side_effect=dropped):
             stats = self.scanner.scan()
-        self.assertEqual((stats['images'], stats['unreadable']), (0, 0))
+        self.assertEqual((stats['images'], stats['unreadable'], stats['unreached']), (0, 0, 3))
         self.assertEqual(self.files(), {})
         stats = self.scanner.scan()
-        self.assertEqual((stats['changed'], stats['images'], stats['unreadable']), (3, 3, 0))
+        self.assertEqual((stats['changed'], stats['images'], stats['unreadable'], stats['unreached']), (3, 3, 0, 0))
 
-    def test_a_folder_that_goes_away_midway_stops_the_scan(self):
+    def test_a_file_that_could_not_be_reached_leaves_the_rest_of_its_batch(self):
+        for color in ('red', 'green', 'blue'):
+            picture(self.root / f'{color}.png', color)
+        real = Path.open
+        def flaky(path, *args, **kwargs):
+            if path.name == 'green.png':
+                raise OSError(errno.EIO, 'Input/output error')
+            return real(path, *args, **kwargs)
+        with patch.object(Path, 'open', autospec=True, side_effect=flaky):
+            stats = self.scanner.scan()
+        self.assertEqual((stats['images'], stats['unreached']), (2, 1))
+        self.assertEqual(set(self.files()), {'red.png', 'blue.png'})
+        self.assertEqual(self.scanner.scan()['changed'], 1)
+
+    def test_a_whole_batch_that_could_not_be_reached_stops_the_scan(self):
+        for color in ('red', 'green', 'blue'):
+            picture(self.root / f'{color}.png', color)
+        with patch('server.scanner.BATCH', 2), patch('pathlib.Path.open', side_effect=OSError(errno.ETIMEDOUT, 'Operation timed out')):
+            with self.assertRaisesRegex(FolderUnavailable, 'stopped answering'):
+                self.scanner.scan()
+        self.assertEqual(self.files(), {})
+
+    def test_a_folder_that_goes_away_midway_stops_the_scan_and_keeps_its_cache(self):
         picture(self.root / 'one.png')
+        self.scanner.scan()
+        picture(self.root / 'two.png', 'blue')
         def unmounted(*_):
             shutil.rmtree(self.root, ignore_errors=True)
             raise FileNotFoundError(errno.ENOENT, 'No such file or directory')
         with patch('pathlib.Path.open', side_effect=unmounted), self.assertRaisesRegex(FolderUnavailable, 'Reconnect its drive'):
             self.scanner.scan()
-        self.assertEqual(self.files(), {})
+        self.assertEqual(set(self.files()), {'one.png'})
 
     def test_a_retry_reads_again_the_files_that_could_not_be_read(self):
         picture(self.root / 'locked.png')

@@ -282,8 +282,8 @@ class Scanner:
         """Bring the index in line with the source. Unchanged files are recognised by size and modification time,
         and so are files that could not be read, unless `retry` asks to try them again.
 
-        A file that could not be reached is left out, so the next scan reads it. If the source is gone too, the scan
-        stops, and the next one carries on once it is back."""
+        A file that could not be reached is left out, so the next scan reads it. If the source is gone, or a whole
+        batch could not be reached, the scan stops, and the next one carries on once the source is back."""
         self.source.check()
         started = time.monotonic()
         found, unreadable, libraries, skipped = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
@@ -296,6 +296,7 @@ class Scanner:
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
         if progress:
             progress(dict(stats))
+        missed = 0
         with ThreadPoolExecutor(WORKERS) as pool:
             for start in range(0, len(changed), BATCH):
                 if cancelled():
@@ -304,8 +305,13 @@ class Scanner:
                 results = list(pool.map(self._examine, batch))
                 if any(result.get('error') == BLOCKED for result in results):
                     raise blocked(self.folder)
-                if any(result.get('unreached') for result in results):
+                unreached = sum(1 for result in results if result.get('unreached'))
+                if unreached:
                     self.source.check()
+                    # A network drive that stops answering can still be listed, so a whole batch failing stops it too.
+                    if unreached == BATCH:
+                        raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
+                    missed += unreached
                 with connect(self.directory, rows=True) as db:
                     for (path, folder, size, mtime_ns), result in zip(batch, results):
                         if result.get('unreached'):
@@ -332,6 +338,7 @@ class Scanner:
             stats['files'] = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
         stats['removed'] = removed
+        stats['unreached'] = missed
         stats['listed_seconds'] = round(listed, 3)
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries

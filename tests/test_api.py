@@ -191,6 +191,11 @@ class HandlerTests(unittest.TestCase):
         handler = self.dispatch('/api/folder', {**LOCAL, 'Content-Type': 'image/png', 'Content-Length': '2'}, True, b'{}')
         self.assertEqual(handler.json.call_args.args[1], 415)
 
+    def test_rescan_now_tries_again_what_could_not_be_read(self):
+        with patch('server.api.threading.Thread') as thread:
+            handler = self.dispatch('/api/scan', {**LOCAL, 'Content-Type': 'application/json', 'Content-Length': '2'}, True, b'{}')
+        thread.assert_called_once_with(target=handler.server.app.current.return_value.scan, kwargs={'retry': True}, daemon=True)
+
     def test_every_response_says_it_may_not_be_framed_or_sniffed(self):
         server = Server(('127.0.0.1', 0), Handler)
         server.app = Mock(**{'status.return_value': {}})
