@@ -89,6 +89,9 @@ export default function App() {
   };
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
+  // The request whose first page the list holds. Until the current one's arrives, the list is the last request's,
+  // and a page appended to it would mix the two.
+  const listed = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
   const paging = useRef(false);
   const dragDepth = useRef(0);
@@ -140,11 +143,11 @@ export default function App() {
     const controller = new AbortController();
     const id = ++requestId.current;
     paging.current = false; setLoading(true); setLoadingMore(false); setError(''); setSelected(null);
-    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; setItems(data.items); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
+    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; listed.current = id; setItems(data.items); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => controller.abort();
   }, [fetchResults, revision, ready, root]);
   const loadMore = async () => {
-    if (paging.current) return false;
+    if (paging.current || listed.current !== requestId.current) return false;
     paging.current = true; const id = requestId.current; setLoadingMore(true); setError('');
     try { const data = await fetchResults(items.length); if (id === requestId.current) { setItems(old => { const seen = new Set(old.map(item => item.id)); return [...old, ...data.items.filter(item => !seen.has(item.id))]; }); setMore(data.hasMore); return true; } } catch (e) { if (id === requestId.current) setError((e as Error).message); } finally { if (id === requestId.current) { paging.current = false; setLoadingMore(false); } }
     return false;
@@ -180,6 +183,7 @@ export default function App() {
     const id = requestId.current;
     // Holding the paging lock for the whole jump keeps infinite scroll from appending underneath it.
     while (paging.current) await new Promise(done => setTimeout(done, 50));
+    if (listed.current !== id) return;
     paging.current = true; setLoadingMore(true); setError('');
     const start = loadedRef.current;
     let { items: list, more: hasMore } = start;
