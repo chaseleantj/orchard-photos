@@ -102,6 +102,58 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((stats['images'], stats['unreadable']), (1, 3))
         self.assertEqual(self.scanner.scan()['changed'], 0)
 
+    def test_a_file_that_could_not_be_reached_leaves_the_rest_of_its_batch(self):
+        for color in ('red', 'green', 'blue'):
+            picture(self.root / f'{color}.png', color)
+        real = Path.open
+        def flaky(path, *args, **kwargs):
+            if path.name == 'green.png':
+                raise OSError(errno.EIO, 'Input/output error')
+            return real(path, *args, **kwargs)
+        with patch.object(Path, 'open', autospec=True, side_effect=flaky):
+            stats = self.scanner.scan()
+        self.assertEqual((stats['images'], stats['unreached']), (2, 1))
+        self.assertEqual(set(self.files()), {'red.png', 'blue.png'})
+        self.assertEqual(self.scanner.scan()['changed'], 1)
+
+    def test_a_batch_that_could_not_be_reached_stops_the_scan_and_the_next_carries_on(self):
+        for color in ('red', 'green', 'blue', 'white', 'black'):
+            picture(self.root / f'{color}.png', color)
+        dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
+        # Batches of two or four fill up, and one of five or six holds the whole folder, as the last batch of a scan
+        # often holds fewer than it could. A batch of one file is left to the next scan, since that file may be damaged.
+        for size, stopped in ((2, True), (4, True), (5, True), (6, True), (1, False)):
+            with self.subTest(batch=size), patch('server.scanner.BATCH', size), patch('pathlib.Path.open', side_effect=dropped):
+                if stopped:
+                    with self.assertRaisesRegex(FolderUnavailable, 'stopped answering'):
+                        self.scanner.scan()
+                else:
+                    self.assertEqual(self.scanner.scan()['unreached'], 5)
+            self.assertEqual(self.files(), {})
+        stats = self.scanner.scan()
+        self.assertEqual((stats['changed'], stats['images'], stats['unreached']), (5, 5, 0))
+
+    def test_a_folder_that_goes_away_midway_stops_the_scan_and_keeps_its_cache(self):
+        picture(self.root / 'one.png')
+        self.scanner.scan()
+        picture(self.root / 'two.png', 'blue')
+        def unmounted(*_):
+            shutil.rmtree(self.root, ignore_errors=True)
+            raise FileNotFoundError(errno.ENOENT, 'No such file or directory')
+        with patch('pathlib.Path.open', side_effect=unmounted), self.assertRaisesRegex(FolderUnavailable, 'Reconnect its drive'):
+            self.scanner.scan()
+        self.assertEqual(set(self.files()), {'one.png'})
+
+    def test_a_retry_reads_again_the_files_that_could_not_be_read(self):
+        picture(self.root / 'locked.png')
+        with patch('pathlib.Path.open', side_effect=PermissionError(errno.EACCES, 'Permission denied')):
+            self.scanner.scan()
+        self.assertEqual(self.files()['locked.png']['error'], 'Permission denied')
+        self.assertEqual(self.scanner.scan()['changed'], 0)
+        stats = self.scanner.scan(retry=True)
+        self.assertEqual((stats['changed'], stats['images'], stats['unreadable']), (1, 1, 0))
+        self.assertIsNone(self.files()['locked.png']['error'])
+
     def test_images_over_the_pixel_limit_are_refused(self):
         Image.MAX_IMAGE_PIXELS, limit = 1000, Image.MAX_IMAGE_PIXELS
         self.addCleanup(setattr, Image, 'MAX_IMAGE_PIXELS', limit)

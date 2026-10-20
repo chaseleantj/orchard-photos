@@ -20,7 +20,7 @@ export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; d
 /** `skipped` counts the RAW photos and videos the scanner can't read, from the last scan that counted them. */
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unlistedFolders: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unlistedFolders: number; unreached: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 /** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
 export interface Folder { path: string; label: string; name: string; id: string; photos: boolean }

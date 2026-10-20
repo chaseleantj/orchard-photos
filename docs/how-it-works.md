@@ -20,7 +20,7 @@ The scanner walks the whole folder and finds every image file. It counts RAW pho
 2. Reads the width, height, camera and date taken from EXIF.
 3. Draws a 720 px WebP thumbnail.
 
-Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
+Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. So is a file that couldn't be read, until **Rescan now** asks for it again. A file the scanner couldn't reach at all, as when a network drive drops, isn't recorded, so the next scan reads it, and Info counts it. If the folder itself has gone, or a whole batch of files couldn't be reached, the scan stops there. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
 
 Large images are decoded in turn, within a shared memory budget, and shrunk before they're turned upright, so a folder of huge PNGs or TIFFs doesn't run out of memory. Images over 300 megapixels are refused.
 
