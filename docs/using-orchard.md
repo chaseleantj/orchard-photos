@@ -81,6 +81,8 @@ Once visual search is set up, search finds images by what they show. Type a desc
 
 Press / to go to the search bar from the grid, the map or the viewer. An open viewer or panel closes first. Cmd+K on a Mac, or Ctrl+K elsewhere, does the same.
 
+Cmd+Z, or Ctrl+Z, goes back to the previous search, and Cmd+Shift+Z, or Ctrl+Shift+Z, goes forward again. Clearing a search counts as a step. While you are typing in the search bar, the keys undo your typing first.
+
 You can also search with an image:
 
 - Paste an image into the window.
