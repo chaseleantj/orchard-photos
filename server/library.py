@@ -77,7 +77,8 @@ class Library:
         """Stop background work for a folder that is no longer shown."""
         self.closed.set()
 
-    def scan(self):
+    def scan(self, retry=False):
+        """Bring the index in line with the folder. `retry` also reads again the files that could not be read."""
         if not self.scan_lock.acquire(blocking=False):
             return
         self.scan_state = {'state': 'scanning'}
@@ -87,7 +88,7 @@ class Library:
 
             def committed():
                 self.revision += 1
-            self.stats = self.scanner.scan(progress, committed, self.closed.is_set)
+            self.stats = self.scanner.scan(progress, committed, self.closed.is_set, retry)
             self.stats['updated'] = datetime.now(UTC).isoformat()
             self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
             self.scan_state = {'state': 'ready'}

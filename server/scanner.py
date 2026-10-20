@@ -230,6 +230,13 @@ def scaled(image, edge: int):
     return displayable(ImageOps.exif_transpose(image))
 
 
+def unreached(error: Exception) -> bool:
+    """Whether a read failed on the way to the file, as when a network drive drops, rather than on the file itself.
+    Those failures carry the system's error number; Pillow's, for a file it can't decode, don't. A file's own
+    permissions are a failure of the file."""
+    return isinstance(error, OSError) and error.errno is not None and not isinstance(error, PermissionError)
+
+
 def failure(error: Exception) -> str:
     if isinstance(error, OnlyInCloud):
         return 'Only in iCloud'
@@ -271,14 +278,19 @@ class Scanner:
                 CREATE INDEX IF NOT EXISTS file_folder ON files(folder);
             ''')
 
-    def scan(self, progress=None, committed=None, cancelled=lambda: False):
-        """Bring the index in line with the source. Unchanged files are recognised by size and modification time."""
+    def scan(self, progress=None, committed=None, cancelled=lambda: False, retry=False):
+        """Bring the index in line with the source. Unchanged files are recognised by size and modification time,
+        and so are files that could not be read, unless `retry` asks to try them again.
+
+        A file that could not be reached is left out, so the next scan reads it. If the source is gone too, the scan
+        stops, and the next one carries on once it is back."""
         self.source.check()
         started = time.monotonic()
         found, unreadable, libraries, skipped = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         listed = time.monotonic() - started
         with connect(self.directory, rows=True) as db:
-            known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute('SELECT path, size, mtime_ns FROM files')}
+            known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute(
+                'SELECT path, size, mtime_ns FROM files' + (' WHERE error IS NULL' if retry else ''))}
             self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
         changed = [entry for entry in found if known.get(entry[0]) != (entry[2], entry[3])]
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
@@ -292,8 +304,12 @@ class Scanner:
                 results = list(pool.map(self._examine, batch))
                 if any(result.get('error') == BLOCKED for result in results):
                     raise blocked(self.folder)
+                if any(result.get('unreached') for result in results):
+                    self.source.check()
                 with connect(self.directory, rows=True) as db:
                     for (path, folder, size, mtime_ns), result in zip(batch, results):
+                        if result.get('unreached'):
+                            continue
                         if 'width' in result:
                             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
                                        (result['id'], result['width'], result['height'], result['mime'],
@@ -336,7 +352,7 @@ class Scanner:
                 return self._describe(stream, digest)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
-            return {'error': failure(error)}
+            return {'unreached': True} if unreached(error) else {'error': failure(error)}
 
     def _describe(self, stream, digest: str) -> dict:
         """Read a new image's metadata and draw its thumbnail."""

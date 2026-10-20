@@ -102,6 +102,36 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((stats['images'], stats['unreadable']), (1, 3))
         self.assertEqual(self.scanner.scan()['changed'], 0)
 
+    def test_files_that_could_not_be_reached_are_read_by_the_next_scan(self):
+        for color in ('red', 'green', 'blue'):
+            picture(self.root / f'{color}.png', color)
+        dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
+        with patch('pathlib.Path.open', side_effect=dropped):
+            stats = self.scanner.scan()
+        self.assertEqual((stats['images'], stats['unreadable']), (0, 0))
+        self.assertEqual(self.files(), {})
+        stats = self.scanner.scan()
+        self.assertEqual((stats['changed'], stats['images'], stats['unreadable']), (3, 3, 0))
+
+    def test_a_folder_that_goes_away_midway_stops_the_scan(self):
+        picture(self.root / 'one.png')
+        def unmounted(*_):
+            shutil.rmtree(self.root, ignore_errors=True)
+            raise FileNotFoundError(errno.ENOENT, 'No such file or directory')
+        with patch('pathlib.Path.open', side_effect=unmounted), self.assertRaisesRegex(FolderUnavailable, 'Reconnect its drive'):
+            self.scanner.scan()
+        self.assertEqual(self.files(), {})
+
+    def test_a_retry_reads_again_the_files_that_could_not_be_read(self):
+        picture(self.root / 'locked.png')
+        with patch('pathlib.Path.open', side_effect=PermissionError(errno.EACCES, 'Permission denied')):
+            self.scanner.scan()
+        self.assertEqual(self.files()['locked.png']['error'], 'Permission denied')
+        self.assertEqual(self.scanner.scan()['changed'], 0)
+        stats = self.scanner.scan(retry=True)
+        self.assertEqual((stats['changed'], stats['images'], stats['unreadable']), (1, 1, 0))
+        self.assertIsNone(self.files()['locked.png']['error'])
+
     def test_images_over_the_pixel_limit_are_refused(self):
         Image.MAX_IMAGE_PIXELS, limit = 1000, Image.MAX_IMAGE_PIXELS
         self.addCleanup(setattr, Image, 'MAX_IMAGE_PIXELS', limit)

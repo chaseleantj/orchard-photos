@@ -360,7 +360,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.app.forget(self.form().get('path'))
                 self.json(self.app.status())
             elif route == ('/api/scan', True):
-                threading.Thread(target=self.app.current().scan, daemon=True).start()
+                # Asked for by hand, a scan also tries again what could not be read.
+                threading.Thread(target=self.app.current().scan, kwargs={'retry': True}, daemon=True).start()
                 self.json({'started': True}, 202)
             elif route == ('/api/search/index', True):
                 self.app.prepare()
