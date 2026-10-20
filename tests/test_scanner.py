@@ -102,17 +102,6 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual((stats['images'], stats['unreadable']), (1, 3))
         self.assertEqual(self.scanner.scan()['changed'], 0)
 
-    def test_files_that_could_not_be_reached_are_read_by_the_next_scan(self):
-        for color in ('red', 'green', 'blue'):
-            picture(self.root / f'{color}.png', color)
-        dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
-        with patch('pathlib.Path.open', side_effect=dropped):
-            stats = self.scanner.scan()
-        self.assertEqual((stats['images'], stats['unreadable'], stats['unreached']), (0, 0, 3))
-        self.assertEqual(self.files(), {})
-        stats = self.scanner.scan()
-        self.assertEqual((stats['changed'], stats['images'], stats['unreadable'], stats['unreached']), (3, 3, 0, 0))
-
     def test_a_file_that_could_not_be_reached_leaves_the_rest_of_its_batch(self):
         for color in ('red', 'green', 'blue'):
             picture(self.root / f'{color}.png', color)
@@ -127,13 +116,22 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(set(self.files()), {'red.png', 'blue.png'})
         self.assertEqual(self.scanner.scan()['changed'], 1)
 
-    def test_a_whole_batch_that_could_not_be_reached_stops_the_scan(self):
-        for color in ('red', 'green', 'blue'):
+    def test_a_batch_that_could_not_be_reached_stops_the_scan_and_the_next_carries_on(self):
+        for color in ('red', 'green', 'blue', 'white', 'black'):
             picture(self.root / f'{color}.png', color)
-        with patch('server.scanner.BATCH', 2), patch('pathlib.Path.open', side_effect=OSError(errno.ETIMEDOUT, 'Operation timed out')):
-            with self.assertRaisesRegex(FolderUnavailable, 'stopped answering'):
-                self.scanner.scan()
-        self.assertEqual(self.files(), {})
+        dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
+        # Batches of two or four fill up, and one of five or six holds the whole folder, as the last batch of a scan
+        # often holds fewer than it could. A batch of one file is left to the next scan, since that file may be damaged.
+        for size, stopped in ((2, True), (4, True), (5, True), (6, True), (1, False)):
+            with self.subTest(batch=size), patch('server.scanner.BATCH', size), patch('pathlib.Path.open', side_effect=dropped):
+                if stopped:
+                    with self.assertRaisesRegex(FolderUnavailable, 'stopped answering'):
+                        self.scanner.scan()
+                else:
+                    self.assertEqual(self.scanner.scan()['unreached'], 5)
+            self.assertEqual(self.files(), {})
+        stats = self.scanner.scan()
+        self.assertEqual((stats['changed'], stats['images'], stats['unreached']), (5, 5, 0))
 
     def test_a_folder_that_goes_away_midway_stops_the_scan_and_keeps_its_cache(self):
         picture(self.root / 'one.png')

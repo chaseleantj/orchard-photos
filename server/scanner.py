@@ -305,13 +305,14 @@ class Scanner:
                 results = list(pool.map(self._examine, batch))
                 if any(result.get('error') == BLOCKED for result in results):
                     raise blocked(self.folder)
-                unreached = sum(1 for result in results if result.get('unreached'))
-                if unreached:
+                lost = sum(1 for result in results if result.get('unreached'))
+                if lost:
                     self.source.check()
                     # A network drive that stops answering can still be listed, so a whole batch failing stops it too.
-                    if unreached == BATCH:
+                    # One file alone may just be damaged, and is left to the next scan.
+                    if lost == len(batch) > 1:
                         raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
-                    missed += unreached
+                    missed += lost
                 with connect(self.directory, rows=True) as db:
                     for (path, folder, size, mtime_ns), result in zip(batch, results):
                         if result.get('unreached'):
