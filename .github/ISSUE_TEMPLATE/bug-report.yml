@@ -31,7 +31,7 @@ body:
     attributes:
       label: Orchard version
       description: The version at the bottom of Info. If you cloned the repository, also add the output of `git rev-parse --short HEAD`.
-      placeholder: 0.2.0
+      placeholder: 0.3.0
     validations:
       required: true
   - type: textarea

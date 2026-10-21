@@ -39,8 +39,9 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .muted { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .header { display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
-/* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step. */
-html { scroll-padding-top: calc(var(--s4) + var(--search-height) + var(--s2) * 2); }
+/* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step.
+   It is the tile's margin rather than the page's padding, which would also scroll the page under the search bar on every keystroke. */
+.picture { scroll-margin-top: calc(var(--s4) + var(--search-height) + var(--s2) * 2); }
 .wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
@@ -249,7 +250,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
  .header { grid-template-columns: 1fr auto; gap: var(--s3); padding-top: var(--s4); }
  .search { grid-row: 2; grid-column: 1/-1; }
  /* The header's two rows, the controls and the search bar, the gap and padding between them, then a step. */
- html { scroll-padding-top: calc(var(--s4) + var(--control) + var(--search-height) + var(--s3) + var(--s2) * 2); }
+ .picture { scroll-margin-top: calc(var(--s4) + var(--control) + var(--search-height) + var(--s3) + var(--s2) * 2); }
  .view-switch { margin-right: 0; }
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }

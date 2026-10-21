@@ -28,6 +28,10 @@ const MAX_PAGE = 2500;
 const UPLOAD_LIMIT = 20 * 1024 * 1024;
 type PanelName = 'filters' | 'library' | 'folder' | 'search';
 type Asked = 'nothing' | 'name' | 'words' | 'image';
+// A search as it was asked: the words and the mode they were asked in, or the image to match.
+interface Asking { text: string; mode: SearchMode | null; similar: string; upload: File | null }
+const NO_SEARCH: Asking = { text: '', mode: null, similar: '', upload: null };
+const sameSearch = (a: Asking, b: Asking) => a.text === b.text && a.mode === b.mode && a.similar === b.similar && a.upload === b.upload;
 // The count under the search bar. The map counts the matches it lights.
 function countLabel(asked: Asked, mapped: boolean, total: number, lit: number) {
   const count = mapped ? lit : total;
@@ -89,6 +93,9 @@ export default function App() {
   };
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
+  // The request whose first page the list holds. Until the current one's arrives, the list is the last request's,
+  // and a page appended to it would mix the two.
+  const listed = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
   const paging = useRef(false);
   const dragDepth = useRef(0);
@@ -99,7 +106,27 @@ export default function App() {
   useEffect(() => { if (selected === null && picked === null && refreshPending.current) { refreshPending.current = false; setLive(n => n + 1); } }, [selected, picked]);
   useEffect(() => { document.documentElement.dataset.theme = theme; savePreferences({ theme, filters, view, root }); }, [theme, filters, view, root]);
 
-  const clearSearch = useCallback(() => { setQuery(''); setSubmitted(''); setAskedMode(null); setSimilar(''); setUpload(null); history.replaceState(null, '', location.pathname); }, []);
+  const clearSearch = useCallback(() => { setQuery(''); setSubmitted(''); setAskedMode(null); setSimilar(''); setUpload(null); }, []);
+  useEffect(() => { history.replaceState(null, '', submitted ? `?q=${encodeURIComponent(submitted)}` : location.pathname); }, [submitted]);
+  // Every change to the search, clearing it included, is a step that Cmd or Ctrl and Z undoes, and with Shift redoes.
+  const asking = useMemo<Asking>(() => ({ text: submitted, mode: askedMode, similar, upload }), [submitted, askedMode, similar, upload]);
+  const searches = useRef({ past: [] as Asking[], shown: asking, future: [] as Asking[] });
+  useEffect(() => {
+    const steps = searches.current;
+    if (sameSearch(asking, steps.shown)) return;
+    steps.past.push(steps.shown); steps.future = []; steps.shown = asking;
+  }, [asking]);
+  // Returns whether there was a search to go back or forward to. A viewer or panel closes, since it showed the old one.
+  const stepSearch = useCallback((back: boolean) => {
+    const steps = searches.current;
+    const to = (back ? steps.past : steps.future).pop();
+    if (!to) return false;
+    (back ? steps.future : steps.past).push(steps.shown);
+    steps.shown = to;
+    setSelected(null); setPicked(null); setPanel(null);
+    setQuery(to.text); setSubmitted(to.text); setAskedMode(to.mode); setSimilar(to.similar); setUpload(to.upload);
+    return true;
+  }, []);
   const applyStatus = useCallback((data: Status) => {
     setStatus(data); setOffline(false);
     // A scan that committed changes refreshes the grid in place, or once the viewer closes.
@@ -126,7 +153,7 @@ export default function App() {
     if (!status) return;
     const id = status.folder?.id ?? '';
     if (id === root) return;
-    if (root) { setFilters(f => ({ ...f, folder: '' })); clearSearch(); setSelected(null); setPicked(null); window.scrollTo({ top: 0 }); }
+    if (root) { setFilters(f => ({ ...f, folder: '' })); clearSearch(); searches.current = { past: [], shown: NO_SEARCH, future: [] }; setSelected(null); setPicked(null); window.scrollTo({ top: 0 }); }
     setRoot(id);
   }, [status, root, clearSearch]);
 
@@ -140,11 +167,11 @@ export default function App() {
     const controller = new AbortController();
     const id = ++requestId.current;
     paging.current = false; setLoading(true); setLoadingMore(false); setError(''); setSelected(null);
-    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; setItems(data.items); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
+    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; listed.current = id; setItems(data.items); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => controller.abort();
   }, [fetchResults, revision, ready, root]);
   const loadMore = async () => {
-    if (paging.current) return false;
+    if (paging.current || listed.current !== requestId.current) return false;
     paging.current = true; const id = requestId.current; setLoadingMore(true); setError('');
     try { const data = await fetchResults(items.length); if (id === requestId.current) { setItems(old => { const seen = new Set(old.map(item => item.id)); return [...old, ...data.items.filter(item => !seen.has(item.id))]; }); setMore(data.hasMore); return true; } } catch (e) { if (id === requestId.current) setError((e as Error).message); } finally { if (id === requestId.current) { paging.current = false; setLoadingMore(false); } }
     return false;
@@ -180,6 +207,7 @@ export default function App() {
     const id = requestId.current;
     // Holding the paging lock for the whole jump keeps infinite scroll from appending underneath it.
     while (paging.current) await new Promise(done => setTimeout(done, 50));
+    if (listed.current !== id) return;
     paging.current = true; setLoadingMore(true); setError('');
     const start = loadedRef.current;
     let { items: list, more: hasMore } = start;
@@ -230,6 +258,10 @@ export default function App() {
       const slash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target);
       const command = (e.metaKey || e.ctrlKey) && e.key === 'k';
       const input = searchRef.current;
+      // Z undoes typing in a text field, but in the search bar only once it no longer holds the search shown.
+      const undo = (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z';
+      const editing = typing(e.target) && !(e.target === input && input?.value === searches.current.shown.text);
+      if (undo && !editing && stepSearch(!e.shiftKey)) { e.preventDefault(); return; }
       if (!(slash || command) || !input) return;
       e.preventDefault();
       flushSync(() => { setSelected(null); setPicked(null); setPanel(null); });
@@ -237,7 +269,7 @@ export default function App() {
     };
     window.addEventListener('paste', paste); window.addEventListener('keydown', keyboard);
     return () => { window.removeEventListener('paste', paste); window.removeEventListener('keydown', keyboard); };
-  }, [searchWithImage, ready]);
+  }, [searchWithImage, stepSearch, ready]);
   const filtered = isFiltered(filters);
   const searching = !!submitted || !!similar || !!upload;
   // An image search that failed because visual search is not set up offers to set it up instead of retrying.
@@ -281,7 +313,7 @@ export default function App() {
   return <div className={mapped && ready ? 'app map-view' : 'app'} onDragEnter={e => { if (ready && droppable(e)) { e.preventDefault(); dragDepth.current++; setDragging(true); } }} onDragOver={e => { if (!ready || !droppable(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOverSearch(nearSearch(e.clientY)); }} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { setDragging(false); setOverSearch(false); } }} onDrop={e => { if (!ready) return; e.preventDefault(); dragDepth.current = 0; setDragging(false); setOverSearch(false); if (!nearSearch(e.clientY)) return; const id = e.dataTransfer.getData(IMAGE_DRAG); const file = e.dataTransfer.files[0]; if (IMAGE_ID.test(id)) findSimilar(id); else if (file) searchWithImage(file); }}>
     <header ref={headerRef} className="header">
       <button className="wordmark" onClick={reset} aria-label={`${APP_NAME}, show every image`}><Lockup /><Mark className="compact-mark" /></button>
-      {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setAskedMode(effectiveMode); setSubmitted(query.trim()); history.replaceState(null, '', query.trim() ? `?q=${encodeURIComponent(query.trim())}` : location.pathname); }}>
+      {ready && <form ref={anchors.search} className="search" data-drop={overSearch ? 'over' : dragging ? 'ready' : undefined} role="search" onSubmit={e => { e.preventDefault(); setSimilar(''); setUpload(null); setAskedMode(effectiveMode); setSubmitted(query.trim()); }}>
         {reference && !referenceFailed ? <img className="search-reference" src={reference} alt="Image you are matching" onError={() => setReferenceFailed(true)} /> : reference ? <ImageIcon aria-label="Image you are matching" /> : <Search />}<label className="sr-only" htmlFor="search">Search images</label><input ref={searchRef} id="search" aria-keyshortcuts="/ Meta+K Control+K" value={query} placeholder={dragging ? 'Drop an image to find similar' : similar || upload ? 'Similar images' : effectiveMode === 'visual' ? 'Describe an image, or drop one' : 'Search file names'} onChange={e => setQuery(e.target.value)} />
         {(query || searching) && <button className="icon-button" type="button" aria-label="Clear search" onClick={clearSearch}><X /></button>}
         <button className="icon-button" type="button" aria-label="Search options" title="Search options" aria-haspopup="dialog" aria-expanded={panel === 'search'} onClick={() => setPanel('search')}><ChevronDown /></button>

@@ -82,6 +82,40 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(pictures).toHaveCount(FIXTURE.images);
   });
 
+  await test.step('Cmd or Ctrl and Z undo and redo searches', async () => {
+    const box = page.getByRole('textbox', { name: 'Search images' });
+    await box.fill('red');
+    await page.keyboard.press('Enter');
+    await expect(pictures).toHaveCount(1);
+    await box.fill('beach');
+    await page.keyboard.press('Enter');
+    await expect(pictures.first()).toHaveAccessibleName('Open beach.png');
+    // The search bar still holds the search shown, so the keys step through searches there too.
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(box).toHaveValue('red');
+    await expect(pictures.first()).toHaveAccessibleName('Open red.png');
+    await pictures.first().focus();
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(box).toHaveValue('beach');
+    await expect(pictures.first()).toHaveAccessibleName('Open beach.png');
+    await expect(page).toHaveURL(/\?q=beach$/);
+    // Words typed since are undone first, leaving the search alone.
+    await box.press('End');
+    await page.keyboard.type('es');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(box).toHaveValue('beach');
+    await expect(pictures.first()).toHaveAccessibleName('Open beach.png');
+    // Clearing is a step too.
+    await page.getByRole('button', { name: 'Clear search' }).click();
+    await expect(pictures).toHaveCount(FIXTURE.images);
+    await pictures.first().focus();
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(pictures).toHaveCount(1);
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(pictures).toHaveCount(FIXTURE.images);
+    await expect(box).toHaveValue('');
+  });
+
   await test.step('slash goes to the search bar from the grid, the viewer and the map', async () => {
     const box = page.getByRole('textbox', { name: 'Search images' });
     const selection = () => box.evaluate((input: HTMLInputElement) => input.value.slice(input.selectionStart!, input.selectionEnd!));

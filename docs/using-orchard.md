@@ -81,6 +81,8 @@ Once visual search is set up, search finds images by what they show. Type a desc
 
 Press / to go to the search bar from the grid, the map or the viewer. An open viewer or panel closes first. Cmd+K on a Mac, or Ctrl+K elsewhere, does the same.
 
+Cmd+Z, or Ctrl+Z, goes back to the previous search, and Cmd+Shift+Z, or Ctrl+Shift+Z, goes forward again. Clearing a search counts as a step. While you are typing in the search bar, the keys undo your typing first.
+
 You can also search with an image:
 
 - Paste an image into the window.
@@ -132,7 +134,7 @@ At the bottom, Info shows Orchard's version, and:
 - **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
 - **Copy diagnostics**, which copies a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
 
-You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often.
+You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. **Rescan now** also tries again the files that couldn't be read.
 
 ## Supported files
 
@@ -153,7 +155,7 @@ On a Mac, Orchard can show and search your Photos library. Choose **Photos libra
 - Hidden photos and videos are skipped.
 - Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
 - **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
-- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**.
+- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then **Rescan now** in Info.
 - Orchard opens the library Photos uses as its System Photo Library. To browse another one, make it the system library in **Photos › Settings › General**.
 - Started from Terminal, Orchard can't ask for access, since macOS only asks apps that say why they want it. Open Orchard from its app, or from the one [`scripts/install-app`](#the-mac-app-from-a-clone) makes.
 

@@ -230,6 +230,13 @@ def scaled(image, edge: int):
     return displayable(ImageOps.exif_transpose(image))
 
 
+def unreached(error: Exception) -> bool:
+    """Whether a read failed on the way to the file, as when a network drive drops, rather than on the file itself.
+    Those failures carry the system's error number; Pillow's, for a file it can't decode, don't. A file's own
+    permissions are a failure of the file."""
+    return isinstance(error, OSError) and error.errno is not None and not isinstance(error, PermissionError)
+
+
 def failure(error: Exception) -> str:
     if isinstance(error, OnlyInCloud):
         return 'Only in iCloud'
@@ -271,19 +278,25 @@ class Scanner:
                 CREATE INDEX IF NOT EXISTS file_folder ON files(folder);
             ''')
 
-    def scan(self, progress=None, committed=None, cancelled=lambda: False):
-        """Bring the index in line with the source. Unchanged files are recognised by size and modification time."""
+    def scan(self, progress=None, committed=None, cancelled=lambda: False, retry=False):
+        """Bring the index in line with the source. Unchanged files are recognised by size and modification time,
+        and so are files that could not be read, unless `retry` asks to try them again.
+
+        A file that could not be reached is left out, so the next scan reads it. If the source is gone, or a whole
+        batch could not be reached, the scan stops, and the next one carries on once the source is back."""
         self.source.check()
         started = time.monotonic()
         found, unreadable, libraries, skipped = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         listed = time.monotonic() - started
         with connect(self.directory, rows=True) as db:
-            known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute('SELECT path, size, mtime_ns FROM files')}
+            known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute(
+                'SELECT path, size, mtime_ns FROM files' + (' WHERE error IS NULL' if retry else ''))}
             self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
         changed = [entry for entry in found if known.get(entry[0]) != (entry[2], entry[3])]
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
         if progress:
             progress(dict(stats))
+        missed = 0
         with ThreadPoolExecutor(WORKERS) as pool:
             for start in range(0, len(changed), BATCH):
                 if cancelled():
@@ -292,8 +305,18 @@ class Scanner:
                 results = list(pool.map(self._examine, batch))
                 if any(result.get('error') == BLOCKED for result in results):
                     raise blocked(self.folder)
+                lost = sum(1 for result in results if result.get('unreached'))
+                if lost:
+                    self.source.check()
+                    # A network drive that stops answering can still be listed, so a whole batch failing stops it too.
+                    # One file alone may just be damaged, and is left to the next scan.
+                    if lost == len(batch) > 1:
+                        raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
+                    missed += lost
                 with connect(self.directory, rows=True) as db:
                     for (path, folder, size, mtime_ns), result in zip(batch, results):
+                        if result.get('unreached'):
+                            continue
                         if 'width' in result:
                             db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
                                        (result['id'], result['width'], result['height'], result['mime'],
@@ -316,6 +339,7 @@ class Scanner:
             stats['files'] = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             stats['unreadable'] = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
         stats['removed'] = removed
+        stats['unreached'] = missed
         stats['listed_seconds'] = round(listed, 3)
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries
@@ -336,7 +360,7 @@ class Scanner:
                 return self._describe(stream, digest)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
-            return {'error': failure(error)}
+            return {'unreached': True} if unreached(error) else {'error': failure(error)}
 
     def _describe(self, stream, digest: str) -> dict:
         """Read a new image's metadata and draw its thumbnail."""

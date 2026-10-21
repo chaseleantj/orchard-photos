@@ -1,3 +1,4 @@
+import errno
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -282,6 +283,15 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.library.scan_state['state'], 'error')
         self.assertIn('not available', self.library.scan_state['error'])
         self.assertEqual(self.library.status()['counts']['images'], 1)
+
+    def test_only_a_retry_reads_again_the_files_that_could_not_be_read(self):
+        Image.new('RGB', (8, 8)).save(self.folder / 'one.png')
+        with patch('pathlib.Path.open', side_effect=PermissionError(errno.EACCES, 'Permission denied')):
+            self.library.scan()
+        self.library.scan()
+        self.assertEqual(self.library.status()['counts']['unreadable'], 1)
+        self.library.scan(retry=True)
+        self.assertEqual((self.library.status()['counts']['images'], self.library.status()['counts']['unreadable']), (1, 0))
 
     def test_pages_follow_the_revision_a_scan_commits(self):
         Image.new('RGB', (8, 8), 'red').save(self.folder / 'one.png')

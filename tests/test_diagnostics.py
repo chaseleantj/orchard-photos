@@ -11,7 +11,7 @@ FOLDER = HOME / 'Pictures' / 'Family'
 
 
 def library(**status):
-    status = {'counts': {'images': 1200, 'files': 1210, 'duplicates': 10, 'nearDuplicates': 4, 'unreadable': 3},
+    status = {'counts': {'images': 1200, 'files': 1210, 'duplicates': 10, 'nearDuplicates': 4, 'unreadable': 3}, 'unreached': 2,
               'skipped': {'raw': 312, 'video': 48}, 'scan': {'state': 'ready'}, 'updated': '2026-10-17T09:30:12.5+00:00',
               'search': {'state': 'ready', 'indexed': 1200, 'total': 1200, 'downloaded': True}, **status}
     return SimpleNamespace(folder=FOLDER, status=lambda: status)
@@ -37,7 +37,7 @@ class DiagnosticsTests(unittest.TestCase):
         lines = text.splitlines()
         self.assertEqual(lines[0], 'Orchard 0.1.0')
         for line in ('Image encoder: Core ML', 'Search model: downloaded', 'Shown in: browser',
-                     'Images: 1,200, unreadable 3, RAW skipped 312, videos skipped 48',
+                     'Images: 1,200, unreadable 3, unreached 2, RAW skipped 312, videos skipped 48',
                      'Scan: ready, last finished 2026-10-17 09:30 UTC', 'Visual search: ready, 1,200 of 1,200 prepared', 'Last error: none'):
             self.assertIn(line, lines)
         for prefix in ('System: ', 'Python: ', 'ONNX Runtime: '):

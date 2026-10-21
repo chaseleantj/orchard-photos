@@ -88,7 +88,7 @@ def report(app, title: str) -> str:
         counts, skipped, scan, search = status['counts'], status['skipped'], status['scan'], status['search']
         finished = minute(datetime.fromisoformat(status['updated'])) if status['updated'] else 'never'
         lines += [
-            f'Images: {counts["images"]:,}, unreadable {counts["unreadable"]:,}, '
+            f'Images: {counts["images"]:,}, unreadable {counts["unreadable"]:,}, unreached {status["unreached"]:,}, '
             f'RAW skipped {skipped.get("raw", 0):,}, videos skipped {skipped.get("video", 0):,}',
             f'Scan: {scan["state"]}' + (f', {scan["error"]}' if scan.get('error') else '') + f', last finished {finished}',
             f'Visual search: {search["state"]}, {search["indexed"]:,} of {search["total"]:,} prepared' + (f', {search["error"]}' if search.get('error') else ''),
