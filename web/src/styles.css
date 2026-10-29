@@ -40,8 +40,9 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .header { display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
 /* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step.
+   At the foot of the window it keeps a step too.
    It is the tile's margin rather than the page's padding, which would also scroll the page under the search bar on every keystroke. */
-.picture { scroll-margin-top: calc(var(--s4) + var(--search-height) + var(--s2) * 2); }
+.picture { scroll-margin-top: calc(var(--s4) + var(--search-height) + var(--s2) * 2); scroll-margin-bottom: var(--s4); }
 .wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
@@ -80,6 +81,7 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
 .activity-item .progress { width: var(--s8); flex-shrink: 0; }
 .gallery { margin: 0 var(--page); position: relative; }
+.gallery:focus { outline: none; }
 /* A month heading over each run of images; the grid restarts under it. */
 .month { position: absolute; left: 0; right: 0; margin: 0; font-size: inherit; font-weight: 400; }
 .picture { position: absolute; padding: 0; overflow: hidden; border-radius: var(--radius); background: var(--soft); display: block; }
@@ -163,10 +165,11 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--detail-width); grid-template-rows: var(--s20) minmax(0,1fr); }
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
-.image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: auto; margin: 0 0 var(--s8) var(--page); }
-.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
-.image-stage.zoomed { display: block; }
-.image-stage.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
+.image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
+/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
+.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
+.image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
+.image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
 /* The sidebar has two text styles, both at body size: ink for the name and path, muted for everything else. */
 .image-details { padding: var(--s8); overflow: auto; color: var(--muted); }
 .image-details h1 { margin: 0; font: inherit; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

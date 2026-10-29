@@ -36,6 +36,8 @@ The app finds Python the way your terminal did when you ran `scripts/install-app
 
 Images are shown newest first, grouped by month. A photo is dated by when it was taken, from its EXIF data, the details a camera saves inside the file. Images without EXIF data use the date the file was last changed.
 
+The grid is one stop for the Tab key. Once a tile has focus, the arrow keys move between images, and Enter opens one.
+
 The column of years on the right is a timeline of the whole folder, where each year takes space in proportion to its images. Click or drag it to jump to a month. When it's focused, you can use these keys:
 
 | Key | Action |
@@ -55,9 +57,11 @@ The viewer's buttons are labelled:
 - **Download original** saves the file. In the window, this asks where to save it.
 - **Show in Finder**, or **Show in folder** on Windows and Linux, opens the folder that holds it.
 
-Click its folder to show only images from that folder. Click the image, or the zoom button, to see it at actual size.
+Click its folder to show only images from that folder.
 
-Use the left and right arrow keys to move between images, and Escape to close the viewer.
+Click the image to zoom in where you clicked, and click again to zoom out. While zoomed, drag or scroll with two fingers to move around. Pinch, or press Cmd and plus or minus on a Mac, or Ctrl elsewhere, to zoom around the pointer, and Cmd+0 or Ctrl+0 to fit the image again.
+
+Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer.
 
 ## Duplicates
 
