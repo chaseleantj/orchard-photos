@@ -91,6 +91,13 @@ class AvailabilityTests(unittest.TestCase):
         self.assertIn('sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1', reason)
         self.assertNotIn('\n', reason)
 
+    def test_a_toolkit_that_fails_to_load_uses_the_browser(self):
+        failure = RuntimeError('Failed to resolve Python.Runtime.Loader.Initialize from\nPython.Runtime.dll')
+        with patch('server.window.sys.platform', 'win32'), patch('server.window.initialize', side_effect=failure):
+            reason = window.unavailable()
+        self.assertIn('Failed to resolve Python.Runtime.Loader.Initialize', reason)
+        self.assertNotIn('\n', reason)
+
 
 if __name__ == '__main__':
     unittest.main()
