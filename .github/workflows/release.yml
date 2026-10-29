@@ -55,6 +55,12 @@ jobs:
         run: |
           python -m zipfile -e "build/${{ matrix.artifact }}" "$RUNNER_TEMP"
           echo "LAUNCHER=$RUNNER_TEMP/Orchard/Orchard.exe" >> "$GITHUB_ENV"
+      # Explorer's Extract All marks every file from a downloaded zip as from the internet, which can stop .NET loading
+      # the window's DLLs. Python's zipfile marks nothing, so the files are marked here the way Explorer does.
+      - name: Mark the app as downloaded
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-ChildItem -Recurse -File "$env:RUNNER_TEMP/Orchard" | Set-Content -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
       # The smoke test opens the page in the browser, so check apart that the window's toolkit loads.
       - name: Load the window's toolkit
         run: '"$RUNNER_TEMP/${{ matrix.python }}" -I -c "from webview.guilib import initialize; initialize()"'
