@@ -1,7 +1,8 @@
-import { memo, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Layers } from 'lucide-react';
 import type { Picture } from './types';
 import { dragImage, fileName, imageUrl, monthLabel, plural } from './types';
+import { imagesAhead } from './preload';
 
 const BUFFER = 1200;
 const STEP = 400;
@@ -11,6 +12,27 @@ const ROW = 220;
 const HEADING = 21;
 const ABOVE = 40;
 const BELOW = 12;
+// A pointer that rests on a tile this long, or presses it, loads its image for the viewer before the click.
+const PREPARE_DELAY = 100;
+type Position = { left: number; top: number; width: number; height: number };
+
+/** The tile an arrow key moves to from `from`: the one before or after, or the nearest in the row above or below. */
+function neighbour(positions: Position[], from: number, key: string) {
+  if (key === 'ArrowLeft') return from > 0 ? from - 1 : null;
+  if (key === 'ArrowRight') return from < positions.length - 1 ? from + 1 : null;
+  if (key !== 'ArrowUp' && key !== 'ArrowDown') return null;
+  const way = key === 'ArrowDown' ? 1 : -1;
+  const here = positions[from], middle = here.left + here.width / 2;
+  // Every tile in a row shares its top, so the next row starts at the first tile with another.
+  let at = from;
+  while (positions[at]?.top === here.top) at += way;
+  const row = positions[at]?.top;
+  if (row === undefined) return null;
+  let best = at;
+  for (let place = at; positions[place]?.top === row; place += way)
+    if (Math.abs(positions[place].left + positions[place].width / 2 - middle) < Math.abs(positions[best].left + positions[best].width / 2 - middle)) best = place;
+  return best;
+}
 
 /** Where things are in the grid, for the timeline. Offsets are in page coordinates. */
 export interface GalleryHandle {
@@ -26,6 +48,11 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
   const [width, setWidth] = useState(0);
   // Visible band in gallery coordinates, snapped to STEP so scrolling re-renders only when it crosses a step.
   const [band, setBand] = useState<[number, number]>([0, 0]);
+  // The one tile Tab stops at; the arrow keys move it across the grid.
+  const [current, setCurrent] = useState(0);
+  // Only the last tile pointed at keeps its image loaded.
+  const [pointed] = useState(imagesAhead);
+  const prepare = useCallback((id: string) => pointed.keep([imageUrl(id, 'display')]), [pointed]);
   useLayoutEffect(() => {
     const element = container.current!;
     const observer = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
@@ -89,7 +116,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
       else { row.push(tile); flush(false); }
     });
     flush(true);
-    return { positions: positions as { left: number; top: number; width: number; height: number }[], headings, height: Math.max(0, top - gap) };
+    return { positions: positions as Position[], headings, height: Math.max(0, top - gap) };
   }, [items, sections, width, gap, target]);
   const layout = useRef({ positions, headings });
   layout.current = { positions, headings };
@@ -108,19 +135,42 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
       return container.current!.getBoundingClientRect().top + scrollY + (heading ? heading.top : positions[Math.min(index, positions.length - 1)]?.top ?? 0);
     },
   }), []);
-  return <div className="gallery" ref={container} style={{ height }} aria-label="Images">
+  const drawn = (index: number) => width > 0 && !!positions[index] && positions[index].top + positions[index].height >= band[0] && positions[index].top <= band[1];
+  const stop = Math.min(current, items.length - 1);
+  const move = (e: React.KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !(e.target as HTMLElement).classList.contains('picture')) return;
+    const to = neighbour(positions, stop, e.key);
+    const tile = to === null ? null : container.current!.querySelector<HTMLElement>(`[data-index="${to}"]`);
+    if (!tile) return;
+    e.preventDefault();
+    tile.focus({ preventScroll: true });
+    tile.scrollIntoView({ block: 'nearest' });
+  };
+  // While the tab stop is scrolled out of the drawn band, the grid itself takes Tab and hands it to the first tile
+  // below the header.
+  const enter = (e: React.FocusEvent) => {
+    if (e.target !== e.currentTarget) return;
+    const tiles = [...container.current!.querySelectorAll<HTMLElement>('.picture')];
+    const first = tiles.find(tile => tile.getBoundingClientRect().bottom > parseFloat(getComputedStyle(tile).scrollMarginTop)) ?? tiles[0];
+    first?.focus({ preventScroll: true });
+  };
+  return <div className="gallery" ref={container} style={{ height }} aria-label="Images" tabIndex={drawn(stop) ? undefined : 0} onFocus={enter} onKeyDown={move}>
     {width > 0 && headings.map(({ label, top }) => top + HEADING >= band[0] && top <= band[1] ? <h2 key={top} className="month" style={{ top }}>{label}</h2> : null)}
-    {width > 0 && items.map((item, index) => {
-      const { top, height: tile } = positions[index];
-      return top + tile >= band[0] && top <= band[1] ? <Tile key={item.id} item={item} index={index} style={positions[index]} onOpen={onOpen} /> : null;
-    })}
+    {items.map((item, index) => drawn(index) ? <Tile key={item.id} item={item} index={index} style={positions[index]} stop={index === stop} onOpen={onOpen} onFocus={setCurrent} onPrepare={prepare} /> : null)}
   </div>;
 }
-const Tile = memo(function Tile({ item, index, style, onOpen }: { item: Picture; index: number; style: React.CSSProperties; onOpen: (index: number) => void }) {
+interface TileProps { item: Picture; index: number; style: React.CSSProperties; stop: boolean; onOpen: (index: number) => void; onFocus: (index: number) => void; onPrepare: (id: string) => void }
+const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onPrepare }: TileProps) {
   const [failed, setFailed] = useState(false);
+  const resting = useRef(0);
   const name = fileName(item.path);
   const label = item.members > 1 ? `Open ${name} and ${plural(item.members - 1, 'near-duplicate')}` : `Open ${name}`;
-  return <button className="picture" style={style} onClick={() => onOpen(index)} aria-label={label} title={item.path}>
+  // Only a pointer that moves readies the image, so a tile drawn under a still one, as when the viewer closes onto new
+  // results, loads nothing.
+  return <button className="picture" style={style} data-index={index} tabIndex={stop ? 0 : -1} onClick={() => onOpen(index)} onFocus={() => onFocus(index)} aria-label={label} title={item.path}
+    onPointerMove={() => { resting.current ||= window.setTimeout(() => onPrepare(item.id), PREPARE_DELAY); }}
+    onPointerLeave={() => { clearTimeout(resting.current); resting.current = 0; }}
+    onPointerDown={() => onPrepare(item.id)}>
     {failed ? <span className="missing">Preview unavailable</span> : <img src={imageUrl(item.id)} alt={name} decoding="async" onDragStart={dragImage(item.id)} onError={() => setFailed(true)} />}
     {item.members > 1 && <span className="members" aria-hidden="true"><Layers />{item.members.toLocaleString()}</span>}
   </button>;
