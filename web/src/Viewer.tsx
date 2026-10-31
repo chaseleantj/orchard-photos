@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
 import { Disclosure } from './Panels';
-import { dateLabel, downloadUrl, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
+import { dateLabel, downloadUrl, dragImage, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
 import { imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
@@ -155,7 +155,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
       {/* One image element for every step: it keeps showing the last image until the next has loaded, so quick
           steps never flash an empty stage, and each new step replaces the load before it. */}
       <div ref={stage} className="image-stage">
-        {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div> : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onLoad={loadAhead} onError={() => { setFailed(true); loadAhead(); }} />}
+        {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div> : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={() => { setFailed(true); loadAhead(); }} />}
       </div>
       <aside className="image-details">
         <div className="detail-summary">
@@ -174,7 +174,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
         {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
           <h2>{plural(members.length, 'near-duplicate')}</h2>
-          <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" /></button></li>)}</ul>
+          <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
         </section>}
         {details && <Disclosure summary="Details">
           <p className="path">{photos ? `In your ${details.root} library` : `${details.root}/${item.path}`}</p>

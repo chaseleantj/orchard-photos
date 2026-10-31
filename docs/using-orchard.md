@@ -63,6 +63,8 @@ Click the image to zoom in where you clicked, and click again to zoom out. While
 
 Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer.
 
+In Orchard's window on a Mac, drag an image from the grid or the viewer into another app, like Finder, Mail or a website, to give it the original file, as dragging from Finder does. The other app always gets a copy, so the file in your folder stays where it is.
+
 ## Duplicates
 
 Identical files appear once, and the viewer lists every place a copy is saved.
