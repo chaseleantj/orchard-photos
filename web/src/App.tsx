@@ -10,7 +10,7 @@ import { Progress, useRemaining } from './Progress';
 import { Activity } from './Activity';
 import { Lockup, Mark } from './Logo';
 import { FilterPanel, FolderChooser, FolderPanel, LibraryPanel, SearchMenu } from './Panels';
-import { APP_NAME, IMAGE_DRAG, defaults, draggedImage, filterParams, imageUrl, isFiltered, plural, post, rangeLabel, readPreferences, request, savePreferences, searchable, SET_UP, settingUp, typeLabel } from './types';
+import { APP_NAME, IMAGE_DRAG, countNoun, defaults, draggedImage, filterParams, imageUrl, isFiltered, plural, post, rangeLabel, readPreferences, request, savePreferences, searchable, SET_UP, settingUp, typeLabel } from './types';
 import type { Picture, Results, SearchMode, Status, Timeline as TimelineData, View } from './types';
 const initial = readPreferences();
 // Reloading the page, with Cmd or Ctrl and R, also rescans the folder at once, trying again what could not be read.
@@ -36,12 +36,12 @@ const NO_SEARCH: Asking = { text: '', mode: null, similar: '', upload: null };
 const sameSearch = (a: Asking, b: Asking) => a.text === b.text && a.mode === b.mode && a.similar === b.similar && a.upload === b.upload;
 // The count under the search bar, which reads on into the folder: "Showing 120 images in <folder>". The map counts the
 // matches it lights.
-function countLabel(asked: Asked, mapped: boolean, total: number, lit: number) {
+function countLabel(asked: Asked, mapped: boolean, total: number, lit: number, noun: string) {
   const count = asked === 'nothing' ? total : mapped ? lit : total;
-  if (!count) return asked === 'nothing' ? plural(0, 'image') : 'No matches';
-  if (asked === 'nothing') return `Showing ${plural(count, 'image')}`;
+  if (!count) return asked === 'nothing' ? plural(0, noun) : 'No matches';
+  if (asked === 'nothing') return `Showing ${plural(count, noun)}`;
   if (asked === 'name') return `Showing ${plural(count, 'match', 'matches')}`;
-  return `Showing ${plural(count, 'most similar image', 'most similar images')}`;
+  return `Showing ${plural(count, `most similar ${noun}`)}`;
 }
 export default function App() {
   const [filters, setFilters] = useState(initial.filters);
@@ -311,7 +311,7 @@ export default function App() {
   const asked: Asked = similar || upload ? 'image' : queryMode === 'visual' ? 'words' : queryMode === 'name' ? 'name' : 'nothing';
   // Visual results only come from prepared images, so while the rest are being prepared the line says how many.
   const partial = queryMode === 'visual' || similar || upload ? search && search.indexed < search.total && `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} prepared` : '';
-  const showing = loading || loadingMatches ? 'Finding images' : error && !items.length ? 'No results' : countLabel(asked, mapped, total, items.length);
+  const showing = loading || loadingMatches ? 'Finding images' : error && !items.length ? 'No results' : countLabel(asked, mapped, total, items.length, countNoun(library));
   const scope = [filters.folder && `› ${filters.folder}`, filters.type && typeLabel(filters.type), rangeLabel(filters), searching && !loading && partial].filter(Boolean).map((part, place) => place || !filters.folder ? ` · ${part}` : ` ${part}`).join('');
   const gathering = scanBusy && !library?.counts.images;
   // Time left is measured here, where the status always arrives, so Library and the map have it the moment they open.

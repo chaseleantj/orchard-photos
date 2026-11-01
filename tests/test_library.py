@@ -31,6 +31,12 @@ class LibraryTests(unittest.TestCase):
     def ids(self, params):
         return [row['id'] for row in self.library.pictures(params)['items']]
 
+    def test_status_counts_videos_among_the_images(self):
+        self.image(1)
+        self.image(2, 'clip.mov', mime='video/quicktime')
+        counts = self.library.status()['counts']
+        self.assertEqual((counts['images'], counts['videos']), (2, 1))
+
     def test_folder_filter_includes_subfolders_but_not_similar_names(self):
         trip = self.image(1, 'Trips/Japan/a.jpg')
         top = self.image(2, 'Trips/b.jpg')

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
 import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
-import { APP_NAME, RANGES, SET_UP, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
+import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
 
@@ -94,6 +94,7 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
 export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanLeft: string; searchLeft: string; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
   const library = status.library!;
   const { counts, scan, search } = library;
+  const noun = countNoun(library);
   const scanning = scan.state === 'scanning';
   const complete = search.state === 'ready';
   const work = searchWork(search);
@@ -105,7 +106,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
   ].filter(row => row.shown);
-  const totalLabel = ledger.length < 2 ? 'Images' : narrowed ? 'In the library' : 'In the grid';
+  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'In the grid';
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <p className="path">{status.folder!.label}</p>
     <p>{status.folder!.photos ? 'Read through Photos, with your edits. Hidden photos are skipped.' : 'Subfolders included, hidden ones skipped.'}</p>
@@ -113,7 +114,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
-    {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
+    {shown !== null && <p>{plural(shown, noun)} shown with your filters.</p>}
     {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud, then reload with {status.platform === 'darwin' ? '⌘R' : 'Ctrl+R'}.</p>}
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
@@ -132,9 +133,9 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>
     </> : complete ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
     : search.downloaded && !counts.images && !scanning ? <p>Visual search is set up. Images added to this folder are prepared automatically.</p>
-    : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} to prepare once reading finishes.</p>
+    : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), noun)} to prepare once reading finishes.</p>
     : search.downloaded ? <>
-      <p>{plural(Math.max(0, counts.images - search.indexed), 'image')} still to prepare. New images are prepared automatically.</p>
+      <p>{plural(Math.max(0, counts.images - search.indexed), noun)} still to prepare. New ones are prepared automatically.</p>
       <button className="text-button primary" onClick={onSetUp}>Finish preparing</button>
     </> : <>
       <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>

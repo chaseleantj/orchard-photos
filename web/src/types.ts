@@ -19,7 +19,8 @@ export const searchable = (search: SearchStatus) => search.indexed > 0;
 export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
-  counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
+  /** `images` counts videos too, and `videos` how many of them are videos. */
+  counts: { images: number; videos: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
   unlistedFolders: number; unreached: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 /** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
@@ -117,6 +118,8 @@ export function sizeLabel(bytes: number) {
 }
 export const megabytes = (bytes: number) => Math.round(bytes / 1e6).toLocaleString();
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+/** What counts of the library call what it holds: images, or items once it holds videos too, as Apple Photos does. */
+export const countNoun = (library: LibraryStatus | null) => library?.counts.videos ? 'item' : 'image';
 
 export const IMAGE_DRAG = 'application/x-library-image';
 // The macOS window finds the image's id in the drag's data after this mark, and adds its file once the drag leaves.
