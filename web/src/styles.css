@@ -207,16 +207,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .near-duplicates button:focus-visible { outline-offset: -2px; }
 .near-duplicates img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
 .near-duplicates button:hover img { opacity: .87; }
-.disclosure { margin-top: var(--s4); }
-.image-details .disclosure p { margin: var(--s2) 0; }
-.disclosure summary { cursor: pointer; color: var(--muted); min-height: var(--control); display: flex; align-items: center; gap: var(--s1); list-style: none; transition: color var(--motion) var(--ease); }
-.disclosure summary::-webkit-details-marker { display: none; }
-.disclosure summary svg { margin-left: -3px; transition: transform var(--motion) var(--ease); }
-.disclosure[open] summary svg { transform: rotate(90deg); }
-.disclosure summary:hover { color: var(--ink); }
-.file-list { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; }
-.file-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) 0; border-top: 1px solid var(--line); color: var(--muted); }
-.file-list li > span { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
 .chooser { width: 100%; max-width: var(--search-width); display: flex; flex-direction: column; align-items: stretch; gap: var(--s4); text-align: left; }
 .welcome .chooser { margin-top: var(--s4); }
 .check { display: grid; grid-template-columns: auto 1fr; gap: var(--s3); align-items: start; margin-top: var(--s2); cursor: pointer; }

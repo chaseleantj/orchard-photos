@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
+import { Check, ChevronDown, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
 import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
 import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
 import { Progress } from './Progress';
@@ -41,11 +41,6 @@ function Panel({ title, anchor, onClose, children }: { title: string; anchor: HT
     <header className={scrolled ? 'scrolled' : undefined}><h2>{title}</h2><button className="icon-button" aria-label={`Close ${title.toLowerCase()}`} onClick={onClose}><X /></button></header>
     <div className="panel-body" onScroll={e => setScrolled(e.currentTarget.scrollTop > 0)}>{children}</div>
   </Popover>;
-}
-
-/** A section that opens on click, marked with the app's own chevron. */
-export function Disclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
-  return <details className="disclosure"><summary><ChevronRight />{summary}</summary>{children}</details>;
 }
 
 function Select({ label, value, onChange, disabled, children }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; children: React.ReactNode }) {

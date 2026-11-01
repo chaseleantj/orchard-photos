@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
-import { Disclosure } from './Panels';
 import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel } from './types';
 import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
@@ -145,10 +144,6 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     window.addEventListener('keydown', keydown);
     return () => { node.removeEventListener('wheel', wheel); window.removeEventListener('keydown', keydown); };
   }, []);
-  const file = details?.files.find(f => f.path === item.path);
-  const others = details?.files.filter(f => f.path !== item.path) ?? [];
-  // The date not already shown under the name.
-  const otherDate = item.dated === 'taken' ? file && `Modified ${dateLabel(file.modified, true)}` : details?.taken && `Taken ${dateLabel(details.taken, true)}`;
   const parts = folder ? folder.split('/') : [rootName];
   const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
   return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose}>
@@ -188,12 +183,6 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           <h2>{plural(members.length, 'near-duplicate')}</h2>
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
         </section>}
-        {details && <Disclosure summary="Details">
-          <p className="path">{photos ? `In your ${details.root} library` : `${details.root}/${item.path}`}</p>
-          {otherDate && <p>{otherDate}</p>}
-          {details.camera && <p>{details.camera}</p>}
-          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{photos ? fileName(other.path) : other.path}</span><button className="icon-button" aria-label={`${reveal}: ${photos ? fileName(other.path) : other.path}`} title={reveal} onClick={() => show(other.path)}><RevealIcon /></button></li>)}</ul></>}
-        </Disclosure>}
       </aside>
     </div>
   </dialog>;

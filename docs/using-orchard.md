@@ -50,7 +50,7 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 ## Viewing an image
 
-Click an image to open it. The viewer shows the file name, date, folder, size and type. **Details** adds the full path, the camera, and any other copies of the file.
+Click an image to open it. The viewer shows the file name, date, folder, size and type.
 
 The viewer's buttons are labelled:
 
@@ -69,7 +69,7 @@ In Orchard's window on a Mac, drag an image from the grid or the viewer into ano
 
 ## Duplicates
 
-Identical files appear once, and the viewer lists every place a copy is saved.
+Identical files appear once.
 
 Images that look almost the same, like bursts, edits and resized copies, share one tile. Images without camera details, like screenshots and renders, share one only when their pixels match too, so different screens of one app stay apart. The tile shows the sharpest and largest of them, with a badge for how many there are. Open the tile to see them all, and use the up and down arrow keys to switch between them.
 
