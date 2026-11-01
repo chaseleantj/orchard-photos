@@ -31,6 +31,11 @@ MAX_OFFSET = 1440
 logger = logging.getLogger(__name__)
 
 
+def playable(mime: str) -> bool:
+    """Whether the browser is given the original: an image it shows, or any video."""
+    return mime in WEB_TYPES or mime.startswith('video/')
+
+
 def utc_offset(params) -> int:
     """The viewer's offset from UTC in minutes, from the `tz` parameter."""
     try:
@@ -191,7 +196,7 @@ class Library:
             FROM matching WHERE rank=1
         )'''
         shown = 'WHERE p.place=1 ORDER BY p.date DESC,i.id' if collapse else 'ORDER BY p.place'
-        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
+        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,i.duration,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
                          p.path,p.copies,p.grp AS "group",p.members
                   FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
         # Grouping needs every matching row, so SQL can't page this any cheaper than slicing the whole list.
@@ -277,7 +282,7 @@ class Library:
             files = [dict(row) for row in db.execute(
                 'SELECT path, modified FROM files WHERE image_id=? ORDER BY modified DESC, path', (image_id,))]
         return {**dict(image), 'root': photos.NAME if self.photos else str(self.folder), 'source': 'photos' if self.photos else 'folder',
-                'files': files, 'preview': image['mime'] not in WEB_TYPES}
+                'files': files, 'preview': not playable(image['mime'])}
 
     def path(self, image_id, relative=None):
         """An image's path in the folder: the named copy if given and it holds this image, else the first."""
@@ -304,13 +309,14 @@ class Library:
         return thumbnail_path(self.directory, image_id)
 
     def display(self, image_id):
-        """A file the browser can show: the original when it can, otherwise a JPEG drawn once and kept."""
+        """A file the browser can show: the original when it can, otherwise a JPEG drawn once and kept. A video is always
+        its original, which the browser plays if it can."""
         path = self.original(image_id)
         if path is None:
             return None
         with connect(self.directory, rows=True) as db:
             mime = db.execute('SELECT mime FROM images WHERE id=?', (image_id,)).fetchone()['mime']
-        if mime in WEB_TYPES or not path.is_file():
+        if playable(mime) or not path.is_file():
             return path
         preview = preview_path(self.directory, image_id)
         if not preview.is_file():

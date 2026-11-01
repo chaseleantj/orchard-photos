@@ -12,13 +12,29 @@ import warnings
 
 from PIL import Image
 
-from server.cache import connect, thumbnail_path
-from server.scanner import Budget, FolderUnavailable, Scanner, exif_details, walk
+from server.cache import connect, frame_path, thumbnail_path
+from server.scanner import SEARCH_FRAMES, Budget, FolderUnavailable, Scanner, exif_details, video_details, walk
 
 
 def picture(path: Path, color='red', size=(32, 24), **save):
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new('RGB', size, color).save(path, **save)
+    return path
+
+
+def clip(path: Path, seconds=2, size=(64, 48), rate=10, **metadata):
+    """A short MPEG-4 video whose frames grow brighter, so frames from different moments differ."""
+    import av
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with av.open(str(path), 'w') as container:
+        container.metadata.update(metadata)
+        stream = container.add_stream('mpeg4', rate=rate)
+        stream.width, stream.height, stream.pix_fmt = *size, 'yuv420p'
+        for index in range(seconds * rate):
+            shade = int(255 * index / (seconds * rate))
+            frame = av.VideoFrame.from_image(Image.new('RGB', size, (shade, shade, shade)))
+            container.mux(stream.encode(frame))
+        container.mux(stream.encode())
     return path
 
 
@@ -61,15 +77,54 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
         self.assertGreaterEqual(stats['listed_seconds'], 0)
 
-    def test_raw_photos_and_videos_are_counted_as_skipped_not_unreadable(self):
+    def test_raw_photos_are_counted_as_skipped_not_unreadable(self):
         picture(self.root / 'kept.jpg')
-        for name in ('a/IMG_1.CR3', 'a/IMG_2.nef', 'DSC_3.dng', 'clip.MOV', 'b/film.mp4', '.hidden/raw.arw'):
+        for name in ('a/IMG_1.CR3', 'a/IMG_2.nef', 'DSC_3.dng', '.hidden/raw.arw'):
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             (self.root / name).write_bytes(b'not decoded')
         stats = self.scanner.scan()
         self.assertEqual(set(self.files()), {'kept.jpg'})
         self.assertEqual(stats['unreadable'], 0)
-        self.assertEqual(stats['skipped'], {'raw': 3, 'video': 2})
+        self.assertEqual(stats['skipped'], {'raw': 3, 'video': 0})
+
+    def test_videos_get_a_length_a_thumbnail_and_frames_for_search(self):
+        clip(self.root / 'trip/clip.MP4', creation_time='2024-06-12T11:02:31.000000Z')
+        stats = self.scanner.scan()
+        self.assertEqual((stats['images'], stats['unreadable']), (1, 0))
+        image_id = self.files()['trip/clip.MP4']['image_id']
+        with connect(self.scanner.directory, rows=True) as db:
+            row = dict(db.execute('SELECT * FROM images').fetchone())
+        self.assertEqual((row['width'], row['height'], row['mime'], row['taken']), (64, 48, 'video/mp4', '2024-06-12T11:02:31Z'))
+        self.assertAlmostEqual(row['duration'], 2, delta=.2)
+        with Image.open(thumbnail_path(self.scanner.directory, image_id)) as poster:
+            self.assertEqual(poster.size, (64, 48))
+            self.assertLess(poster.convert('L').getpixel((32, 24)), 40)
+        shades = []
+        for place in range(len(SEARCH_FRAMES)):
+            with Image.open(frame_path(self.scanner.directory, image_id, place)) as frame:
+                shades.append(frame.convert('L').getpixel((32, 24)))
+        # A quarter, half and three quarters of the way through, each brighter than the last.
+        self.assertEqual(shades, sorted(shades))
+        self.assertGreater(shades[0], 40)
+        (self.root / 'trip/clip.MP4').unlink()
+        self.scanner.scan()
+        self.assertFalse(frame_path(self.scanner.directory, image_id, 0).exists())
+        self.assertFalse(thumbnail_path(self.scanner.directory, image_id).exists())
+
+    def test_a_damaged_video_is_unreadable_and_the_scan_carries_on(self):
+        (self.root / 'broken.mov').write_bytes(b'not a video at all' * 100)
+        picture(self.root / 'kept.jpg')
+        stats = self.scanner.scan()
+        self.assertEqual((stats['images'], stats['unreadable']), (1, 1))
+        self.assertEqual(self.files()['broken.mov']['error'], 'Not a readable video')
+
+    def test_video_tags_give_the_date_and_camera(self):
+        apple = {'com.apple.quicktime.creationdate': '2024-06-12T13:02:31+0200', 'creation_time': '2024-06-12T11:02:30.000000Z',
+                 'com.apple.quicktime.make': 'Apple', 'com.apple.quicktime.model': 'iPhone 15 Pro'}
+        self.assertEqual(video_details(apple), ('2024-06-12T11:02:31Z', 'Apple iPhone 15 Pro'))
+        # A camera without a clock writes the format's epoch, which isn't a date.
+        self.assertEqual(video_details({'creation_time': '1970-01-01T00:00:00.000000Z'}), (None, None))
+        self.assertEqual(video_details({}), (None, None))
 
     @unittest.skipIf(sys.platform == 'win32', 'Symlinks need Developer Mode on Windows')
     def test_symlink_loops_end_and_real_paths_win(self):

@@ -140,15 +140,17 @@ At the bottom, Info shows Orchard's version, and:
 - **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
 - **Copy diagnostics**, which copies a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
 
-You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. **Rescan now** also tries again the files that couldn't be read.
+You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere), which also tries again the files that couldn't be read.
 
 ## Supported files
 
 Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG of those, and **Download** still gives you the original.
 
+Orchard also reads videos: MOV, MP4, M4V, WebM, MKV, AVI, MPEG, MTS, 3GP, WMV and FLV. The grid shows each one's first frame and length, and visual search finds a video by frames from a quarter, half and three quarters of the way through. The viewer plays it muted, on a loop, with controls to unmute; MOV, MP4, M4V and WebM play in the window, and the rest need **Download original**.
+
 Orchard skips:
 
-- RAW photos and videos. Info counts them, and says they aren't shown yet.
+- RAW photos. Info counts them, and says they aren't shown yet.
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
 - Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
@@ -158,10 +160,10 @@ Orchard skips:
 On a Mac, Orchard can show and search your Photos library. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
 
 - Orchard reads each photo through Photos, with your edits, and never changes your library.
-- Hidden photos and videos are skipped.
+- Hidden photos are skipped, and so are videos, which Info counts.
 - Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
 - **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
-- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then **Rescan now** in Info.
+- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then reload with **⌘R**.
 - Orchard opens the library Photos uses as its System Photo Library. To browse another one, make it the system library in **Photos › Settings › General**.
 - Started from Terminal, Orchard can't ask for access, since macOS only asks apps that say why they want it. Open Orchard from its app, or from the one [`scripts/install-app`](#the-mac-app-from-a-clone) makes.
 

@@ -17,7 +17,7 @@ import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
 
-from server.cache import connect, preview_path, thumbnail_path, while_open
+from server.cache import connect, frame_path, preview_path, thumbnail_path, while_open
 
 try:
     from pillow_heif import register_heif_opener
@@ -25,14 +25,25 @@ try:
 except ImportError:
     pass
 
-EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
-# Photos and videos in formats the scanner can't read. They are only counted, so a folder of them doesn't look empty
-# for no reason.
+IMAGES = {'.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'}
+# Videos, by the type each is served as. Browsers play only some of them; the rest are still shown and searched.
+VIDEOS = {'.3gp': 'video/3gpp', '.avi': 'video/x-msvideo', '.flv': 'video/x-flv', '.m2ts': 'video/mp2t',
+          '.m4v': 'video/x-m4v', '.mkv': 'video/x-matroska', '.mov': 'video/quicktime', '.mp4': 'video/mp4',
+          '.mpeg': 'video/mpeg', '.mpg': 'video/mpeg', '.mts': 'video/mp2t', '.webm': 'video/webm',
+          '.wmv': 'video/x-ms-wmv'}
+EXTENSIONS = IMAGES | VIDEOS.keys()
+# Photos in formats the scanner can't read. They are only counted, so a folder of them doesn't look empty for no
+# reason.
 RAW = {'.3fr', '.arw', '.cr2', '.cr3', '.crw', '.dcr', '.dng', '.erf', '.fff', '.iiq', '.kdc', '.mef', '.mos', '.mrw',
        '.nef', '.nrw', '.orf', '.pef', '.raf', '.raw', '.rw2', '.rwl', '.sr2', '.srf', '.srw', '.x3f'}
-VIDEO = {'.3gp', '.avi', '.flv', '.m2ts', '.m4v', '.mkv', '.mov', '.mp4', '.mpeg', '.mpg', '.mts', '.webm', '.wmv'}
-SKIPPED = {**dict.fromkeys(RAW, 'raw'), **dict.fromkeys(VIDEO, 'video')}
+SKIPPED = dict.fromkeys(RAW, 'raw')
 THUMBNAIL_SIZE = 720
+# Where in a video, as shares of its length, the frames visual search reads are taken, and their size. Search sees
+# the video as the average of those frames. The model reads 256 pixels square.
+SEARCH_FRAMES = (.25, .5, .75)
+FRAME_SIZE = 384
+# How many frames past a seek's keyframe are decoded to reach the moment asked for, before the keyframe stands in.
+SEEK_FRAMES = 90
 # Anything larger is refused as a possible decompression bomb, by refuse_oversized.
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
@@ -73,10 +84,13 @@ class OnlyInCloud(OSError):
     """A photo whose original is in iCloud, not on this computer."""
 
 
+class UnreadableVideo(ValueError):
+    """A video FFmpeg can't open or decode."""
+
+
 def walk(root: Path, skip=frozenset(), found=None):
-    """Every image file below root as (relative posix path, stat), the folders that could not be listed, the Photos
-    libraries passed over, and how many RAW and video files were skipped. `found` hears the running count of image
-    files.
+    """Every image and video file below root as (relative posix path, stat), the folders that could not be listed, the
+    Photos libraries passed over, and how many RAW files were skipped. `found` hears the running count of files.
 
     Hidden entries are skipped, and so are Photos libraries, which macOS keeps closed to other apps. Symlinked folders
     are followed once each, after the real folders, so a link loop ends and a folder reached both ways keeps its real
@@ -147,6 +161,10 @@ class Folder:
         return self.root / path
 
 
+def is_video(path: str) -> bool:
+    return os.path.splitext(path)[1].lower() in VIDEOS
+
+
 def utc(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -192,6 +210,56 @@ def refuse_oversized(image):
     width, height = image.size
     if width * height > Image.MAX_IMAGE_PIXELS:
         raise Image.DecompressionBombError(f'{width} x {height} pixels')
+
+
+def save(image, target: Path):
+    """Write an image as WebP in one step, so a reader never sees half of it."""
+    target.parent.mkdir(exist_ok=True)
+    temporary = target.with_suffix(f'.{os.getpid()}-{threading.get_ident()}.tmp')
+    image.save(temporary, 'WEBP', quality=82)
+    while_open(temporary.replace, target)
+
+
+def upright(frame):
+    """A decoded video frame as an RGB image, turned the way the video is meant to be seen."""
+    image = frame.to_image()
+    return image.rotate(frame.rotation, expand=True) if frame.rotation else image
+
+
+def frame_at(container, video, seconds: float):
+    """The first frame at or after `seconds`, decoding on from the keyframe before it, or that keyframe if the moment is
+    more than SEEK_FRAMES further on."""
+    container.seek(int(seconds / video.time_base), stream=video)
+    found = None
+    for count, frame in enumerate(container.decode(video)):
+        found = found or frame
+        if frame.time is None or frame.time >= seconds:
+            return frame
+        if count >= SEEK_FRAMES:
+            return found
+    if found is None:
+        raise UnreadableVideo('No frame at that time')
+    return found
+
+
+def video_details(metadata: dict):
+    """When a video was recorded, and the camera, from its container's tags. Either may be None."""
+    taken = None
+    # Apple's tag keeps the local offset; creation_time is UTC.
+    for key in ('com.apple.quicktime.creationdate', 'creation_time'):
+        value = metadata.get(key, '').strip()
+        try:
+            moment = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            continue
+        # A camera without a clock writes the epoch of its format.
+        if moment.year > 1971:
+            taken = utc(moment if moment.tzinfo else moment.replace(tzinfo=UTC))
+            break
+    make = metadata.get('com.apple.quicktime.make', '').strip()
+    model = metadata.get('com.apple.quicktime.model', '').strip()
+    camera = model if model.lower().startswith(make.lower()) else f'{make} {model}'.strip()
+    return taken, camera or None
 
 
 class Budget:
@@ -244,6 +312,8 @@ def failure(error: Exception) -> str:
         return 'Too large to open'
     if isinstance(error, UnidentifiedImageError):
         return 'Not a readable image'
+    if isinstance(error, UnreadableVideo):
+        return 'Not a readable video'
     if blocked_by_macos(error):
         return BLOCKED
     if isinstance(error, PermissionError):
@@ -268,7 +338,7 @@ class Scanner:
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS images (
                     id TEXT PRIMARY KEY, width INTEGER NOT NULL, height INTEGER NOT NULL, mime TEXT NOT NULL,
-                    size INTEGER NOT NULL, taken TEXT, camera TEXT
+                    size INTEGER NOT NULL, taken TEXT, camera TEXT, duration REAL
                 );
                 CREATE TABLE IF NOT EXISTS files (
                     path TEXT PRIMARY KEY, folder TEXT NOT NULL, image_id TEXT REFERENCES images(id),
@@ -277,6 +347,9 @@ class Scanner:
                 CREATE INDEX IF NOT EXISTS file_image ON files(image_id);
                 CREATE INDEX IF NOT EXISTS file_folder ON files(folder);
             ''')
+            # Caches from before videos were read have no duration.
+            if 'duration' not in {row['name'] for row in db.execute('PRAGMA table_info(images)')}:
+                db.execute('ALTER TABLE images ADD COLUMN duration REAL')
 
     def scan(self, progress=None, committed=None, cancelled=lambda: False, retry=False):
         """Bring the index in line with the source. Unchanged files are recognised by size and modification time,
@@ -318,9 +391,10 @@ class Scanner:
                         if result.get('unreached'):
                             continue
                         if 'width' in result:
-                            db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)',
+                            db.execute('INSERT OR IGNORE INTO images (id, width, height, mime, size, taken, camera, duration) '
+                                       'VALUES (?,?,?,?,?,?,?,?)',
                                        (result['id'], result['width'], result['height'], result['mime'],
-                                        size, result['taken'], result['camera']))
+                                        size, result['taken'], result['camera'], result.get('duration')))
                         modified = utc(datetime.fromtimestamp(mtime_ns / 1e9, UTC))
                         db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
                                    (path, folder, result.get('id') if 'error' not in result else None,
@@ -347,7 +421,8 @@ class Scanner:
         return stats
 
     def _examine(self, entry) -> dict:
-        """Hash one file and, if its content is new, read its metadata and draw its thumbnail."""
+        """Hash one file and, if its content is new, read its metadata and draw its thumbnail, and a video's frames for
+        search."""
         relative, _, size, _ = entry
         try:
             if size == 0:
@@ -357,7 +432,7 @@ class Scanner:
                 if digest in self._seen:
                     return {'id': digest}
                 stream.seek(0)
-                return self._describe(stream, digest)
+                return self._describe_video(stream, digest, relative) if is_video(relative) else self._describe(stream, digest)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
             return {'unreached': True} if unreached(error) else {'error': failure(error)}
@@ -373,11 +448,35 @@ class Scanner:
             if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                 width, height = height, width
             taken, camera = exif_details(image)
-            target = thumbnail_path(self.directory, digest)
-            temporary = target.with_suffix(f'.{os.getpid()}-{id(display)}.tmp')
-            display.save(temporary, 'WEBP', quality=82)
-            while_open(temporary.replace, target)
+            save(display, thumbnail_path(self.directory, digest))
         return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
+
+    def _describe_video(self, stream, digest: str, relative: str) -> dict:
+        """Read a new video's metadata, and draw its first frame as the thumbnail and SEARCH_FRAMES for search."""
+        import av
+        try:
+            with av.open(stream) as container:
+                if not container.streams.video:
+                    raise UnreadableVideo('No video stream')
+                video = container.streams.video[0]
+                video.thread_type = 'AUTO'
+                duration = container.duration / av.time_base if container.duration else (
+                    float(video.duration * video.time_base) if video.duration else 0.0)
+                first = upright(next(container.decode(video)))
+                frames = [upright(frame_at(container, video, duration * share)) for share in SEARCH_FRAMES] if duration else [first]
+                metadata = {**video.metadata, **container.metadata}
+        except (av.FFmpegError, StopIteration) as error:
+            raise UnreadableVideo(str(error)) from None
+        width, height = first.size
+        poster = first.copy()
+        poster.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+        save(poster, thumbnail_path(self.directory, digest))
+        for place, frame in enumerate(frames):
+            frame.thumbnail((FRAME_SIZE, FRAME_SIZE))
+            save(frame, frame_path(self.directory, digest, place))
+        taken, camera = video_details(metadata)
+        return {'id': digest, 'width': width, 'height': height, 'mime': VIDEOS[os.path.splitext(relative)[1].lower()],
+                'taken': taken, 'camera': camera, 'duration': round(duration, 3) or None}
 
     def _remove_missing(self, present: set, unreadable: list) -> int:
         """Forget files that are gone, and the images and thumbnails nothing refers to. Files inside a folder that
@@ -391,6 +490,7 @@ class Scanner:
                 'SELECT id FROM images WHERE id NOT IN (SELECT image_id FROM files WHERE image_id IS NOT NULL)')]
             db.executemany('DELETE FROM images WHERE id=?', [(image_id,) for image_id in orphans])
         for image_id in orphans:
-            for path in (thumbnail_path(self.directory, image_id), preview_path(self.directory, image_id)):
+            frames = [frame_path(self.directory, image_id, place) for place in range(len(SEARCH_FRAMES))]
+            for path in (thumbnail_path(self.directory, image_id), preview_path(self.directory, image_id), *frames):
                 while_open(path.unlink, missing_ok=True)
         return len(gone)

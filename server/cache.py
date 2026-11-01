@@ -29,6 +29,11 @@ def thumbnail_path(directory: Path, image_id: str) -> Path:
     return Path(directory) / 'thumbnails' / f'{image_id}.webp'
 
 
+def frame_path(directory: Path, image_id: str, place: int) -> Path:
+    """One of the frames visual search reads from a video."""
+    return Path(directory) / 'frames' / f'{image_id}-{place}.webp'
+
+
 def preview_path(directory: Path, image_id: str) -> Path:
     """A full-size JPEG for formats browsers cannot show, drawn when first viewed."""
     return Path(directory) / 'previews' / f'{image_id}.jpg'

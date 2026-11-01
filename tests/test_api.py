@@ -225,6 +225,27 @@ class HandlerTests(unittest.TestCase):
                 handler.file.assert_not_called()
                 handler.server.app.current.assert_not_called()
 
+    def test_files_are_sent_whole_or_by_the_byte_range_asked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'clip.mp4'
+            path.write_bytes(bytes(range(100)))
+            for asked, status, sent, content_range in ((None, 200, bytes(range(100)), None), ('bytes=10-19', 206, bytes(range(10, 20)), 'bytes 10-19/100'),
+                                                     ('bytes=90-', 206, bytes(range(90, 100)), 'bytes 90-99/100'), ('bytes=-5', 206, bytes(range(95, 100)), 'bytes 95-99/100'),
+                                                     ('bytes=0-500', 206, bytes(range(100)), 'bytes 0-99/100'), ('bytes=200-', 416, b'', 'bytes */100')):
+                with self.subTest(asked=asked):
+                    handler = Handler.__new__(Handler)
+                    handler.headers = Message()
+                    if asked:
+                        handler.headers['Range'] = asked
+                    handler.wfile = io.BytesIO()
+                    handler.send_response, handler.send_header, handler.end_headers = Mock(), Mock(), Mock()
+                    handler.file(path, mime='video/mp4')
+                    headers = dict(call.args for call in handler.send_header.call_args_list)
+                    self.assertEqual(handler.send_response.call_args.args[0], status)
+                    self.assertEqual(handler.wfile.getvalue(), sent)
+                    self.assertEqual(headers.get('Content-Range'), content_range)
+                    self.assertEqual(headers['Content-Length'], str(len(sent)))
+
     def test_image_upload_limit_is_checked_before_reading(self):
         for size in ('0', str(20 * 1024 * 1024 + 1), 'invalid'):
             with self.subTest(size=size):

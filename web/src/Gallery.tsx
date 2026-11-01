@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layers } from 'lucide-react';
+import { Layers, Play } from 'lucide-react';
 import type { Picture } from './types';
-import { dragImage, fileName, imageUrl, monthLabel, plural } from './types';
+import { dragImage, durationLabel, fileName, imageUrl, isVideo, monthLabel, plural } from './types';
 import { imagesAhead } from './preload';
 
 const BUFFER = 1200;
@@ -52,7 +52,8 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
   const [current, setCurrent] = useState(0);
   // Only the last tile pointed at keeps its image loaded.
   const [pointed] = useState(imagesAhead);
-  const prepare = useCallback((id: string) => pointed.keep([imageUrl(id, 'display')]), [pointed]);
+  // A video readies its poster: the viewer streams the video itself.
+  const prepare = useCallback((item: Picture) => pointed.keep([imageUrl(item.id, isVideo(item) ? 'thumbnail' : 'display')]), [pointed]);
   useLayoutEffect(() => {
     const element = container.current!;
     const observer = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
@@ -159,7 +160,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
     {items.map((item, index) => drawn(index) ? <Tile key={item.id} item={item} index={index} style={positions[index]} stop={index === stop} onOpen={onOpen} onFocus={setCurrent} onPrepare={prepare} /> : null)}
   </div>;
 }
-interface TileProps { item: Picture; index: number; style: React.CSSProperties; stop: boolean; onOpen: (index: number) => void; onFocus: (index: number) => void; onPrepare: (id: string) => void }
+interface TileProps { item: Picture; index: number; style: React.CSSProperties; stop: boolean; onOpen: (index: number) => void; onFocus: (index: number) => void; onPrepare: (item: Picture) => void }
 const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onPrepare }: TileProps) {
   const [failed, setFailed] = useState(false);
   const resting = useRef(0);
@@ -167,11 +168,12 @@ const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onP
   const label = item.members > 1 ? `Open ${name} and ${plural(item.members - 1, 'near-duplicate')}` : `Open ${name}`;
   // Only a pointer that moves readies the image, so a tile drawn under a still one, as when the viewer closes onto new
   // results, loads nothing.
-  return <button className="picture" style={style} data-index={index} tabIndex={stop ? 0 : -1} onClick={() => onOpen(index)} onFocus={() => onFocus(index)} aria-label={label} title={item.path}
-    onPointerMove={() => { resting.current ||= window.setTimeout(() => onPrepare(item.id), PREPARE_DELAY); }}
+  return <button className="picture" style={style} data-index={index} tabIndex={stop ? 0 : -1} onClick={() => onOpen(index)} onFocus={() => onFocus(index)} aria-label={label}
+    onPointerMove={() => { resting.current ||= window.setTimeout(() => onPrepare(item), PREPARE_DELAY); }}
     onPointerLeave={() => { clearTimeout(resting.current); resting.current = 0; }}
-    onPointerDown={() => onPrepare(item.id)}>
+    onPointerDown={() => onPrepare(item)}>
     {failed ? <span className="missing">Preview unavailable</span> : <img src={imageUrl(item.id)} alt={name} decoding="async" onDragStart={dragImage(item.id)} onError={() => setFailed(true)} />}
+    {isVideo(item) && <span className="duration" aria-hidden="true"><Play />{item.duration ? durationLabel(item.duration) : null}</span>}
     {item.members > 1 && <span className="members" aria-hidden="true"><Layers />{item.members.toLocaleString()}</span>}
   </button>;
 });

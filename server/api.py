@@ -437,20 +437,41 @@ class Handler(BaseHTTPRequestHandler):
             self.json({'error': 'Not found.'}, 404)
 
     def file(self, path, mime=None, download=False, cache=IMMUTABLE):
+        """Send a file, or the one byte range asked for, which is how browsers stream and seek video."""
         if not path or not path.is_file():
             self.json({'error': 'This image is no longer available. Rescan the folder to refresh.'}, 404)
             return
-        self.send_response(200)
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        asked = re.fullmatch(r'bytes=(\d*)-(\d*)', self.headers.get('Range', '').strip())
+        if asked and asked.group(1) + asked.group(2):
+            first, last = asked.groups()
+            # bytes=-N asks for the last N bytes.
+            start, end = (int(first), min(int(last or end), end)) if first else (max(0, size - int(last)), end)
+            if start > end:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{size}')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        else:
+            self.send_response(200)
         self.send_header('Content-Type', mime or mimetypes.guess_type(path)[0] or 'application/octet-stream')
-        self.send_header('Content-Length', str(path.stat().st_size))
+        self.send_header('Content-Length', str(end - start + 1))
+        self.send_header('Accept-Ranges', 'bytes')
         self.send_header('Cache-Control', cache)
         if download:
             fallback = re.sub(r'[^A-Za-z0-9._-]', '_', path.name)
             self.send_header('Content-Disposition', f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(path.name)}")
         self.end_headers()
         with path.open('rb') as stream:
-            while chunk := stream.read(256 * 1024):
+            stream.seek(start)
+            left = end - start + 1
+            while left and (chunk := stream.read(min(left, 256 * 1024))):
                 self.wfile.write(chunk)
+                left -= len(chunk)
 
 
 class Server(ThreadingHTTPServer):

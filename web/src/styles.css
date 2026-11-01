@@ -11,6 +11,9 @@
   /* Two control heights: one nested inside another control, one for everything else. */
   --control: 40px; --control-nested: 32px; --motion: 180ms; --motion-slow: 320ms; --ease: cubic-bezier(.2,.7,.2,1); --shadow: 0 8px 40px #00000014;
   --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --detail-width: 300px; --empty-height: 55vh; --icon: 18px;
+  /* How far an icon sits inside its button. Text and the timeline's years at the right end there too, so the right
+     edge lines up down the page. */
+  --inset: calc((var(--control) - var(--icon)) / 2);
   color: var(--ink); background: var(--bg); color-scheme: light;
 }
 :root[data-theme='dark'] { --bg: #171816; --surface: #21221f; --soft: #292a26; --ink: #ebebe5; --muted: #a6a89e; --line: #44453e; --focus: #b1bea5; --danger: #ef9c88; --shadow: 0 8px 40px #00000040; color-scheme: dark; }
@@ -70,7 +73,10 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
    or open. On the bar's drop state, which is the disc's colour, the disc takes the bar's usual colour instead. */
 .search [aria-haspopup]:hover, .search [aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--line); }
 .search[data-drop='over'] .icon-button { background: var(--soft); }
-.library-meta { display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); color: var(--muted); }
+.library-meta { display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); }
+/* The count reads into the folder's name, which is the button that changes it, at the right of the row. */
+.library-meta .showing { display: flex; align-items: center; min-width: 0; margin-left: auto; white-space: nowrap; color: var(--muted); }
+.showing > span { overflow: hidden; text-overflow: ellipsis; }
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
 .library-meta :focus-visible { outline-offset: -2px; }
@@ -89,10 +95,12 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .picture:hover img { opacity: .87; }
 .picture:focus-visible { outline-offset: var(--s1); }
 .picture .missing { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); padding: var(--s4); }
-.picture .members { position: absolute; right: var(--s2); bottom: var(--s2); display: flex; align-items: center; gap: var(--s1); padding: 2px var(--s2); border-radius: var(--pill); background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font-variant-numeric: tabular-nums; }
+.picture .duration { left: var(--s2); }
+.picture .members { right: var(--s2); }
+.picture .members, .picture .duration { position: absolute; bottom: var(--s2); display: flex; align-items: center; gap: var(--s1); padding: 2px var(--s2); border-radius: var(--pill); background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font-variant-numeric: tabular-nums; }
 /* The timeline: a column of years in the right gutter, beside a marker for where the grid is. */
-main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline)); }
-.timeline { position: fixed; right: var(--page); bottom: var(--s6); width: var(--timeline); z-index: 4; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: var(--control-radius); }
+main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + var(--timeline)); }
+.timeline { position: fixed; right: calc(var(--page) + var(--inset)); bottom: var(--s6); width: var(--timeline); z-index: 4; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: var(--control-radius); }
 /* Keyboard focus rings the month being named, not the whole column. */
 .timeline:focus-visible { outline: none; }
 .timeline:focus-visible .timeline-chip { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -100,7 +108,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .timeline-year[data-current] { color: var(--ink); }
 .timeline-marker, .timeline-hover { position: absolute; left: var(--s4); width: var(--s3); border-radius: var(--pill); pointer-events: none; }
 /* Unlabelled years keep a short tick in the marker's track. */
-.timeline-tick { position: absolute; left: var(--s4); width: var(--s1); height: 1px; background: var(--muted); pointer-events: none; }
 .timeline-marker { height: 2px; margin-top: -1px; background: var(--ink); }
 .timeline-hover { height: 1px; background: var(--muted); }
 .timeline-chip { position: absolute; right: calc(100% - var(--s4) + var(--s2)); transform: translateY(-50%); white-space: nowrap; padding: var(--s1) var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--control-radius); box-shadow: var(--shadow); pointer-events: none; opacity: 0; transition: opacity var(--motion) var(--ease); }
@@ -167,6 +174,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
 /* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
+.image-stage video { display: block; max-width: 100%; max-height: 100%; }
 .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
 .image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
 .image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
@@ -182,10 +190,10 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
 .detail-status { min-height: 1.5em; }
 /* Filters that are on mark their button with a dot, which survives the label collapsing on narrow windows. */
 .filter-on { position: relative; }
-.filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--s3) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
+.filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--inset) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
 .view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }
 .path { color: var(--ink); overflow-wrap: anywhere; }
-.folder-button { max-width: 40%; margin-left: auto; gap: var(--s2); color: var(--muted); }
+.folder-button { flex-shrink: 1; min-width: 0; margin: 0 calc(var(--inset) - var(--s2)) 0 var(--s1); padding: 0 var(--s2); gap: var(--s2); color: inherit; }
 .folder-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .numbers { font-variant-numeric: tabular-nums; }
 .near-duplicates { margin-top: var(--s4); }
@@ -258,11 +266,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--timeline))
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }
- .library-meta p { max-width: 58%; }
  /* One job at a time on a phone, as a bar and its name. */
  .activity-item:not(:first-of-type), .activity-item:not(.error-copy) > span { display: none; }
- .library-meta p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
- .folder-button { max-width: 42%; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */
  .timeline { display: none; }

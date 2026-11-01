@@ -24,7 +24,7 @@ class LibraryTests(unittest.TestCase):
         image_id = f'{number:064x}'
         path = path or f'photo-{number}.jpg'
         with connect(self.library.directory, rows=True) as db:
-            db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?)', (image_id, 32, 24, mime, 100, taken, None))
+            db.execute('INSERT OR IGNORE INTO images VALUES (?,?,?,?,?,?,?,?)', (image_id, 32, 24, mime, 100, taken, None, None))
             db.execute('INSERT INTO files VALUES (?,?,?,?,?,?,?)', (path, path.rpartition('/')[0], image_id, 100, 0, modified, None))
         return image_id
 

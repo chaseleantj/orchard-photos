@@ -91,10 +91,7 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
 
 /** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known.
  *  `scanLeft` and `searchLeft` estimate the time left for reading and for visual search. */
-export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, anchor, onClose, onRefresh, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanLeft: string; searchLeft: string; anchor: HTMLElement | null; onClose: () => void; onRefresh: () => void; onSetUp: () => void }) {
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const action = async (url: string) => { setBusy(true); setError(''); try { await post(url); onRefresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
+export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanLeft: string; searchLeft: string; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
   const library = status.library!;
   const { counts, scan, search, skipped } = library;
   const scanning = scan.state === 'scanning';
@@ -103,7 +100,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanLeft ? `. ${scanLeft}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
   const ledger = [
-    { label: 'Image files', value: counts.files + counts.unreadable, shown: true },
+    { label: 'Files', value: counts.files + counts.unreadable, shown: true },
     { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
     { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
@@ -113,19 +110,19 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const unsupported = [raw && plural(raw, 'RAW photo'), videos && plural(videos, 'video')].filter(Boolean).join(' and ');
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <p className="path">{status.folder!.label}</p>
-    <p>{status.folder!.photos ? 'Read through Photos, with your edits. Hidden photos are skipped, and your library is never changed.' : 'Subfolders included, hidden ones skipped. Your files are never changed.'}</p>
+    <p>{status.folder!.photos ? 'Read through Photos, with your edits. Hidden photos are skipped.' : 'Subfolders included, hidden ones skipped.'}</p>
     <dl className="counts">
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
     </dl>
     {shown !== null && <p>{plural(shown, 'image')} shown with your filters.</p>}
     {unsupported && <p>{unsupported} {raw + videos === 1 ? 'isn’t' : 'aren’t'} shown yet.</p>}
-    {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud, then Rescan now.</p>}
+    {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud, then reload with {status.platform === 'darwin' ? '⌘R' : 'Ctrl+R'}.</p>}
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {!!library.unreached && <p>{plural(library.unreached, 'file')} could not be reached. Each scan tries {library.unreached === 1 ? 'it' : 'them'} again.</p>}
     {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
-    <div className="panel-action"><p>{scanning ? scanLabel : 'Checks every minute.'}</p><button className="text-button secondary" disabled={busy || scanning} onClick={() => action('/api/scan')}>Rescan now</button></div>
+    {scanning && <p>{scanLabel}</p>}
     {scan.error && <p className="error-copy">{scan.error}</p>}
     <hr className="rule" /><h3>Visual search</h3>
     {work && !work.error ? <>
@@ -147,7 +144,6 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
       <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
     </>}
     {search.error && search.state !== 'error' && <p className="error-copy">{search.error}</p>}
-    {error && <p className="error-copy" role="alert">{error}</p>}
     <hr className="rule" /><h3>{APP_NAME} {status.version}</h3>
     <About library={library} />
   </Panel>;
@@ -174,7 +170,7 @@ function About({ library }: { library: LibraryStatus }) {
   const copy = async (button: HTMLElement) => setCopied(await copyText(report, button) ? 'copied' : 'select');
   return <>
     {updates?.update && <div className="panel-action"><p>Version {updates.update.version} is available.</p><a className="text-button secondary" href={updates.update.url} target="_blank" rel="noreferrer">See the release</a></div>}
-    <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} aria-describedby="updates-note" onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub<span className="muted" id="updates-note">Once a day, {APP_NAME} asks GitHub whether a newer version is out. Nothing about your images is sent.</span></span></label>
+    <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub</span></label>
     <div className="panel-action"><p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.' : 'For bug reports, without file names or folders.'}</p><button className="text-button secondary" disabled={!report} onClick={e => void copy(e.currentTarget)}>{copied === 'copied' && <Check />}Copy diagnostics</button></div>
     {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
     {error && <p className="error-copy" role="alert">{error}</p>}
@@ -228,7 +224,7 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
 
 export function FolderPanel({ status, anchor, onOpened, onClose }: { status: Status; anchor: HTMLElement | null; onOpened: (status: Status) => void; onClose: () => void }) {
   return <Panel title="Folder" anchor={anchor} onClose={onClose}>
-    {status.folder && <p>Showing <span className="path">{status.folder.label}</span>. {APP_NAME} keeps a separate cache for each folder, so switching back is quick.</p>}
+    {status.folder && <p>Showing <span className="path">{status.folder.label}</span>.</p>}
     <FolderChooser status={status} onOpened={next => { onOpened(next); if (next.folder?.id !== status.folder?.id) onClose(); }} />
   </Panel>;
 }

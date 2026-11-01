@@ -57,13 +57,13 @@ If the model downloaded but won't load, delete `models/`, and Orchard downloads 
 
 Check these, in order:
 
-- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files, videos and Live Photo videos aren't shown, and Info counts them.
-- **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open. **Rescan now** tries those files again, for when you've fixed their permissions or downloaded them.
+- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files aren't shown, and neither are videos in a Photos library; Info counts both.
+- **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open. Reloading with **⌘R** (Ctrl+R elsewhere) tries those files again, for when you've fixed their permissions or downloaded them.
 - **Hidden files and Photos libraries.** Both are skipped inside a folder. To browse your Photos library, see [Apple Photos](using-orchard.md#apple-photos).
 - **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.
 - **Filters.** Info says how many images your filters show.
 - **The date.** A photo without EXIF data is dated by when the file last changed, so a copied photo may sit in a later month than you expect.
-- **New files.** Orchard rescans every minute. **Rescan now** in Info does it at once.
+- **New files.** Orchard rescans every minute. Reloading with **⌘R** (Ctrl+R elsewhere) does it at once.
 
 On a Mac, a folder macOS keeps Orchard out of can't be read at all. See [Orchard says macOS is blocking access](#orchard-says-macos-is-blocking-access).
 
@@ -71,11 +71,11 @@ On a Mac, a folder macOS keeps Orchard out of can't be read at all. See [Orchard
 
 The first time Orchard opens your Desktop, Documents, Downloads or an external drive, macOS asks whether to allow it. If you chose **Don't Allow**, Orchard says macOS is blocking access to the folder. If the clone itself is in one of those folders, the Mac app from `scripts/install-app` instead stops with "Operation not permitted" in its log.
 
-To allow it, open **System Settings › Privacy & Security › Files & Folders**, and turn on the folder for Orchard, or for the app you started Orchard from, like Terminal. If it isn't listed there, add it to **Full Disk Access** instead. Then choose **Rescan now** in Info, or open Orchard again. Each update of the downloaded app counts as a new app to macOS, so it may ask again.
+To allow it, open **System Settings › Privacy & Security › Files & Folders**, and turn on the folder for Orchard, or for the app you started Orchard from, like Terminal. If it isn't listed there, add it to **Full Disk Access** instead. Then reload with **⌘R**, or open Orchard again. Each update of the downloaded app counts as a new app to macOS, so it may ask again.
 
 ## Orchard says macOS hasn't allowed it to read your Photos library
 
-macOS asks once whether Orchard may access your photos. If you chose **Don't Allow**, open **System Settings › Privacy & Security › Photos**, turn on Orchard, then choose **Rescan now** in Info. Started from Terminal, Orchard can't ask at all, so open it from its app instead. See [Apple Photos](using-orchard.md#apple-photos).
+macOS asks once whether Orchard may access your photos. If you chose **Don't Allow**, open **System Settings › Privacy & Security › Photos**, turn on Orchard, then reload with **⌘R**. Started from Terminal, Orchard can't ask at all, so open it from its app instead. See [Apple Photos](using-orchard.md#apple-photos).
 
 ## Orchard says "This app is available only on this computer"
 
@@ -87,7 +87,7 @@ The terminal, or the app's log, shows a line starting with `Refused` for each re
 
 The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. If the drive or network drops partway through a scan, Orchard stops reading, and carries on from where it was once the folder is back. Info counts any files it couldn't reach, and each scan tries them again. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
 
-The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and use **Rescan now** when you've added photos, or to carry on a scan the network interrupted.
+The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and reload with **⌘R** (Ctrl+R elsewhere) when you've added photos, or to carry on a scan the network interrupted.
 
 Cloud folders, like iCloud Drive, OneDrive, Dropbox and Google Drive, work best when their files are kept on the computer. A file that's only online is downloaded when Orchard reads it, so the first scan may download the whole folder, or fail to read files that aren't available.
 

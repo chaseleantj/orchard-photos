@@ -80,7 +80,7 @@ class GroupsTests(unittest.TestCase):
         image_id = f'{number:064x}'
         image.save(thumbnail_path(self.directory, image_id), 'WEBP', lossless=True)
         with connect(self.scanner.directory, rows=True) as db:
-            db.execute('INSERT INTO images VALUES (?,?,?,?,?,?,?)', (image_id, width, width * image.height // image.width, 'image/png', 100, None, camera))
+            db.execute('INSERT INTO images VALUES (?,?,?,?,?,?,?,?)', (image_id, width, width * image.height // image.width, 'image/png', 100, None, camera, None))
             db.execute('INSERT INTO semantic_embeddings VALUES (?,?,?)', (image_id, MODEL, vector.tobytes()))
         return image_id
 
