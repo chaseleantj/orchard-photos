@@ -113,7 +113,7 @@ python3.13 scripts/build-app
 ```
 
 - **macOS** gives `build/Orchard-mac-arm64.dmg`, holding `Orchard.app`. Its executable is a small launcher, compiled from `scripts/app/macos-launcher.c` with the Xcode command line tools. It runs python-build-standalone's Python from inside `Contents/MacOS`, so its window shows under Orchard's name and icon. A compiled launcher, unlike a script, lets macOS ask to allow Desktop and Documents and remember the answer. The app is signed ad hoc, so macOS asks once for Open Anyway, and each new build counts as a new app that asks for folders again. `scripts/install-app` compiles the same launcher with `-DSTART_SCRIPT` for a clone's app, where it runs `./orchard` instead.
-- **Windows** gives `build/Orchard-windows-x64.zip`, holding an `Orchard` folder. `Orchard.exe` is a small launcher, compiled from `scripts/app/windows-launcher.cs` with the .NET compiler that comes with Windows. It runs python.org's embeddable Python in `runtime\`.
+- **Windows** gives `build/Orchard-windows-x64.zip`, holding an `Orchard` folder. `Orchard.exe` is a small launcher, compiled from `scripts/app/windows-launcher.cs` with the .NET compiler that comes with Windows. It runs python.org's embeddable Python in `runtime\`. Its `python.exe.config` lets .NET Framework load pywebview's DLLs after Explorer has marked them as downloaded, since otherwise the window can't open.
 
 Both launchers, in `scripts/app/`, write Python's output to a log, `~/Library/Logs/Orchard.log` or `%TEMP%\Orchard.log`, and show its end if Orchard stops without opening. When the log says "Operation not permitted", the Mac one also names the Files & Folders setting. To test a build the way CI does, point the smoke test at its launcher:
 

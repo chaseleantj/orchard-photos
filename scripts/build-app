@@ -45,6 +45,15 @@ MAC_UNUSED = ['include', 'share', 'lib/pkgconfig', 'lib/itcl*', 'lib/tcl*', 'lib
 MAC_STDLIB_UNUSED = ['config-*', 'ensurepip', 'idlelib', 'tkinter', 'turtledemo', 'lib-dynload/_tkinter.*', 'site-packages/pip*']
 # Test suites some packages ship, which are a fifth of their size.
 TESTS = ['PyObjCTest', '**/tests']
+# Explorer marks every file it extracts from a downloaded zip as from the internet, and .NET Framework then refuses to
+# load the DLLs pywebview's window needs, pythonnet's first, unless the program loading them says it trusts them.
+DOTNET_CONFIG = '''<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <runtime>
+    <loadFromRemoteSources enabled="true"/>
+  </runtime>
+</configuration>
+'''
 # The .NET Framework compiler that comes with Windows, so the launcher needs no SDK.
 CSC = Path(os.environ.get('WINDIR', r'C:\Windows'), 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
 
@@ -169,6 +178,7 @@ def build_windows(build: Path) -> Path:
         archive.extractall(runtime)
     # The embeddable Python ignores PYTHONPATH and reads its path from this file, relative to it.
     (runtime / f'{WINDOWS_PYTHON}._pth').write_text(f'{WINDOWS_PYTHON}.zip\n.\n..\\app\nimport site\n', encoding='utf-8')
+    (runtime / 'python.exe.config').write_text(DOTNET_CONFIG, encoding='utf-8')
     site_packages = runtime / 'Lib' / 'site-packages'
     install_packages(site_packages)
     copy_app(folder / 'app')

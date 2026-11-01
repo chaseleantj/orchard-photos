@@ -48,6 +48,10 @@ def unavailable() -> str | None:
         if sys.platform == 'linux':
             return 'WebKitGTK for Python is missing. On Ubuntu: sudo apt update && sudo apt install python3-gi gir1.2-webkit2-4.1'
         return 'pywebview could not load its window toolkit'
+    # A toolkit that is there but fails to load, like pythonnet when .NET refuses its DLL, raises its own error. The
+    # browser still works, so that is no reason to stop.
+    except Exception as error:
+        return f'its window toolkit failed to load: {error}'.replace('\n', ' ')
     finally:
         log.disabled = False
     return None
