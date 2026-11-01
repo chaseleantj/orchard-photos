@@ -1,5 +1,5 @@
 import type { Picture } from './types';
-import { imageUrl } from './types';
+import { imageUrl, isVideo } from './types';
 
 export interface MapPoint extends Picture { x: number; y: number; slot: number }
 export interface MapCamera { x: number; y: number; zoom: number }
@@ -19,6 +19,9 @@ const CELL = 64, INSET = 2, INNER = CELL - 2 * INSET, COLUMNS = 32;
 export const PER_SHEET = COLUMNS * COLUMNS;
 const CORNER = 7 / INNER;
 const DIMMED = 0.22;
+// The play mark on a video is a disc a quarter of the icon wide, kept off icons too small for it to read.
+const MARK = 0.26;
+const MARK_MIN = 18;
 // Holding still on an image this long lifts it, so it can be carried to the search bar; a quicker drag pans.
 const HOLD = 250;
 // Pointer travel that turns a press into a pan.
@@ -508,18 +511,31 @@ export class MapEngine {
     if (lift > 0) { ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 24 * lift; ctx.shadowOffsetY = 8 * lift; }
     ctx.drawImage(sheet, (cell % COLUMNS) * CELL + INSET, Math.floor(cell / COLUMNS) * CELL + INSET, INNER, INNER, x, y, size, size);
     if (lift > 0) { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
-    if (!sharp) return;
-    const thumb = this.thumb(p.id, true);
-    if (!thumb) return;
-    thumb.used = this.clock;
-    const fade = clamp((this.clock - thumb.shown) / 200, 0, 1);
-    const image = thumb.image, side = Math.min(image.naturalWidth, image.naturalHeight);
-    ctx.save();
-    ctx.beginPath(); ctx.roundRect(x, y, size, size, size * CORNER); ctx.clip();
-    ctx.globalAlpha = alpha * fade;
-    ctx.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, x, y, size, size);
-    ctx.restore();
-    if (fade < 1) this.pendingThumbs = true;
+    const thumb = sharp ? this.thumb(p.id, true) : null;
+    if (thumb) {
+      thumb.used = this.clock;
+      const fade = clamp((this.clock - thumb.shown) / 200, 0, 1);
+      const image = thumb.image, side = Math.min(image.naturalWidth, image.naturalHeight);
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(x, y, size, size, size * CORNER); ctx.clip();
+      ctx.globalAlpha = alpha * fade;
+      ctx.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, x, y, size, size);
+      ctx.restore();
+      if (fade < 1) this.pendingThumbs = true;
+    }
+    if (isVideo(p) && size >= MARK_MIN) this.playMark(x, y, size);
+  }
+
+  /** A dark disc with a white triangle in the corner, readable over any photograph in either theme. Drawn last, so
+   *  the sharp thumbnail never covers it, and at the icon's alpha, so it recedes with the icon. */
+  private playMark(x: number, y: number, size: number) {
+    const { ctx } = this, r = size * MARK / 2, cx = x + size * CORNER + r * 0.4, cy = y + size - size * CORNER - r * 0.4;
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    // The triangle's centre of mass sits left of its bounding box, so it is nudged right to look centred.
+    const t = r * 0.42, left = cx - t * 0.6;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.moveTo(left, cy - t); ctx.lineTo(left + t * 1.7, cy); ctx.lineTo(left, cy + t); ctx.closePath(); ctx.fill();
   }
 
   // ---- Sharp thumbnails ------------------------------------------------------------------------
