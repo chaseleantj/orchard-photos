@@ -36,6 +36,13 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
+  await test.step('Ctrl+R reloads the page and rescans the folder', async () => {
+    const rescan = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/scan'));
+    await page.locator('body').press('Control+r');
+    await rescan;
+    await expect(pictures).toHaveCount(FIXTURE.images);
+  });
+
   await test.step('the viewer opens, steps to the next image and closes', async () => {
     await pictures.first().click();
     const viewer = page.getByRole('dialog', { name: 'Image viewer' });

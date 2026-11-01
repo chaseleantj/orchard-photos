@@ -263,6 +263,9 @@ export default function App() {
     // Slash, or Cmd or Ctrl and K, goes to the search bar from anywhere but a text field. A viewer or panel over it
     // closes first, since searching replaces what it shows; flushSync lets it hand focus back before the bar takes it.
     const keyboard = (e: KeyboardEvent) => {
+      // Cmd or Ctrl and R reloads, which rescans. The Mac window's View menu takes the key before the page does, but
+      // the Windows and Linux windows leave it to the page.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); location.reload(); return; }
       const slash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target);
       const command = (e.metaKey || e.ctrlKey) && e.key === 'k';
       const input = searchRef.current;
