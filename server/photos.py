@@ -238,11 +238,11 @@ class PhotosLibrary:
         name = path.rpartition('/')[2]
         target = self._exported(identifier(path)) / name
         if video_type(path):
-            with self._writing:
-                if target.is_file():
-                    os.utime(target)  # Asked for again, so it is kept.
-                else:
-                    self.write_video(path, target)
+            if not target.is_file():
+                with self._writing:
+                    if not target.is_file():
+                        self.write_video(path, target)
+            os.utime(target)  # Asked for again, so it is kept.
             return target
         data, extension = self.read(path)
         target = target.with_suffix(extension)

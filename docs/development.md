@@ -77,7 +77,7 @@ The server takes these options:
 | `orchard`, `orchard.cmd` | The launchers for macOS and Linux, and for Windows. They find a supported Python, install the packages, and start the server with `--window`. |
 | `scripts/install-app` | Builds the Mac app that opens a clone from the Dock. |
 | `scripts/build-app`, `scripts/app/` | Build the Mac DMG and the Windows zip, and their launchers. |
-| `scripts/smoke-test` | Installs and starts Orchard on a few generated images, and checks the API. |
+| `scripts/smoke-test` | Installs and starts Orchard on a few generated images and a video, and checks the API. |
 | `scripts/build-coreml-model` | Builds the Core ML image encoder and the parity vector. |
 | `app.json` | The app's name, version, command name and ports. |
 | `.github/workflows/ci.yml` | Runs the tests and the smoke test on Ubuntu, macOS and Windows, and the linters and UI test on Ubuntu. |
@@ -96,7 +96,7 @@ On Windows, run `.venv\Scripts\python -m unittest discover -s tests` instead of 
 
 Linting runs on macOS, Linux and in CI, since `npm run lint` runs ruff from `.venv/bin`. Install ruff with `.venv/bin/pip install -r requirements-dev.txt`, and again after `requirements.txt` changes, since `./orchard` then makes a fresh `.venv`. `npm run test:ui` opens a few generated images in the built page with headless Chromium, which `npx playwright install chromium` installs once.
 
-The smoke test runs Orchard the way a user does. It starts `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images, with a temporary cache and port 4499, and checks that the API lists them and the page loads. On a fresh clone, it covers the first-run install too. Add `--visual` to also download the model and check that a search finds the right image:
+The smoke test runs Orchard the way a user does. It starts `./orchard --browser`, or `orchard.cmd` on Windows, on a few generated images and a video, with a temporary cache and port 4499, and checks that the API lists them, the video with its length, and the page loads. On a fresh clone, it covers the first-run install too. Add `--visual` to also download the model and check that a search finds the right image:
 
 ```bash
 scripts/smoke-test --visual
