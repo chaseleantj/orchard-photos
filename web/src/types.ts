@@ -102,7 +102,7 @@ export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)),
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 /** The type filter's value for every video format, matching the server's. */
-export const VIDEO_TYPE = 'video';
+const VIDEO_TYPE = 'video';
 const TYPES: Record<string, string> = {
   'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
   'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
