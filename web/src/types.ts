@@ -108,5 +108,9 @@ export const megabytes = (bytes: number) => Math.round(bytes / 1e6).toLocaleStri
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
 
 export const IMAGE_DRAG = 'application/x-library-image';
-/** Lets an image from the folder be dragged into the search bar to find similar images. */
-export function dragImage(id: string) { return (e: React.DragEvent) => { e.dataTransfer.setData(IMAGE_DRAG, id); e.dataTransfer.effectAllowed = 'copy'; }; }
+// The macOS window finds the image's id in the drag's data after this mark, and adds its file once the drag leaves.
+const IMAGE_MARK = 'library-image:';
+/** Lets an image from the folder be dragged into the search bar to find similar images, or out of the window. */
+export function dragImage(id: string) { return (e: React.DragEvent) => { e.dataTransfer.setData(IMAGE_DRAG, IMAGE_MARK + id); e.dataTransfer.effectAllowed = 'copy'; }; }
+/** The id of an image dragged from the grid or viewer, or '' for anything else. */
+export function draggedImage(data: DataTransfer) { const value = data.getData(IMAGE_DRAG); return value.startsWith(IMAGE_MARK) ? value.slice(IMAGE_MARK.length) : ''; }

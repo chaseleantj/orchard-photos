@@ -46,6 +46,54 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(viewer).toBeHidden();
   });
 
+  await test.step('the grid is one tab stop, and arrow keys move across it', async () => {
+    await expect(pictures.and(page.locator('[tabindex="0"]'))).toHaveCount(1);
+    await pictures.first().focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(pictures.nth(1)).toBeFocused();
+    await expect(pictures.nth(1)).toHaveAttribute('tabindex', '0');
+    await page.keyboard.press('ArrowLeft');
+    await expect(pictures.first()).toBeFocused();
+  });
+
+  await test.step('the viewer zooms, swipes, and keeps its keys when focus falls out of it', async () => {
+    await page.keyboard.press('Enter');
+    const viewer = page.getByRole('dialog', { name: 'Image viewer' });
+    const name = viewer.getByRole('heading', { level: 1 });
+    const stage = viewer.locator('.image-stage');
+    const first = await name.textContent();
+    await viewer.locator('.image-stage img').click();
+    await expect(stage).toHaveClass(/zoomed/);
+    await expect(viewer.getByRole('button', { name: 'Fit to screen' })).toBeVisible();
+    // Escape zooms out before it closes.
+    await page.keyboard.press('Escape');
+    await expect(stage).not.toHaveClass(/zoomed/);
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press('ControlOrMeta+=');
+    await expect(stage).toHaveClass(/zoomed/);
+    await page.keyboard.press('ControlOrMeta+0');
+    await expect(stage).not.toHaveClass(/zoomed/);
+    // A two-finger swipe left moves to the next image, and one right comes back.
+    await stage.hover();
+    await page.mouse.wheel(200, 0);
+    await expect(name).not.toHaveText(first!);
+    await page.waitForTimeout(400);
+    await page.mouse.wheel(-200, 0);
+    await expect(name).toHaveText(first!);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('ArrowRight');
+    await expect(name).not.toHaveText(first!);
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
+  });
+
+  await test.step('a tile dropped on the search bar searches with its image', async () => {
+    await pictures.first().locator('img').dragTo(page.getByRole('search'));
+    await expect(page.getByRole('search').getByAltText('Image you are matching')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear search' }).click();
+    await expect(meta).toHaveText(plural(FIXTURE.images, 'image'));
+  });
+
   await test.step('filters narrow the grid by folder, type and date', async () => {
     await filter(page, 'Folder', 'trips');
     await expect(meta).toHaveText(`${plural(FIXTURE.trips, 'image')} · in trips`);

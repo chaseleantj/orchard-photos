@@ -561,7 +561,7 @@ def main(argv=None):
     print(f'{APP["name"]} is running at {url}', flush=True)
     if args.show == 'window':
         # The window runs on the main thread, as macOS requires, and closing it quits.
-        app.window = Window(APP['name'], url)
+        app.window = Window(APP['name'], url, lambda image_id: app.library and app.library.original(image_id))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             app.window.run()
