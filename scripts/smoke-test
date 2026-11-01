@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install and start Orchard through ./orchard on a few generated images, and check the API lists them.
+"""Install and start Orchard through ./orchard on a few generated images and a video, and check the API lists them.
 
 Runs on any Python 3, so it also shows what ./orchard says when Python is too old. --visual also downloads the search
 model and runs a search. Pass a lasting --data-dir to keep the model between runs. --launcher tests a built app instead,
@@ -24,6 +24,8 @@ import zlib
 ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = ROOT / ('orchard.cmd' if sys.platform == 'win32' else 'orchard')
 COLOURS = {'red': (220, 30, 30), 'green': (30, 160, 60), 'blue': (30, 60, 220), 'yellow': (240, 210, 30)}
+# The video: frames of a colour none of the images has, so search never stacks it with one, lasting a second.
+VIDEO_COLOUR, FRAMES, RATE = (130, 40, 170), 4, 4
 INSTALL_SECONDS = 600
 WORK_SECONDS = 600
 
@@ -35,6 +37,26 @@ def png(path, rgb, size=64):
     pixels = zlib.compress((b'\0' + bytes(rgb) * size) * size)
     header = struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0)
     path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', pixels) + chunk(b'IEND', b''))
+
+
+def avi(path, rgb, size=16):
+    """Write an uncompressed AVI of FRAMES frames of one colour at RATE a second, with only the standard library. It
+    checks that the app's video reader, PyAV and the FFmpeg it brings, loads."""
+    def chunk(kind, data):
+        return kind + struct.pack('<I', len(data)) + data + b'\0' * (len(data) % 2)
+
+    def listed(kind, *chunks):
+        return chunk(b'LIST', kind + b''.join(chunks))
+    row = (size * 3 + 3) // 4 * 4
+    frames = [(bytes(reversed(rgb)) * size + b'\0' * (row - size * 3)) * size] * FRAMES
+    main = struct.pack('<14I', 1_000_000 // RATE, 0, 0, 0x10, len(frames), 0, 1, row * size, size, size, 0, 0, 0, 0)
+    stream = struct.pack('<4s4sIHHIIIIIIIIhhhh', b'vids', b'DIB ', 0, 0, 0, 0, 1, RATE, 0, len(frames), row * size, 0xFFFFFFFF, 0, 0, 0, size, size)
+    bitmap = struct.pack('<IiiHHIIiiII', 40, size, size, 1, 24, 0, row * size, 0, 0, 0, 0)
+    movie = b''.join(chunk(b'00db', frame) for frame in frames)
+    # Offsets count from the movie list's own name.
+    index = b''.join(struct.pack('<4sIII', b'00db', 0x10, 4 + place * (8 + row * size), row * size) for place in range(len(frames)))
+    header = listed(b'hdrl', chunk(b'avih', main), listed(b'strl', chunk(b'strh', stream), chunk(b'strf', bitmap)))
+    path.write_bytes(chunk(b'RIFF', b'AVI ' + header + listed(b'movi', movie) + chunk(b'idx1', index)))
 
 
 def call(url, data=None):
@@ -75,6 +97,7 @@ def main():
     for name, rgb in COLOURS.items():
         png(photos / f'{name}.png', rgb)
     shutil.copy(photos / 'red.png', photos / 'nested' / 'red copy.png')
+    avi(photos / 'purple.avi', VIDEO_COLOUR)
     url = f'http://127.0.0.1:{args.port}'
     # --browser, since CI has no screen, and BROWSER makes opening it a no-op. With no input, the Windows launcher's
     # pause after a failure returns at once.
@@ -87,12 +110,16 @@ def main():
             library = call(f'{url}/api/status')['library']
             return library if library and library['updated'] and library['scan']['state'] == 'ready' else None
         counts = wait(server, args.launcher, INSTALL_SECONDS, 'the first scan', scanned)['counts']
-        if (counts['images'], counts['files']) != (len(COLOURS), len(COLOURS) + 1):
-            sys.exit(f'FAIL: expected {len(COLOURS)} images in {len(COLOURS) + 1} files, got {counts}.')
+        expected = (len(COLOURS) + 1, len(COLOURS) + 2, 1)
+        if (counts['images'], counts['files'], counts['videos']) != expected:
+            sys.exit(f'FAIL: expected {expected[0]} images, one a video, in {expected[1]} files, got {counts}.')
         items = call(f'{url}/api/images')['items']
-        if len(items) != len(COLOURS) or sum(item['copies'] for item in items) != len(COLOURS) + 1:
+        if len(items) != expected[0] or sum(item['copies'] for item in items) != expected[1]:
             sys.exit(f'FAIL: /api/images listed {[item["path"] for item in items]}.')
-        print(f'PASS: scanned {counts["images"]} images in {counts["files"]} files.')
+        video = next(item for item in items if item['path'] == 'purple.avi')
+        if not video['mime'].startswith('video/') or abs((video['duration'] or 0) - FRAMES / RATE) > .1:
+            sys.exit(f'FAIL: the video was read as {video["mime"]}, {video["duration"]} seconds long.')
+        print(f'PASS: scanned {counts["images"]} images, one a video, in {counts["files"]} files.')
         with urllib.request.urlopen(url, timeout=30) as response:
             script = re.search(r'src="(/assets/[^"]+\.js)"', response.read().decode())
         if not script:
