@@ -181,8 +181,13 @@ class PhotosLibrary:
         # As with photos, a video kept only in iCloud isn't downloaded unasked.
         options.setNetworkAccessAllowed_(False)
         done, failed = threading.Event(), []
+
+        # PhotoKit calls this on its own queue. It must return None: anything else, or an exception, aborts the app.
+        def finished(error):
+            failed.append(error)
+            done.set()
         Photos.PHAssetResourceManager.defaultManager().writeDataForAssetResource_toFile_options_completionHandler_(
-            resource, NSURL.fileURLWithPath_(str(temporary)), options, lambda error: (failed.append(error), done.set()))
+            resource, NSURL.fileURLWithPath_(str(temporary)), options, finished)
         done.wait()
         if failed[0] is not None:
             temporary.unlink(missing_ok=True)

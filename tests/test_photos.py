@@ -142,10 +142,10 @@ class ListingTests(unittest.TestCase):
 
         def write(resource, url, options, done):
             self.written.append(resource.kind)
-            if self.failing:
-                return done('offline')
-            Path(url.path).write_bytes(b'edited video')
-            done(None)
+            if not self.failing:
+                Path(url.path).write_bytes(b'edited video')
+            # PyObjC aborts the app when a handler PhotoKit expects to return nothing returns something.
+            self.assertIsNone(done('offline' if self.failing else None))
         kit = SimpleNamespace(
             PHAssetMediaTypeImage=1, PHAssetMediaTypeVideo=2, PHAssetResourceTypePhoto=1, PHAssetResourceTypeVideo=2, PHAssetResourceTypeFullSizeVideo=6,
             PHAsset=SimpleNamespace(fetchAssetsWithMediaType_options_=lambda kind, options: self.assets if kind == 1 else self.videos,
