@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanS
 import type { Details, Filters, Picture, Results } from './types';
 import { Disclosure } from './Panels';
 import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel } from './types';
-import { imagesAhead, shared } from './preload';
+import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
 
@@ -87,9 +87,9 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     }
     const reachable = near.filter(entry => entry && entry.id !== item.id);
     for (const entry of reachable) loadDetails(entry.id).catch(() => { /* Retried when it is shown. */ });
-    // A video loads its poster ahead; the video itself streams once it is shown.
-    ahead.images.keep(reachable.map(entry => imageUrl(entry.id, isVideo(entry) ? 'thumbnail' : 'display')));
+    ahead.images.keep(reachable.map(aheadUrl));
   };
+  const fail = () => { setFailed(true); loadAhead(); };
   const canStep = (direction: number) => !loadingMore && (direction < 0 ? index > 0 : index < items.length - 1 || hasMore);
   const step = (direction: number) => { if (!canStep(direction)) return; heading.current = direction; onChange(index + direction); };
   const climb = (direction: number) => { if (members[shown + direction]) showMember(shown + direction); };
@@ -159,8 +159,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           muted and looping over its first frame, since WebKit only starts a video without sound; its controls unmute it. */}
       <div ref={stage} className="image-stage">
         {failed ? <div className="empty"><p>{video ? 'This video can’t be played here. Download it to watch it.' : 'This image could not be shown. The file may have moved or changed.'}</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div>
-        : video ? <video key={item.id} src={imageUrl(item.id, 'display')} poster={imageUrl(item.id)} aria-label={fileName(item.path)} autoPlay muted loop controls playsInline onLoadedData={loadAhead} onError={() => { setFailed(true); loadAhead(); }} />
-        : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={() => { setFailed(true); loadAhead(); }} />}
+        : video ? <video key={item.id} src={imageUrl(item.id, 'display')} poster={imageUrl(item.id)} aria-label={fileName(item.path)} autoPlay muted loop controls playsInline onLoadedData={loadAhead} onError={fail} />
+        : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={fail} />}
       </div>
       <aside className="image-details">
         <div className="detail-summary">

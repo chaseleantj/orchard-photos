@@ -107,7 +107,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .timeline-year { position: absolute; right: 0; line-height: var(--s6); transform: translateY(-50%); color: var(--muted); pointer-events: none; transition: color var(--motion) var(--ease); }
 .timeline-year[data-current] { color: var(--ink); }
 .timeline-marker, .timeline-hover { position: absolute; left: var(--s4); width: var(--s3); border-radius: var(--pill); pointer-events: none; }
-/* Unlabelled years keep a short tick in the marker's track. */
 .timeline-marker { height: 2px; margin-top: -1px; background: var(--ink); }
 .timeline-hover { height: 1px; background: var(--muted); }
 .timeline-chip { position: absolute; right: calc(100% - var(--s4) + var(--s2)); transform: translateY(-50%); white-space: nowrap; padding: var(--s1) var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--control-radius); box-shadow: var(--shadow); pointer-events: none; opacity: 0; transition: opacity var(--motion) var(--ease); }
@@ -173,8 +172,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
-/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
 .image-stage video { display: block; max-width: 100%; max-height: 100%; }
+/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
 .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
 .image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
 .image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
@@ -188,7 +187,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* Pulled left so the icons line up with the text above, not their hit areas. */
 .detail-actions { display: flex; flex-direction: column; align-items: flex-start; margin: var(--s4) 0 0 calc(var(--s3) * -1); }
 .detail-status { min-height: 1.5em; }
-/* Filters that are on mark their button with a dot, which survives the label collapsing on narrow windows. */
+/* Filters that are on mark their button with a dot. */
 .filter-on { position: relative; }
 .filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--inset) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
 .view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }

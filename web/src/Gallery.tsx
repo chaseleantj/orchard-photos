@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, use
 import { Layers, Play } from 'lucide-react';
 import type { Picture } from './types';
 import { dragImage, durationLabel, fileName, imageUrl, isVideo, monthLabel, plural } from './types';
-import { imagesAhead } from './preload';
+import { aheadUrl, imagesAhead } from './preload';
 
 const BUFFER = 1200;
 const STEP = 400;
@@ -52,8 +52,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
   const [current, setCurrent] = useState(0);
   // Only the last tile pointed at keeps its image loaded.
   const [pointed] = useState(imagesAhead);
-  // A video readies its poster: the viewer streams the video itself.
-  const prepare = useCallback((item: Picture) => pointed.keep([imageUrl(item.id, isVideo(item) ? 'thumbnail' : 'display')]), [pointed]);
+  const prepare = useCallback((item: Picture) => pointed.keep([aheadUrl(item)]), [pointed]);
   useLayoutEffect(() => {
     const element = container.current!;
     const observer = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));

@@ -465,9 +465,8 @@ class SemanticIndex:
                     if not images:
                         continue
                     try:
-                        features = self.encoder.features(images=images)
-                        ends = numpy.cumsum(counts)
-                        vectors = _unit(numpy.stack([features[end - count:end].mean(axis=0) for end, count in zip(ends, counts)]))
+                        features = numpy.split(self.encoder.features(images=images), numpy.cumsum(counts)[:-1])
+                        vectors = _unit(numpy.stack([frames.mean(axis=0) for frames in features]))
                         with connect(self.directory) as connection:
                             connection.executemany(
                                 "INSERT OR REPLACE INTO semantic_embeddings VALUES (?, ?, ?)",

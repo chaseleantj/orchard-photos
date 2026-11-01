@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 import threading
 
-from server.cache import connect, thumbnail_path, while_open
+from server.cache import connect, thumbnail_path, write_image
 
 CELL = 64
 COLUMNS = 32
@@ -94,6 +94,4 @@ class Atlas:
             canvas = Image.new("RGBA", (CELL * COLUMNS, CELL * COLUMNS), (0, 0, 0, 0))
         for slot, icon in tiles:
             canvas.paste(icon, ((slot % COLUMNS) * CELL + INSET, (slot // COLUMNS) * CELL + INSET))
-        temporary = path.with_suffix(".tmp")
-        canvas.save(temporary, "WEBP", quality=80, method=4)
-        while_open(temporary.replace, path)
+        write_image(canvas, path, "WEBP", quality=80, method=4)

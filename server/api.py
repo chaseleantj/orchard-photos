@@ -444,8 +444,8 @@ class Handler(BaseHTTPRequestHandler):
         size = path.stat().st_size
         start, end = 0, size - 1
         asked = re.fullmatch(r'bytes=(\d*)-(\d*)', self.headers.get('Range', '').strip())
-        if asked and asked.group(1) + asked.group(2):
-            first, last = asked.groups()
+        first, last = asked.groups() if asked else ('', '')
+        if first or last:
             # bytes=-N asks for the last N bytes.
             start, end = (int(first), min(int(last or end), end)) if first else (max(0, size - int(last)), end)
             if start > end:

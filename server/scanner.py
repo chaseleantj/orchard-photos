@@ -1,4 +1,4 @@
-"""Find the image files under one folder, and index them by content: metadata and thumbnails.
+"""Find the image and video files under one folder, and index them by content: metadata and thumbnails.
 
 Originals are only ever read. Identical files share one image, so thumbnails and vectors survive renames and moves.
 """
@@ -17,7 +17,7 @@ import warnings
 
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
 
-from server.cache import connect, frame_path, preview_path, thumbnail_path, while_open
+from server.cache import connect, frame_path, preview_path, thumbnail_path, while_open, write_image
 
 try:
     from pillow_heif import register_heif_opener
@@ -97,6 +97,7 @@ def walk(root: Path, skip=frozenset(), found=None):
     path.
     """
     files, unreadable, libraries, visited = [], [], [], set()
+    # Only a Photos library skips videos, but every source reports both counts.
     skipped = dict.fromkeys(('raw', 'video'), 0)
     stack, links = [('', str(root))], []
     while stack or links:
@@ -135,7 +136,7 @@ def walk(root: Path, skip=frozenset(), found=None):
 
 
 class Folder:
-    """Images as files under a folder: the source a scan reads from, unless it is a Photos library."""
+    """Images and videos as files under a folder: the source a scan reads from, unless it is a Photos library."""
 
     def __init__(self, root: Path, skip=frozenset()):
         self.root = Path(root)
@@ -146,7 +147,7 @@ class Folder:
             raise FolderUnavailable(f'{self.root} is not available. Reconnect its drive, or choose another folder.')
 
     def list(self, found=None):
-        """Every image as (path, folder, size, mtime_ns), with walk's unreadable folders, Photos libraries and
+        """Every image and video as (path, folder, size, mtime_ns), with walk's unreadable folders, Photos libraries and
         skipped counts."""
         files, unreadable, libraries, skipped = walk(self.root, self.skip, found)
         if '' in unreadable:
@@ -161,12 +162,19 @@ class Folder:
         return self.root / path
 
 
-def is_video(path: str) -> bool:
-    return os.path.splitext(path)[1].lower() in VIDEOS
+def video_type(path: str) -> str | None:
+    """The type a video file is served as, or None for any other file."""
+    return VIDEOS.get(os.path.splitext(path)[1].lower())
 
 
 def utc(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def camera_name(make: str, model: str) -> str | None:
+    """The camera as people name it. Many models already start with their make."""
+    camera = model if model.lower().startswith(make.lower()) else f'{make} {model}'.strip()
+    return camera or None
 
 
 def exif_details(image):
@@ -189,8 +197,7 @@ def exif_details(image):
         except ValueError:
             pass
     make, model = (str(exif.get(tag) or '').strip('\x00 ') for tag in (EXIF_MAKE, EXIF_MODEL))
-    camera = model if model.lower().startswith(make.lower()) else f'{make} {model}'.strip()
-    return taken, camera or None
+    return taken, camera_name(make, model)
 
 
 def displayable(image):
@@ -213,11 +220,8 @@ def refuse_oversized(image):
 
 
 def save(image, target: Path):
-    """Write an image as WebP in one step, so a reader never sees half of it."""
-    target.parent.mkdir(exist_ok=True)
-    temporary = target.with_suffix(f'.{os.getpid()}-{threading.get_ident()}.tmp')
-    image.save(temporary, 'WEBP', quality=82)
-    while_open(temporary.replace, target)
+    """Write a thumbnail or a search frame as WebP."""
+    write_image(image, target, 'WEBP', quality=82)
 
 
 def upright(frame):
@@ -256,10 +260,8 @@ def video_details(metadata: dict):
         if moment.year > 1971:
             taken = utc(moment if moment.tzinfo else moment.replace(tzinfo=UTC))
             break
-    make = metadata.get('com.apple.quicktime.make', '').strip()
-    model = metadata.get('com.apple.quicktime.model', '').strip()
-    camera = model if model.lower().startswith(make.lower()) else f'{make} {model}'.strip()
-    return taken, camera or None
+    make, model = (metadata.get(f'com.apple.quicktime.{tag}', '').strip() for tag in ('make', 'model'))
+    return taken, camera_name(make, model)
 
 
 class Budget:
@@ -432,7 +434,8 @@ class Scanner:
                 if digest in self._seen:
                     return {'id': digest}
                 stream.seek(0)
-                return self._describe_video(stream, digest, relative) if is_video(relative) else self._describe(stream, digest)
+                mime = video_type(relative)
+                return self._describe_video(stream, digest, mime) if mime else self._describe(stream, digest)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
             return {'unreached': True} if unreached(error) else {'error': failure(error)}
@@ -451,7 +454,7 @@ class Scanner:
             save(display, thumbnail_path(self.directory, digest))
         return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
 
-    def _describe_video(self, stream, digest: str, relative: str) -> dict:
+    def _describe_video(self, stream, digest: str, mime: str) -> dict:
         """Read a new video's metadata, and draw its first frame as the thumbnail and SEARCH_FRAMES for search."""
         import av
         try:
@@ -475,8 +478,8 @@ class Scanner:
             frame.thumbnail((FRAME_SIZE, FRAME_SIZE))
             save(frame, frame_path(self.directory, digest, place))
         taken, camera = video_details(metadata)
-        return {'id': digest, 'width': width, 'height': height, 'mime': VIDEOS[os.path.splitext(relative)[1].lower()],
-                'taken': taken, 'camera': camera, 'duration': round(duration, 3) or None}
+        return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera,
+                'duration': round(duration, 3) or None}
 
     def _remove_missing(self, present: set, unreadable: list) -> int:
         """Forget files that are gone, and the images and thumbnails nothing refers to. Files inside a folder that

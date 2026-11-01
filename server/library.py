@@ -11,7 +11,7 @@ from PIL import Image
 
 from server import photos
 from server.atlas import Atlas
-from server.cache import connect, preview_path, thumbnail_path, while_open
+from server.cache import connect, preview_path, thumbnail_path, write_image
 from server.groups import Groups
 from server.layout import Layout
 from server.scanner import FolderUnavailable, ScanCancelled, Scanner, scaled
@@ -320,12 +320,9 @@ class Library:
             return path
         preview = preview_path(self.directory, image_id)
         if not preview.is_file():
-            preview.parent.mkdir(exist_ok=True)
             with Image.open(path) as source:
                 image = scaled(source, PREVIEW_EDGE)
-                temporary = preview.with_suffix(f'.{threading.get_ident()}.tmp')
-                (image.convert('RGB') if image.mode == 'RGBA' else image).save(temporary, 'JPEG', quality=90)
-                while_open(temporary.replace, preview)
+                write_image(image.convert('RGB') if image.mode == 'RGBA' else image, preview, 'JPEG', quality=90)
         return preview
 
     def map(self, params):
