@@ -135,7 +135,7 @@ If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, lik
 
 ## Background work and Info
 
-Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds, how long background work has left, and a button to rescan the folder.
+Background work shows under the search bar, at the left: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds and how long background work has left. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere).
 
 At the bottom, Info shows Orchard's version, and:
 

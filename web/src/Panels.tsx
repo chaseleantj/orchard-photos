@@ -108,8 +108,6 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   ].filter(row => row.shown);
   const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'In the grid';
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
-    <p className="path">{status.folder!.label}</p>
-    <p>{status.folder!.photos ? 'Read through Photos, with your edits. Hidden photos are skipped.' : 'Subfolders included, hidden ones skipped.'}</p>
     <dl className="counts">
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
       <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
