@@ -15,6 +15,8 @@ async function filter(page: Page, label: string, value: string) {
 
 test('opens a folder and browses, filters, maps and searches it', async ({ page }) => {
   const meta = page.locator('.library-meta p');
+  // The count reads into the folder button: "Showing 12 images in photos", then any filters.
+  const showing = (count: string, scope = '') => `Showing ${count} in photos${scope}`;
   const pictures = page.getByRole('button', { name: /^Open / });
 
   await test.step('welcome screen', async () => {
@@ -31,7 +33,14 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
 
   await test.step('the grid fills', async () => {
     await expect(pictures).toHaveCount(FIXTURE.images);
-    await expect(meta).toHaveText(plural(FIXTURE.images, 'image'));
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+  });
+
+  await test.step('Ctrl+R reloads the page and rescans the folder', async () => {
+    const rescan = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/scan'));
+    await page.locator('body').press('Control+r');
+    await rescan;
+    await expect(pictures).toHaveCount(FIXTURE.images);
   });
 
   await test.step('the viewer opens, steps to the next image and closes', async () => {
@@ -91,21 +100,21 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await pictures.first().locator('img').dragTo(page.getByRole('search'));
     await expect(page.getByRole('search').getByAltText('Image you are matching')).toBeVisible();
     await page.getByRole('button', { name: 'Clear search' }).click();
-    await expect(meta).toHaveText(plural(FIXTURE.images, 'image'));
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
   await test.step('filters narrow the grid by folder, type and date', async () => {
     await filter(page, 'Folder', 'trips');
-    await expect(meta).toHaveText(`${plural(FIXTURE.trips, 'image')} · in trips`);
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
     await expect(pictures).toHaveCount(FIXTURE.trips);
     await filter(page, 'Folder', '');
     await filter(page, 'File type', 'image/bmp');
-    await expect(meta).toHaveText(`${plural(1, 'image')} · BMP`);
+    await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
     await filter(page, 'File type', '');
     await filter(page, 'Date', 'year');
-    await expect(meta).toHaveText(`${plural(FIXTURE.today, 'image')} · Past year`);
+    await expect(meta).toHaveText(showing(plural(FIXTURE.today, 'image'), ' · Past year'));
     await filter(page, 'Date', 'all');
-    await expect(meta).toHaveText(plural(FIXTURE.images, 'image'));
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
   await test.step('the map offers to set up visual search, since there is no model', async () => {
@@ -119,12 +128,12 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(page.getByRole('textbox', { name: 'Search images' })).toHaveAttribute('placeholder', 'Search file names');
     await page.getByRole('textbox', { name: 'Search images' }).fill('beach');
     await page.keyboard.press('Enter');
-    await expect(meta).toHaveText(plural(1, 'match', 'matches'));
+    await expect(meta).toHaveText(showing(plural(1, 'match', 'matches')));
     await expect(pictures).toHaveCount(1);
     await expect(pictures.first()).toHaveAccessibleName('Open beach.png');
     // The map counts the same file-name matches it lights.
     await page.getByRole('button', { name: 'Map', exact: true }).click();
-    await expect(meta).toHaveText(plural(1, 'match', 'matches'));
+    await expect(meta).toHaveText(showing(plural(1, 'match', 'matches')));
     await page.getByRole('button', { name: 'Grid', exact: true }).click();
     await page.getByRole('button', { name: 'Clear search' }).click();
     await expect(pictures).toHaveCount(FIXTURE.images);

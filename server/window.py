@@ -26,6 +26,10 @@ DEFAULT_ICON = ROOT / 'public' / 'apple-touch-icon.png'
 # pywebview's page view has its own ⌘W, but the key never reaches it, so Close Window carries it.
 WINDOW_MENU = (('Minimize', 'performMiniaturize:', 'm'), ('Zoom', 'performZoom:', ''), None, ('Bring All to Front', 'arrangeInFront:', ''),
                ('Close Window', 'performClose:', 'w'))
+# Items for the top of pywebview's View menu, in the same form. Reload has no target, so it goes to the page's WebKit
+# view, which loads the page again from the server even when the page's script has stopped. The page asks for a
+# rescan when it is reloaded.
+VIEW_MENU = (('Reload', 'reload:', 'r'),)
 # An image the page lets drag out names its id in the drag's data after a mark, as dragImage in web/src/types.ts
 # writes it.
 MARKED_IMAGE = re.compile(rb'library-image:([0-9a-f]{64})')
@@ -103,8 +107,8 @@ def window_menu():
     return menu
 
 
-def add_window_menu(window):
-    """Add the Window menu to the menu bar, and list the window in it."""
+def add_menus(window):
+    """Add the Window menu to the menu bar and list the window in it, then put Reload in the View menu."""
     import AppKit
 
     app = AppKit.NSApplication.sharedApplication()
@@ -115,6 +119,17 @@ def add_window_menu(window):
     app.setWindowsMenu_(menu)
     # macOS lists windows as they open, and this one is already open.
     app.addWindowsItem_title_filename_(window, window.title(), False)
+    add_view_items(app.mainMenu())
+
+
+def add_view_items(bar):
+    """Put VIEW_MENU at the top of the View menu pywebview adds to the menu bar, above Enter Full Screen."""
+    import AppKit
+
+    view = next(item.submenu() for item in bar.itemArray() if item.submenu() and item.submenu().title() == 'View')
+    for index, item in enumerate(VIEW_MENU):
+        view.insertItemWithTitle_action_keyEquivalent_atIndex_(*item, index)
+    view.insertItem_atIndex_(AppKit.NSMenuItem.separatorItem(), len(VIEW_MENU))
 
 
 def marked_image(data) -> str | None:
@@ -192,7 +207,7 @@ class Window:
 
             # before_show runs on the main thread just before pywebview builds the menu bar and starts its loop,
             # so the call waits in the loop's queue until the bar is there.
-            self.view.events.before_show += lambda: AppHelper.callAfter(add_window_menu, self.view.native)
+            self.view.events.before_show += lambda: AppHelper.callAfter(add_menus, self.view.native)
             from webview.platforms.cocoa import BrowserView
 
             drag_images_out(BrowserView.WebKitHost, image_file)

@@ -5,11 +5,12 @@ export type SearchMode = 'name' | 'visual';
 export type View = 'grid' | 'map';
 export type Range = 'all' | 'today' | '7d' | '28d' | 'year' | 'custom';
 export interface Filters { folder: string; type: string; range: Range; from: string; to: string }
-/** One image, described by its newest file that passes the filters. `dated` says where its date came from.
- *  In the grid it fronts its `group` of near-duplicates, `members` images in all, counting itself. */
-export interface Picture { id: string; width: number; height: number; mime: string; size: number; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
+/** One image or video, described by its newest file that passes the filters. `dated` says where its date came from,
+ *  and `duration` is a video's length in seconds. In the grid it fronts its `group` of near-duplicates, `members`
+ *  images in all, counting itself. */
+export interface Picture { id: string; width: number; height: number; mime: string; size: number; duration: number | null; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 interface FileCopy { path: string; modified: string }
-export interface Details { id: string; width: number; height: number; mime: string; size: number; taken: string | null; camera: string | null; root: string; source: 'folder' | 'photos'; files: FileCopy[]; preview: boolean }
+export interface Details { id: string; width: number; height: number; mime: string; size: number; duration: number | null; taken: string | null; camera: string | null; root: string; source: 'folder' | 'photos'; files: FileCopy[]; preview: boolean }
 /** `received` and `size` are bytes, sent while the model downloads. */
 export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
 /** Visual queries can be answered: some images are prepared. */
@@ -17,10 +18,10 @@ export const searchable = (search: SearchStatus) => search.indexed > 0;
 /** Visual search is downloading, starting, or preparing images for the first time. */
 export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
-/** `skipped` counts the RAW photos and videos the scanner can't read, from the last scan that counted them. */
 export interface LibraryStatus {
-  counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unlistedFolders: number; unreached: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  /** `images` counts videos too, and `videos` how many of them are videos. */
+  counts: { images: number; videos: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
+  unlistedFolders: number; unreached: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 /** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
 export interface Folder { path: string; label: string; name: string; id: string; photos: boolean }
@@ -63,7 +64,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 export const post = <T,>(path: string, body: unknown = {}) => request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-/** Thumbnails are small WebP copies; `display` is the original, or a converted JPEG for formats browsers cannot show. */
+/** Thumbnails are small WebP copies, a video's of its first frame; `display` is the original, or a converted JPEG for
+ *  images browsers cannot show. */
 export function imageUrl(id: string, size: 'thumbnail' | 'display' = 'thumbnail') { return `/api/images/${id}/${size}`; }
 export const downloadUrl = (id: string, path: string) => `/api/images/${id}/original?${new URLSearchParams({ path, download: '1' })}`;
 
@@ -71,6 +73,8 @@ export const downloadUrl = (id: string, path: string) => `/api/images/${id}/orig
 export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
 interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
+// Filters saved before videos shared one type name a single format, like video/quicktime.
+const savedType = (type: unknown) => typeof type !== 'string' ? '' : isVideo({ mime: type }) ? VIDEO_TYPE : type;
 export function readPreferences(): Preferences {
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
@@ -79,7 +83,7 @@ export function readPreferences(): Preferences {
     const text = (s: unknown) => typeof s === 'string' ? s : '';
     const validDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
     const custom = validDate(f.from) || validDate(f.to);
-    const filters: Filters = { folder: text(f.folder), type: text(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
+    const filters: Filters = { folder: text(f.folder), type: savedType(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
     if (filters.from && filters.to && filters.from > filters.to) { filters.from = ''; filters.to = ''; }
     return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root) };
   } catch { return { filters: defaults, theme, view: 'grid', root: '' }; }
@@ -97,8 +101,20 @@ export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month
 export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-const TYPES: Record<string, string> = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC' };
-export const typeLabel = (mime: string) => TYPES[mime] || mime.replace(/^image\//, '').toUpperCase();
+/** The type filter's value for every video format, matching the server's. */
+const VIDEO_TYPE = 'video';
+const TYPES: Record<string, string> = {
+  'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
+  'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
+};
+// RAW photos are typed image/x- and their extension, like image/x-nef.
+export const typeLabel = (mime: string) => mime === VIDEO_TYPE ? 'Videos' : TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
+export const isVideo = (picture: { mime: string }) => picture.mime.startsWith(`${VIDEO_TYPE}/`);
+/** A video's length as a clock reads it, like 0:42 or 1:02:03. */
+export function durationLabel(seconds: number) {
+  const whole = Math.round(seconds), hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60, rest = String(whole % 60).padStart(2, '0');
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`;
+}
 export function sizeLabel(bytes: number) {
   if (bytes < 1000) return `${bytes} B`;
   const [value, unit] = bytes < 1e6 ? [bytes / 1e3, 'KB'] : bytes < 1e9 ? [bytes / 1e6, 'MB'] : [bytes / 1e9, 'GB'];
@@ -106,6 +122,8 @@ export function sizeLabel(bytes: number) {
 }
 export const megabytes = (bytes: number) => Math.round(bytes / 1e6).toLocaleString();
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+/** What counts of the library call what it holds: images, or items once it holds videos too, as Apple Photos does. */
+export const countNoun = (library: LibraryStatus | null) => library?.counts.videos ? 'item' : 'image';
 
 export const IMAGE_DRAG = 'application/x-library-image';
 // The macOS window finds the image's id in the drag's data after this mark, and adds its file once the drag leaves.

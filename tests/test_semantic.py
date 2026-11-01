@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 from server import semantic
-from server.cache import connect, thumbnail_path
+from server.cache import connect, frame_path, thumbnail_path
 from server.semantic import (
     CORE_ML_SHA256,
     CORE_ML_VISION,
@@ -345,10 +345,25 @@ class SemanticTests(unittest.TestCase):
             connection.execute("INSERT INTO files VALUES ('copy.png', 'old', '2025-01-01T00:00:00Z')")
         order = []
         with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=np.eye(4, dtype=np.float32)), \
-                patch.object(self.search, "_open_image", side_effect=lambda image_id: order.append(image_id) or Image.new("RGB", (8, 8))):
+                patch.object(self.search, "_open_images", side_effect=lambda image_id: order.append(image_id) or [Image.new("RGB", (8, 8))]):
             self.search.index()
         # The photo's capture date counts, not when its file was written.
         self.assertEqual(order, ["new", "old", "photo", "middle"])
+
+    def test_a_video_is_searched_as_the_average_of_its_frames(self):
+        self.add("photo", "video")
+        frame_path(self.directory, "video", 0).parent.mkdir(exist_ok=True)
+        for place in range(3):
+            Image.new("RGB", (8, 8)).save(frame_path(self.directory, "video", place), "WEBP")
+        features = np.array([[1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+        with patch.object(self.encoder, "load"), patch.object(self.encoder, "features", return_value=features) as encode:
+            self.search.index()
+        # The photo's thumbnail, then the video's three frames, in one batch.
+        self.assertEqual(len(encode.call_args.kwargs["images"]), 4)
+        ids, matrix = self.search.embeddings()
+        vectors = dict(zip(ids, matrix))
+        np.testing.assert_allclose(vectors["photo"], [1, 0, 0])
+        np.testing.assert_allclose(vectors["video"], np.ones(3) / np.sqrt(3), atol=1e-6)
 
     def test_vectors_from_another_model_are_ignored_then_discarded(self):
         self.add("1", "2")
@@ -446,7 +461,7 @@ class SemanticTests(unittest.TestCase):
             self.search.index()
         status = self.search.status()
         self.assertEqual((status["indexed"], status["total"]), (1, 2))
-        self.assertIn("1 image", status["error"])
+        self.assertIn("1 file could not be read", status["error"])
         self.assertEqual(self.search.search(image_id="1"), [("1", 1.0)])
         # The image that can't be read doesn't hold the folder back, but a new one does.
         self.assertEqual(status["state"], "ready")

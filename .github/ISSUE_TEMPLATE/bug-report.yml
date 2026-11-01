@@ -31,7 +31,7 @@ body:
     attributes:
       label: Orchard version
       description: The version at the bottom of Info. If you cloned the repository, also add the output of `git rev-parse --short HEAD`.
-      placeholder: 0.4.0
+      placeholder: 0.5.0
     validations:
       required: true
   - type: textarea
@@ -54,7 +54,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: In Info, click Copy diagnostics, and paste it here. It has no file names or folders.
+      description: In Info, click the link to copy diagnostics, and paste it here. It has no file names or folders.
       render: text
   - type: textarea
     id: output

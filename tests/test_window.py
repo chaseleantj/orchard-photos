@@ -88,6 +88,19 @@ class WindowMenuTests(unittest.TestCase):
                                  ('Bring All to Front', 'arrangeInFront:', ''), ('Close Window', 'performClose:', 'w')])
         self.assertTrue(menu.itemAtIndex_(2).isSeparatorItem())
 
+    def test_reload_heads_the_view_menu(self):
+        import AppKit
+
+        bar, view = AppKit.NSMenu.alloc().initWithTitle_(''), AppKit.NSMenu.alloc().initWithTitle_('View')
+        view.addItemWithTitle_action_keyEquivalent_('Enter Full Screen', 'toggleFullScreen:', 'f')
+        entry = AppKit.NSMenuItem.alloc().init()
+        entry.setSubmenu_(view)
+        bar.addItem_(entry)
+        window.add_view_items(bar)
+        self.assertEqual([(item.title(), item.action(), item.keyEquivalent()) for item in view.itemArray() if not item.isSeparatorItem()],
+                         [('Reload', 'reload:', 'r'), ('Enter Full Screen', 'toggleFullScreen:', 'f')])
+        self.assertTrue(view.itemAtIndex_(1).isSeparatorItem())
+
 
 class AvailabilityTests(unittest.TestCase):
     def test_linux_without_a_display_uses_the_browser(self):

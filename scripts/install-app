@@ -1,11 +1,21 @@
 #!/bin/zsh
-# Install Orchard.app, which opens this clone's window from the Dock or Spotlight: scripts/install-app [folder]
-# The app goes into ~/Applications, or into folder when one is given.
+# Install Orchard.app, which opens this clone's window from the Dock or Spotlight: scripts/install-app [--dev] [folder]
+# The app goes into ~/Applications, or into folder when one is given. --dev installs Orchard Dev instead, for trying the
+# branch checked out here beside a downloaded Orchard: its own cache, port and Photos permission, so neither sees the
+# other's.
 set -e
+dev=
+if [[ $1 == --dev ]]; then dev=1; shift; fi
 [[ $(uname) == Darwin ]] || { print -u2 'scripts/install-app builds a Mac app. On Linux, run ./orchard.'; exit 1; }
 command -v clang > /dev/null || { print -u2 'scripts/install-app compiles the app with clang. Install the command line tools with xcode-select --install, then run it again.'; exit 1; }
 root=${0:A:h:h}
-app=${${1:-~/Applications}:A}/Orchard.app
+name=Orchard${dev:+ Dev}
+app=${${1:-~/Applications}:A}/$name.app
+identifier=local.orchard.${${dev:+dev}:-launcher}
+# How the app starts the clone. Orchard Dev passes its own cache and port after the folder, which is empty unless one
+# was dropped on the app.
+run='./orchard "$@"'
+if [[ -n $dev ]]; then run='./orchard "${1:-}" --data-dir "$HOME/Library/Application Support/orchard-dev" --port 4401'; fi
 
 # The app's executable is the compiled launcher the downloadable app uses, so macOS asks to allow the clone's folder,
 # like one on the Desktop, and remembers the answer. A script there would be refused without asking. It runs
@@ -15,13 +25,13 @@ rm -rf $app
 mkdir -p $app/Contents/MacOS $app/Contents/Resources
 clang -O2 -DSTART_SCRIPT -o $app/Contents/MacOS/Orchard $root/scripts/app/macos-launcher.c
 cp $root/assets/orchard.icns $app/Contents/Resources/Orchard.icns
-cat > $app/Contents/Info.plist <<'PLIST'
+cat > $app/Contents/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Orchard</string>
-  <key>CFBundleIdentifier</key><string>local.orchard.launcher</string>
+  <key>CFBundleName</key><string>$name</string>
+  <key>CFBundleIdentifier</key><string>$identifier</string>
   <key>CFBundleExecutable</key><string>Orchard</string>
   <key>CFBundleIconFile</key><string>Orchard.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -47,7 +57,7 @@ if ! installed; then
   watcher=\$!
 fi
 status=0
-./orchard "\$@" || status=\$?
+$run || status=\$?
 if [ -n "\$dialog" ]; then kill \$watcher \$dialog 2> /dev/null; fi
 exit \$status
 SCRIPT

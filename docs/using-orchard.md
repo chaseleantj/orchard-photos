@@ -30,6 +30,8 @@ Orchard runs in WSL with its own window, through WSLg. Some things differ from L
 
 The downloaded Mac app needs nothing more. When you run Orchard from a clone, `scripts/install-app` installs `~/Applications/Orchard.app`, which opens this clone's window from the Dock or Spotlight. It compiles a small launcher with clang, so it needs the Xcode command line tools, which `xcode-select --install` installs. The first start sets things up, which takes about a minute. If the clone is in your Desktop or Documents folder, macOS asks whether Orchard may open it, and may ask again after you reinstall the app. If Orchard can't start, the app shows the end of its log, `~/Library/Logs/Orchard.log`.
 
+To try the branch checked out in a clone beside a downloaded Orchard, run `scripts/install-app --dev`. It installs `~/Applications/Orchard Dev.app`, which runs whatever the clone holds each time it opens, with its own cache in `~/Library/Application Support/orchard-dev`, its own port, 4401, and its own Photos permission, so the two never share anything.
+
 The app finds Python the way your terminal did when you ran `scripts/install-app`, so run it again if you install Python somewhere new. With Python from Homebrew or python.org, the window shows in the Dock as Orchard. With other Pythons, like pyenv's, it shows as Python.
 
 ## Browsing
@@ -48,7 +50,7 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 ## Viewing an image
 
-Click an image to open it. The viewer shows the file name, date, folder, size and type. **Details** adds the full path, the camera, and any other copies of the file.
+Click an image to open it. The viewer shows the file name, date, folder, size and type.
 
 The viewer's buttons are labelled:
 
@@ -67,7 +69,7 @@ In Orchard's window on a Mac, drag an image from the grid or the viewer into ano
 
 ## Duplicates
 
-Identical files appear once, and the viewer lists every place a copy is saved.
+Identical files appear once.
 
 Images that look almost the same, like bursts, edits and resized copies, share one tile. Images without camera details, like screenshots and renders, share one only when their pixels match too, so different screens of one app stay apart. The tile shows the sharpest and largest of them, with a badge for how many there are. Open the tile to see them all, and use the up and down arrow keys to switch between them.
 
@@ -76,7 +78,7 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 **Filter** narrows the grid by:
 
 - **Subfolder**, including the folders inside it.
-- **File type**.
+- **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
 Filters also apply to search and the map.
@@ -133,35 +135,38 @@ If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, lik
 
 ## Background work and Info
 
-Background work shows beside the image count: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds, how long background work has left, and a button to rescan the folder.
+Background work shows under the search bar, at the left: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds and how long background work has left. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere).
 
 At the bottom, Info shows Orchard's version, and:
 
 - **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
-- **Copy diagnostics**, which copies a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
+- A link that copies diagnostics, a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
 
-You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. **Rescan now** also tries again the files that couldn't be read.
+You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere), which also tries again the files that couldn't be read.
 
 ## Supported files
 
 Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG of those, and **Download** still gives you the original.
 
+Camera RAW photos, such as NEF, CR2, CR3, ARW and DNG, are shown by the full-size JPEG preview the camera stores inside each one. A RAW file without a preview is counted under **Could not be read**.
+
+Orchard also reads videos: MOV, MP4, M4V, WebM, MKV, AVI, MPEG, MTS, 3GP, WMV and FLV. The grid shows each one's first frame and length, and visual search finds a video by frames from a quarter, half and three quarters of the way through. The viewer plays it muted, on a loop, with controls to unmute; MOV, MP4, M4V and WebM play in the window, and the rest need **Download original**.
+
 Orchard skips:
 
-- RAW photos and videos. Info counts them, and says they aren't shown yet.
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
 - Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
 
 ## Apple Photos
 
-On a Mac, Orchard can show and search your Photos library. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
+On a Mac, Orchard can show and search your Photos library, photos and videos alike. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
 
 - Orchard reads each photo through Photos, with your edits, and never changes your library.
-- Hidden photos and videos are skipped.
+- Videos are shown and searched too, with your edits. Hidden photos and videos are skipped.
 - Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
 - **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
-- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then **Rescan now** in Info.
+- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then reload with **⌘R**.
 - Orchard opens the library Photos uses as its System Photo Library. To browse another one, make it the system library in **Photos › Settings › General**.
 - Started from Terminal, Orchard can't ask for access, since macOS only asks apps that say why they want it. Open Orchard from its app, or from the one [`scripts/install-app`](#the-mac-app-from-a-clone) makes.
 
