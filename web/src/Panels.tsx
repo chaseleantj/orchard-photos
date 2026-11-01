@@ -8,7 +8,7 @@ import { searchWork } from './Activity';
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
 const EDGE = 16;
-// How long Copy diagnostics says it copied.
+// How long Info says the diagnostics were copied.
 const COPIED_FOR = 4000;
 
 /** A popover opened from `anchor`: under it, lined up with its right edge, or with its left edge and width for `menu`. */
@@ -147,7 +147,7 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   </Panel>;
 }
 
-/** The update check and Copy diagnostics, under the version in Info. */
+/** The update check and the link that copies diagnostics, under the version in Info. */
 function About({ library }: { library: LibraryStatus }) {
   const [updates, setUpdates] = useState<Updates | null>(null);
   const [report, setReport] = useState('');
@@ -169,7 +169,8 @@ function About({ library }: { library: LibraryStatus }) {
   return <>
     {updates?.update && <div className="panel-action"><p>Version {updates.update.version} is available.</p><a className="text-button secondary" href={updates.update.url} target="_blank" rel="noreferrer">See the release</a></div>}
     <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub</span></label>
-    <div className="panel-action"><p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.' : 'For bug reports, without file names or folders.'}</p><button className="text-button secondary" disabled={!report} onClick={e => void copy(e.currentTarget)}>{copied === 'copied' && <Check />}Copy diagnostics</button></div>
+    <p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.'
+      : <>Click <button className="inline-link" disabled={!report} onClick={e => void copy(e.currentTarget)}>here</button> to copy diagnostics for bug reports.</>}</p>
     {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
     {error && <p className="error-copy" role="alert">{error}</p>}
   </>;

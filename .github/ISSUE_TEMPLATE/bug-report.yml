@@ -54,7 +54,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: In Info, click Copy diagnostics, and paste it here. It has no file names or folders.
+      description: In Info, click the link to copy diagnostics, and paste it here. It has no file names or folders.
       render: text
   - type: textarea
     id: output

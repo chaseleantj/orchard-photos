@@ -140,7 +140,7 @@ Background work shows beside the image count: reading new files, downloading the
 At the bottom, Info shows Orchard's version, and:
 
 - **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
-- **Copy diagnostics**, which copies a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
+- A link that copies diagnostics, a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
 
 You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere), which also tries again the files that couldn't be read.
 

@@ -68,7 +68,7 @@ The server takes these options:
 | `server/groups.py` | Groups near-duplicates. |
 | `server/layout.py` | Lays out the map with UMAP, written in NumPy. |
 | `server/atlas.py` | Packs map icons into sheets. |
-| `server/diagnostics.py` | The report that Copy diagnostics in Info copies, without file names or folders. |
+| `server/diagnostics.py` | The report that Info's diagnostics link copies, without file names or folders. |
 | `server/updates.py` | The opt-in daily check for a newer release on GitHub. |
 | `server/parity-vector.npy` | The vector the CPU gives for the test image that a GPU must match. |
 | `web/src/` | The React frontend. `App.tsx` is the entry point, and `mapEngine.ts` draws the map. |

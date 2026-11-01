@@ -97,6 +97,6 @@ Install Orchard on each computer. Each one keeps its own cache and prepares its 
 
 ## Reporting a problem
 
-[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. In Info, click **Copy diagnostics**, and paste the report into the form. It names versions, counts and the last error, but no file names or folders.
+[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. In Info, click the link to copy diagnostics, and paste the report into the form. It names versions, counts and the last error, but no file names or folders.
 
 Include what the terminal printed, too. The Mac apps write it to `~/Library/Logs/Orchard.log`, and the Windows app to `%TEMP%\Orchard.log`.
