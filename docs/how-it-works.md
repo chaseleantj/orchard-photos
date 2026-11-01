@@ -66,6 +66,8 @@ Positions are saved. When new images arrive, each is placed at the weighted cent
 
 To draw thousands of images quickly, the server packs small icons into sheets of 1,024 icons each, so the page loads a handful of sheets instead of one image per request. The map shows at most the newest 25,000 images that match the filters, and new images get their icon slots newest first, so those images share the first sheets.
 
+The page decodes the sheets away from the main thread and keeps them decoded. Zoomed out, it draws the icons once and slides that picture as you pan. Zoomed in, each icon gets its sharp thumbnail, decoded at about the size it's drawn.
+
 ## The server
 
 The server is a small HTTP server from Python's standard library. It serves the built page from `dist/` and a JSON API under `/api/`. It only listens on `127.0.0.1`, and accepts requests only from its own page and from programs on the computer, so a web page you visit can't read your photos through it. The Host must be 127.0.0.1, localhost or [::1] on the server's port, which stops DNS rebinding. The `Origin` and `Sec-Fetch-Site` headers turn away every other page, even one on another local port, and a POST must be JSON, which a web form can't send. The one exception is an image search, which sends the image itself. Every response tells the browser not to frame the page or guess content types, and the page runs only its own scripts. The server logs each request it refuses as a `Refused` line.

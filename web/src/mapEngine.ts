@@ -33,12 +33,17 @@ const MIN_ZOOM = 0.4;
 const MAX_ICON = 220;
 const MAX_LOADS = 8;
 const MAX_THUMBS = 480;
+// How far past each edge of the view the zoomed-out layer reaches, so a pan rarely has to redraw it.
+const LAYER_MARGIN = 256;
 
 interface Camera { x: number; y: number; k: number }
-interface Thumb { image: HTMLImageElement; ready: boolean; shown: number; used: number }
+// A sharp thumbnail, decoded at `resolution` pixels square or its own size if smaller.
+interface Thumb { bitmap: ImageBitmap | null; resolution: number; loading: boolean; shown: number; used: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const approach = (rate: number, dt: number) => 1 - Math.exp(-dt / rate);
+// Thumbnails decode at the next power of two up from the pixels they cover, so a zoom only rarely needs a sharper one.
+const resolution = (pixels: number) => 2 ** Math.ceil(Math.log2(Math.max(64, pixels)));
 
 /** Draws the embedding on a canvas and owns the camera, hover and hit-testing. React only hears about selections, clicks and carried images. */
 export class MapEngine {
@@ -61,6 +66,9 @@ export class MapEngine {
   private sx = new Float32Array(0); private sy = new Float32Array(0);
   private order: number[] = [];
   private thumbs = new Map<string, Thumb>();
+  // The zoomed-out icons drawn once, and a count that changes whenever what they show does.
+  private layer: { canvas: HTMLCanvasElement; key: string; x: number; y: number } | null = null;
+  private scene = 0;
   private loading = 0;
   private frame = 0; private last = 0; private clock = 0;
   private settle = 0;
@@ -94,7 +102,8 @@ export class MapEngine {
     s.removeEventListener('pointercancel', this.cancel);
     s.removeEventListener('pointerleave', this.leave);
     s.removeEventListener('dblclick', this.double);
-    this.thumbs.clear(); this.sheets.forEach(sheet => sheet.close()); this.sheets = [];
+    this.thumbs.forEach(thumb => thumb.bitmap?.close()); this.thumbs.clear(); this.sheets.forEach(sheet => sheet.close()); this.sheets = [];
+    if (this.layer) { this.layer.canvas.width = 0; this.layer = null; }
   }
 
   // ---- Data ------------------------------------------------------------------------------------
@@ -116,11 +125,11 @@ export class MapEngine {
   }
 
   /** Icon sheets by number. Sheets no point uses can be missing. */
-  setSheets(sheets: ImageBitmap[]) { this.sheets.forEach(sheet => sheet.close()); this.sheets = sheets; this.invalidate(); }
+  setSheets(sheets: ImageBitmap[]) { this.sheets.forEach(sheet => sheet.close()); this.sheets = sheets; this.scene++; this.invalidate(); }
 
   setPoints(points: MapPoint[], restore?: MapCamera) {
     const selected = this.selected >= 0 ? this.points[this.selected]?.id : null;
-    this.points = points; this.morphing = 1;
+    this.points = points; this.morphing = 1; this.scene++;
     this.index = new Map(points.map((p, i) => [p.id, i]));
     this.sx = new Float32Array(points.length); this.sy = new Float32Array(points.length);
     this.hovered = -1; this.lift.clear(); this.members = null; this.dim = 0;
@@ -141,7 +150,7 @@ export class MapEngine {
     const before = new Map(this.points.map(p => [p.id, p]));
     const selected = this.selected >= 0 ? this.points[this.selected].id : null;
     // The engine owns these copies: their coordinates change every frame.
-    this.points = points.map(p => ({ ...p }));
+    this.points = points.map(p => ({ ...p })); this.scene++;
     this.index = new Map(this.points.map((p, i) => [p.id, i]));
     this.sx = new Float32Array(points.length); this.sy = new Float32Array(points.length);
     this.hovered = -1; this.lift.clear(); this.members = null; this.dim = 0;
@@ -161,7 +170,7 @@ export class MapEngine {
   setHighlight(ids: string[] | null) {
     const set = ids && new Set(ids.map(id => this.index.get(id)).filter((i): i is number => i !== undefined));
     // A search that matched nothing fades every image.
-    this.members = set;
+    this.members = set; this.scene++;
     if (set?.size) this.flyTo([...set]);
     this.invalidate();
   }
@@ -477,59 +486,103 @@ export class MapEngine {
     const { ctx, cam, w, h, dpr, points } = this;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    // Set again by any thumbnail still fading in or waiting to load, which keeps frames coming.
+    this.pendingThumbs = false;
     const size = this.iconSize(), half = size / 2, sharp = size * dpr > SHARP_AT;
-    const lit: number[] = [], faded: number[] = [];
     for (let i = points.length - 1; i >= 0; i--) {
-      const p = points[i], x = (p.x - cam.x) * cam.k + w / 2, y = (p.y - cam.y) * cam.k + h / 2;
-      this.sx[i] = x; this.sy[i] = y;
-      if (x < -half || x > w + half || y < -half || y > h + half) continue;
+      this.sx[i] = (points[i].x - cam.x) * cam.k + w / 2; this.sy[i] = (points[i].y - cam.y) * cam.k + h / 2;
+    }
+    this.order = this.stack(half, 0);
+    // Zoomed out, where thousands of icons show, a still scene is drawn once and moved as a whole while panning.
+    if (!sharp && cam.k === this.goal.k && this.intro >= 1 && this.morphing >= 1) this.layered(size);
+    else this.paint(ctx, this.order, size, sharp);
+    const raised = [...this.lift.keys()].filter(i => this.sx[i] > -size && this.sx[i] < w + size).sort((a, b) => this.lift.get(a)! - this.lift.get(b)!);
+    for (const i of raised) { const s = this.liftedSize(i, size); this.tile(ctx, i, s, 1, this.lift.get(i)!, s * dpr > SHARP_AT); }
+    ctx.globalAlpha = 1;
+    if (sharp) this.requestThumbs(size);
+  }
+
+  /** Images within `margin` of the view, bottom to top: faded ones under lit ones. */
+  private stack(half: number, margin: number) {
+    const lit: number[] = [], faded: number[] = [], lo = -half - margin, right = this.w + half + margin, bottom = this.h + half + margin;
+    for (let i = this.points.length - 1; i >= 0; i--) {
+      const x = this.sx[i], y = this.sy[i];
+      if (x < lo || x > right || y < lo || y > bottom) continue;
       (!this.members || this.members.has(i) ? lit : faded).push(i);
     }
-    this.order = faded.concat(lit);
-    const mute = 1 - (1 - DIMMED) * this.dim;
-    const paint = (i: number) => {
-      if (this.lift.has(i)) return;
+    return faded.concat(lit);
+  }
+
+  private paint(ctx: CanvasRenderingContext2D, order: number[], size: number, sharp: boolean) {
+    const mute = 1 - (1 - DIMMED) * this.dim, points = this.points;
+    for (const i of order) {
       const receded = this.members ? !this.members.has(i) && i !== this.selected : this.selected >= 0 && i !== this.selected;
       // A radial bloom on arrival: the centre of the map appears first.
       const r = Math.min(1, Math.hypot(points[i].x, points[i].y)), t = clamp(this.intro * 1.6 - r * 0.6, 0, 1), eased = 1 - Math.pow(1 - t, 3);
       // Whatever is not being looked at shrinks to fine dust, so the lit images read as figures on a ground.
       const scale = (receded && this.members ? 1 - (1 - RECEDED) * this.dim : 1) * (this.intro >= 1 ? 1 : 0.6 + 0.4 * eased);
-      this.tile(i, size * scale, (receded ? mute : 1) * (this.intro >= 1 ? 1 : eased), 0, sharp && !receded);
-    };
-    for (const i of this.order) paint(i);
-    const raised = [...this.lift.keys()].filter(i => this.sx[i] > -size && this.sx[i] < w + size).sort((a, b) => this.lift.get(a)! - this.lift.get(b)!);
-    for (const i of raised) { const s = this.liftedSize(i, size); this.tile(i, s, 1, this.lift.get(i)!, s * dpr > SHARP_AT); }
-    ctx.globalAlpha = 1;
-    if (sharp) this.requestThumbs(); else this.pendingThumbs = false;
+      this.tile(ctx, i, size * scale, (receded ? mute : 1) * (this.intro >= 1 ? 1 : eased), 0, sharp && !receded);
+    }
   }
 
-  private tile(i: number, size: number, alpha: number, lift: number, sharp: boolean) {
-    const { ctx } = this, p = this.points[i], sheet = this.sheets[Math.floor(p.slot / PER_SHEET)];
+  /** Draws the icons from a layer reaching LAYER_MARGIN past each edge of the view, redrawing it only when the scene
+   *  changes or a pan uncovers images it doesn't hold. It is placed on whole device pixels, so icons stay as crisp as
+   *  when drawn directly. */
+  private layered(size: number) {
+    const { cam, w, h, dpr } = this, width = Math.round((w + 2 * LAYER_MARGIN) * dpr), height = Math.round((h + 2 * LAYER_MARGIN) * dpr);
+    const key = `${cam.k} ${this.dim} ${this.selected} ${this.scene} ${width} ${height}`;
+    let layer = this.layer, dx = 0, dy = 0;
+    if (layer?.key === key) { dx = (layer.x - cam.x) * cam.k; dy = (layer.y - cam.y) * cam.k; }
+    if (layer?.key !== key || this.uncovered(dx, dy, size / 2)) {
+      layer ??= this.layer = { canvas: document.createElement('canvas'), key, x: 0, y: 0 };
+      const { canvas } = layer;
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      const ctx = canvas.getContext('2d')!;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, width, height);
+      ctx.setTransform(dpr, 0, 0, dpr, LAYER_MARGIN * dpr, LAYER_MARGIN * dpr);
+      this.paint(ctx, this.stack(size / 2, LAYER_MARGIN), size, false);
+      Object.assign(layer, { key, x: cam.x, y: cam.y }); dx = dy = 0;
+    }
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.drawImage(layer.canvas, Math.round((dx - LAYER_MARGIN) * dpr), Math.round((dy - LAYER_MARGIN) * dpr));
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /** Whether the view shows part of the map beyond a layer drawn (dx, dy) away from the current camera. */
+  private uncovered(dx: number, dy: number, half: number) {
+    const { cam, w, h, bounds: b } = this;
+    const left = (b.minX - cam.x) * cam.k + w / 2 - half, right = (b.maxX - cam.x) * cam.k + w / 2 + half;
+    const top = (b.minY - cam.y) * cam.k + h / 2 - half, bottom = (b.maxY - cam.y) * cam.k + h / 2 + half;
+    return (dx > LAYER_MARGIN && left < dx - LAYER_MARGIN) || (dx < -LAYER_MARGIN && right > w + dx + LAYER_MARGIN)
+      || (dy > LAYER_MARGIN && top < dy - LAYER_MARGIN) || (dy < -LAYER_MARGIN && bottom > h + dy + LAYER_MARGIN);
+  }
+
+  private tile(ctx: CanvasRenderingContext2D, i: number, size: number, alpha: number, lift: number, sharp: boolean) {
+    const p = this.points[i], sheet = this.sheets[Math.floor(p.slot / PER_SHEET)];
     if (!sheet || alpha <= 0.004) return;
     const cell = p.slot % PER_SHEET, x = this.sx[i] - size / 2, y = this.sy[i] - size / 2;
     ctx.globalAlpha = alpha;
     if (lift > 0) { ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 24 * lift; ctx.shadowOffsetY = 8 * lift; }
     ctx.drawImage(sheet, (cell % COLUMNS) * CELL + INSET, Math.floor(cell / COLUMNS) * CELL + INSET, INNER, INNER, x, y, size, size);
     if (lift > 0) { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
-    const thumb = sharp ? this.thumb(p.id, true) : null;
+    const thumb = sharp ? this.thumb(p.id, size) : null;
     if (thumb) {
       thumb.used = this.clock;
       const fade = clamp((this.clock - thumb.shown) / 200, 0, 1);
-      const image = thumb.image, side = Math.min(image.naturalWidth, image.naturalHeight);
       ctx.save();
       ctx.beginPath(); ctx.roundRect(x, y, size, size, size * CORNER); ctx.clip();
       ctx.globalAlpha = alpha * fade;
-      ctx.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, x, y, size, size);
+      ctx.drawImage(thumb.bitmap!, x, y, size, size);
       ctx.restore();
       if (fade < 1) this.pendingThumbs = true;
     }
-    if (isVideo(p) && size >= MARK_MIN) this.playMark(x, y, size);
+    if (isVideo(p) && size >= MARK_MIN) this.playMark(ctx, x, y, size);
   }
 
   /** A dark disc with a white triangle in the corner, readable over any photograph in either theme. Drawn last, so
    *  the sharp thumbnail never covers it, and at the icon's alpha, so it recedes with the icon. */
-  private playMark(x: number, y: number, size: number) {
-    const { ctx } = this, r = size * MARK / 2, cx = x + size * CORNER + r * 0.4, cy = y + size - size * CORNER - r * 0.4;
+  private playMark(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+    const r = size * MARK / 2, cx = x + size * CORNER + r * 0.4, cy = y + size - size * CORNER - r * 0.4;
     ctx.fillStyle = 'rgba(0,0,0,.5)';
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     // The triangle's centre of mass sits left of its bounding box, so it is nudged right to look centred.
@@ -540,34 +593,42 @@ export class MapEngine {
 
   // ---- Sharp thumbnails ------------------------------------------------------------------------
 
-  private thumb(id: string, ask: boolean) {
+  /** The sharp thumbnail of an image drawn `size` wide, once one has loaded. A sharper one loads when the icon outgrows it. */
+  private thumb(id: string, size: number) {
     const found = this.thumbs.get(id);
-    if (found) return found.ready ? found : null;
-    if (!ask || this.loading >= MAX_LOADS) return null;
-    this.load(id);
-    return null;
+    if (this.loading < MAX_LOADS && this.outgrown(found, size)) this.load(id, size);
+    return found?.bitmap ? found : null;
   }
 
-  private load(id: string) {
-    const image = new Image(), entry: Thumb = { image, ready: false, shown: 0, used: this.clock };
-    this.thumbs.set(id, entry); this.loading++;
-    image.decoding = 'async';
-    image.onload = () => { entry.ready = true; entry.shown = performance.now(); this.loading--; this.pendingThumbs = true; this.invalidate(); };
-    image.onerror = () => { this.loading--; };
-    image.src = imageUrl(id);
+  private outgrown(thumb: Thumb | undefined, size: number) { return !thumb || (!thumb.loading && thumb.resolution < resolution(size * this.dpr)); }
+
+  private load(id: string, size: number) {
+    const entry = this.thumbs.get(id) ?? { bitmap: null, resolution: 0, loading: false, shown: 0, used: this.clock };
+    const wanted = entry.resolution = resolution(size * this.dpr);
+    entry.loading = true; this.thumbs.set(id, entry); this.loading++;
+    // Decoded off the main thread, cropped to the square the map shows at about the size it is drawn, and kept decoded:
+    // a canvas would otherwise decode the full thumbnail mid-frame, and again whenever the browser discarded it.
+    fetch(imageUrl(id)).then(response => response.blob()).then(createImageBitmap).then(async full => {
+      const side = Math.min(full.width, full.height), target = Math.min(side, wanted);
+      const bitmap = await createImageBitmap(full, (full.width - side) / 2, (full.height - side) / 2, side, side, { resizeWidth: target, resizeHeight: target, resizeQuality: 'high' });
+      full.close();
+      if (this.thumbs.get(id) !== entry) { bitmap.close(); return; }
+      if (!entry.bitmap) entry.shown = performance.now();
+      entry.bitmap?.close(); entry.bitmap = bitmap; this.invalidate();
+    }).catch(() => {}).finally(() => { entry.loading = false; this.loading--; });
     if (this.thumbs.size > MAX_THUMBS) {
-      const stale = [...this.thumbs.entries()].filter(([, t]) => t.ready && t.used < this.clock - 1000).sort((a, b) => a[1].used - b[1].used).slice(0, MAX_THUMBS / 4);
-      for (const [key] of stale) this.thumbs.delete(key);
+      const stale = [...this.thumbs.entries()].filter(([, t]) => t.bitmap && !t.loading && t.used < this.clock - 1000).sort((a, b) => a[1].used - b[1].used).slice(0, MAX_THUMBS / 4);
+      for (const [key, thumb] of stale) { thumb.bitmap!.close(); this.thumbs.delete(key); }
     }
   }
 
   /** Fetch sharp thumbnails for what is on screen, nearest to the middle first. */
-  private requestThumbs() {
+  private requestThumbs(size: number) {
     if (this.loading >= MAX_LOADS) { this.pendingThumbs = true; return; }
     const cx = this.w / 2, cy = this.h / 2;
-    const want = this.order.filter(i => !this.thumbs.has(this.points[i].id)).sort((a, b) => Math.hypot(this.sx[a] - cx, this.sy[a] - cy) - Math.hypot(this.sx[b] - cx, this.sy[b] - cy));
-    for (const i of want.slice(0, MAX_LOADS - this.loading)) this.load(this.points[i].id);
-    this.pendingThumbs = want.length > 0;
+    const want = this.order.filter(i => this.outgrown(this.thumbs.get(this.points[i].id), size)).sort((a, b) => Math.hypot(this.sx[a] - cx, this.sy[a] - cy) - Math.hypot(this.sx[b] - cx, this.sy[b] - cy));
+    for (const i of want.slice(0, MAX_LOADS - this.loading)) this.load(this.points[i].id, size);
+    if (want.length) this.pendingThumbs = true;
   }
 
   // ---- Keyboard --------------------------------------------------------------------------------
