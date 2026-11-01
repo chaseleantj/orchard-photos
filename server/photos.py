@@ -118,7 +118,7 @@ class PhotosLibrary:
                     found(len(entries))
         # Exports are only for what is being viewed, so they go with each scan.
         shutil.rmtree(self.exports, ignore_errors=True)
-        return entries, [], [], {'raw': 0}
+        return entries, [], []
 
     @staticmethod
     def _describe(asset, resource_type):

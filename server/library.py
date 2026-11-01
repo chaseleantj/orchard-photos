@@ -14,7 +14,7 @@ from server.atlas import Atlas
 from server.cache import connect, preview_path, thumbnail_path, write_image
 from server.groups import Groups
 from server.layout import Layout
-from server.scanner import FolderUnavailable, ScanCancelled, Scanner, scaled
+from server.scanner import RAW, FolderUnavailable, ScanCancelled, Scanner, raw_preview, scaled
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
@@ -133,7 +133,7 @@ class Library:
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
         return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unlistedFolders': self.stats.get('unlisted_folders', 0), 'unreached': self.stats.get('unreached', 0),
-                'photoLibraries': self.stats.get('photo_libraries', []), 'skipped': self.stats.get('skipped', {}),
+                'photoLibraries': self.stats.get('photo_libraries', []),
                 'scan': self.scan_state, 'search': self.search_status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
 
@@ -320,7 +320,8 @@ class Library:
             return path
         preview = preview_path(self.directory, image_id)
         if not preview.is_file():
-            with Image.open(path) as source:
+            source = raw_preview(path.read_bytes())[0] if path.suffix.lower() in RAW else Image.open(path)
+            with source:
                 image = scaled(source, PREVIEW_EDGE)
                 write_image(image.convert('RGB') if image.mode == 'RGBA' else image, preview, 'JPEG', quality=90)
         return preview

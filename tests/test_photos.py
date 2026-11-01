@@ -37,7 +37,7 @@ class Source:
         pass
 
     def list(self, found=None):
-        return [(path, '', len(data), mtime) for path, (data, mtime) in self.photos.items()], [], [], {'raw': 0}
+        return [(path, '', len(data), mtime) for path, (data, mtime) in self.photos.items()], [], []
 
     def open(self, path):
         self.opened.append(path)
@@ -61,7 +61,7 @@ class ScanningTests(unittest.TestCase):
         self.source.add('A/L0/001', 'IMG_1.jpg')
         self.source.add('B/L0/001', 'IMG_2.jpg', 'blue')
         stats = self.scanner.scan()
-        self.assertEqual((stats['images'], stats['skipped']), (2, {'raw': 0}))
+        self.assertEqual(stats['images'], 2)
         self.assertEqual({row['folder'] for row in self.files().values()}, {''})
 
     def test_videos_are_known_by_their_name_and_scanned_like_files(self):
@@ -161,10 +161,10 @@ class ListingTests(unittest.TestCase):
     def test_paths_keep_the_asset_id_and_original_name_and_unchanged_photos_are_not_described_again(self):
         library = PhotosLibrary(self.directory)
         (library.exports / 'old').mkdir(parents=True)
-        entries, unreadable, libraries, skipped = library.list()
+        entries, unreadable, libraries = library.list()
         self.assertEqual(entries, [('A/L0/001/A.heic', '', 1234, 10_000_000_000), ('B/L0/001/B.heic', '', 1234, 20_000_000_000),
                                    ('V/L0/001/V.MOV', '', 1234, 30_000_000_000)])
-        self.assertEqual((unreadable, libraries, skipped), ([], [], {'raw': 0}))
+        self.assertEqual((unreadable, libraries), ([], []))
         self.assertFalse(library.exports.exists(), 'Exports of viewed photos go with each scan')
         with connect(self.directory) as db:
             db.executemany('INSERT INTO files VALUES (?,?,?,?,?,?,?)', [(path, '', None, size, mtime, '', None) for path, _, size, mtime in entries])

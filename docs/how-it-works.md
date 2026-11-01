@@ -14,7 +14,7 @@ your folder
 
 ## Scanning
 
-The scanner walks the whole folder and finds every image and video file. It counts RAW photos too, which it can't read, so Info can say they aren't shown. For each new or changed file, it:
+The scanner walks the whole folder and finds every image and video file. Pillow can't decode camera RAW, so a RAW photo is read by the largest JPEG preview inside it, turned the way the RAW's own EXIF says. For each new or changed file, it:
 
 1. Hashes the contents with SHA-256.
 2. Reads the width, height, camera and date taken from EXIF, or for a video, its length and the tags its container holds.

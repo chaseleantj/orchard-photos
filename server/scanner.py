@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 import errno
 import hashlib
+from io import BytesIO
 import logging
 import os
 from pathlib import Path
@@ -31,12 +32,12 @@ VIDEOS = {'.3gp': 'video/3gpp', '.avi': 'video/x-msvideo', '.flv': 'video/x-flv'
           '.m4v': 'video/x-m4v', '.mkv': 'video/x-matroska', '.mov': 'video/quicktime', '.mp4': 'video/mp4',
           '.mpeg': 'video/mpeg', '.mpg': 'video/mpeg', '.mts': 'video/mp2t', '.webm': 'video/webm',
           '.wmv': 'video/x-ms-wmv'}
-EXTENSIONS = IMAGES | VIDEOS.keys()
-# Photos in formats the scanner can't read. They are only counted, so a folder of them doesn't look empty for no
-# reason.
+# Camera RAW photos, read by the full-size JPEG preview nearly every camera stores inside them.
 RAW = {'.3fr', '.arw', '.cr2', '.cr3', '.crw', '.dcr', '.dng', '.erf', '.fff', '.iiq', '.kdc', '.mef', '.mos', '.mrw',
        '.nef', '.nrw', '.orf', '.pef', '.raf', '.raw', '.rw2', '.rwl', '.sr2', '.srf', '.srw', '.x3f'}
-SKIPPED = dict.fromkeys(RAW, 'raw')
+EXTENSIONS = IMAGES | RAW | VIDEOS.keys()
+# An embedded JPEG starts with these bytes: the start-of-image marker and the first segment's marker.
+JPEG_START = b'\xff\xd8\xff'
 THUMBNAIL_SIZE = 720
 # Where in a video, as shares of its length, the frames visual search reads are taken, and their size. Search sees
 # the video as the average of those frames. The model reads 256 pixels square.
@@ -89,15 +90,14 @@ class UnreadableVideo(ValueError):
 
 
 def walk(root: Path, skip=frozenset(), found=None):
-    """Every image and video file below root as (relative posix path, stat), the folders that could not be listed, the
-    Photos libraries passed over, and how many RAW files were skipped. `found` hears the running count of files.
+    """Every image and video file below root as (relative posix path, stat), the folders that could not be listed, and
+    the Photos libraries passed over. `found` hears the running count of files.
 
     Hidden entries are skipped, and so are Photos libraries, which macOS keeps closed to other apps. Symlinked folders
     are followed once each, after the real folders, so a link loop ends and a folder reached both ways keeps its real
     path.
     """
     files, unreadable, libraries, visited = [], [], [], set()
-    skipped = {'raw': 0}
     stack, links = [('', str(root))], []
     while stack or links:
         relative, directory = stack.pop() if stack else links.pop()
@@ -123,15 +123,13 @@ def walk(root: Path, skip=frozenset(), found=None):
                                 files.append((child, entry.stat()))
                                 if found and len(files) % FOUND_EVERY == 0:
                                     found(len(files))
-                            elif extension in SKIPPED:
-                                skipped[SKIPPED[extension]] += 1
                     except OSError:
                         continue
         except OSError as error:
             if not relative and blocked_by_macos(error):
                 raise blocked(root) from None
             unreadable.append(relative)
-    return files, unreadable, libraries, skipped
+    return files, unreadable, libraries
 
 
 class Folder:
@@ -146,13 +144,12 @@ class Folder:
             raise FolderUnavailable(f'{self.root} is not available. Reconnect its drive, or choose another folder.')
 
     def list(self, found=None):
-        """Every image and video as (path, folder, size, mtime_ns), with walk's unreadable folders, Photos libraries and
-        skipped counts."""
-        files, unreadable, libraries, skipped = walk(self.root, self.skip, found)
+        """Every image and video as (path, folder, size, mtime_ns), with walk's unreadable folders and Photos libraries."""
+        files, unreadable, libraries = walk(self.root, self.skip, found)
         if '' in unreadable:
             raise FolderUnavailable(f'{self.root} could not be read. Check its permissions, or choose another folder.')
         entries = [(path, path.rpartition('/')[0], status.st_size, status.st_mtime_ns) for path, status in files]
-        return entries, unreadable, libraries, skipped
+        return entries, unreadable, libraries
 
     def open(self, path: str):
         return (self.root / path).open('rb')
@@ -164,6 +161,32 @@ class Folder:
 def video_type(path: str) -> str | None:
     """The type a video file is served as, or None for any other file."""
     return VIDEOS.get(os.path.splitext(path)[1].lower())
+
+
+def raw_preview(data: bytes):
+    """The largest JPEG inside a RAW file, as an open image, carrying the RAW's orientation so scaled() turns it
+    upright, and the RAW itself opened as a TIFF for its EXIF, or None when it isn't one. Raises UnidentifiedImageError
+    when there is no preview."""
+    best, at = None, 0
+    while (at := data.find(JPEG_START, at)) >= 0:
+        try:
+            # Pillow reads only the header here, and ignores whatever follows the JPEG.
+            candidate = Image.open(BytesIO(data[at:]))
+            if candidate.format == 'JPEG' and (best is None or candidate.width * candidate.height > best.width * best.height):
+                best = candidate
+        except (OSError, ValueError, Image.DecompressionBombError):
+            pass
+        at += len(JPEG_START)
+    if best is None:
+        raise UnidentifiedImageError('No preview inside this RAW file')
+    try:
+        container = Image.open(BytesIO(data))
+    except (OSError, ValueError, Image.DecompressionBombError):
+        container = None
+    orientation = container and container.getexif().get(ExifTags.Base.Orientation)
+    if orientation:
+        best.getexif()[ExifTags.Base.Orientation] = orientation
+    return best, container
 
 
 def utc(moment: datetime) -> str:
@@ -360,7 +383,7 @@ class Scanner:
         batch could not be reached, the scan stops, and the next one carries on once the source is back."""
         self.source.check()
         started = time.monotonic()
-        found, unreadable, libraries, skipped = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
+        found, unreadable, libraries = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
         listed = time.monotonic() - started
         with connect(self.directory, rows=True) as db:
             known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute(
@@ -418,7 +441,6 @@ class Scanner:
         stats['listed_seconds'] = round(listed, 3)
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries
-        stats['skipped'] = skipped
         return stats
 
     def _examine(self, entry) -> dict:
@@ -434,22 +456,25 @@ class Scanner:
                     return {'id': digest}
                 stream.seek(0)
                 mime = video_type(relative)
-                return self._describe_video(stream, digest, mime) if mime else self._describe(stream, digest)
+                return self._describe_video(stream, digest, mime) if mime else self._describe(stream, digest, relative)
         except Exception as error:
             logger.info('Could not read %s: %s', relative, error)
             return {'unreached': True} if unreached(error) else {'error': failure(error)}
 
-    def _describe(self, stream, digest: str) -> dict:
-        """Read a new image's metadata and draw its thumbnail."""
-        with Image.open(stream) as image:
-            mime = Image.MIME.get(image.format or '', 'application/octet-stream')
+    def _describe(self, stream, digest: str, relative: str) -> dict:
+        """Read a new image's metadata and draw its thumbnail. A RAW photo is read by its preview, and its EXIF from the
+        RAW itself when that can be opened."""
+        extension = os.path.splitext(relative)[1].lower()
+        image, container = raw_preview(stream.read()) if extension in RAW else (Image.open(stream), None)
+        with image:
+            mime = f'image/x-{extension[1:]}' if extension in RAW else Image.MIME.get(image.format or '', 'application/octet-stream')
             refuse_oversized(image)
             width, height = image.size
             # Drawn before the EXIF is read, since reading a PNG's EXIF decodes the whole image.
             display = scaled(image, THUMBNAIL_SIZE)
             if image.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
                 width, height = height, width
-            taken, camera = exif_details(image)
+            taken, camera = exif_details(container or image)
             save(display, thumbnail_path(self.directory, digest))
         return {'id': digest, 'width': width, 'height': height, 'mime': mime, 'taken': taken, 'camera': camera}
 

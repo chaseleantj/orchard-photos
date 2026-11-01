@@ -146,11 +146,12 @@ You rarely need to rescan by hand. Orchard rescans the folder every minute, so a
 
 Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG of those, and **Download** still gives you the original.
 
+Camera RAW photos, such as NEF, CR2, CR3, ARW and DNG, are shown by the full-size JPEG preview the camera stores inside each one. A RAW file without a preview is counted under **Could not be read**.
+
 Orchard also reads videos: MOV, MP4, M4V, WebM, MKV, AVI, MPEG, MTS, 3GP, WMV and FLV. The grid shows each one's first frame and length, and visual search finds a video by frames from a quarter, half and three quarters of the way through. The viewer plays it muted, on a loop, with controls to unmute; MOV, MP4, M4V and WebM play in the window, and the rest need **Download original**.
 
 Orchard skips:
 
-- RAW photos. Info counts them, and says they aren't shown yet.
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
 - Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
 - Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 import errno
+from io import BytesIO
 import os
 from pathlib import Path
 import shutil
@@ -77,15 +78,27 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(stats['photo_libraries'], ['a/Photos Library.photoslibrary'])
         self.assertGreaterEqual(stats['listed_seconds'], 0)
 
-    def test_raw_photos_are_counted_as_skipped_not_unreadable(self):
-        picture(self.root / 'kept.jpg')
-        for name in ('a/IMG_1.CR3', 'a/IMG_2.nef', 'DSC_3.dng', '.hidden/raw.arw'):
-            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
-            (self.root / name).write_bytes(b'not decoded')
+    def test_raw_photos_are_read_by_their_largest_preview_turned_as_the_raw_says(self):
+        # A RAW stands in as a TIFF holding the camera's EXIF, with a small and a large JPEG preview after it.
+        exif = dated(orientation=6)
+        raw = BytesIO()
+        Image.new('RGB', (16, 12), 'gray').save(raw, 'TIFF', exif=exif)
+        for size, color in (((40, 30), 'blue'), ((400, 300), 'red')):
+            preview = BytesIO()
+            Image.new('RGB', size, color).save(preview, 'JPEG')
+            raw.write(preview.getvalue())
+        (self.root / 'DSC_1.NEF').write_bytes(raw.getvalue())
+        (self.root / 'DSC_2.cr3').write_bytes(b'no preview inside')
         stats = self.scanner.scan()
-        self.assertEqual(set(self.files()), {'kept.jpg'})
-        self.assertEqual(stats['unreadable'], 0)
-        self.assertEqual(stats['skipped'], {'raw': 3})
+        self.assertEqual((stats['images'], stats['unreadable']), (1, 1))
+        self.assertEqual(self.files()['DSC_2.cr3']['error'], 'Not a readable image')
+        with connect(self.scanner.directory, rows=True) as db:
+            row = dict(db.execute('SELECT * FROM images').fetchone())
+        # The camera and the turn come from the RAW, not its preview, which carries no EXIF.
+        self.assertEqual((row['width'], row['height'], row['mime'], row['camera']), (300, 400, 'image/x-nef', 'Canon EOS R6'))
+        with Image.open(thumbnail_path(self.scanner.directory, row['id'])) as thumbnail:
+            self.assertEqual(thumbnail.size, (300, 400))
+            self.assertGreater(thumbnail.convert('RGB').getpixel((150, 200))[0], 200)
 
     def test_videos_get_a_length_a_thumbnail_and_frames_for_search(self):
         clip(self.root / 'trip/clip.MP4', creation_time='2024-06-12T11:02:31.000000Z')

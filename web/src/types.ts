@@ -18,10 +18,9 @@ export const searchable = (search: SearchStatus) => search.indexed > 0;
 /** Visual search is downloading, starting, or preparing images for the first time. */
 export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
-/** `skipped` counts the RAW photos the scanner can't read, from the last scan that counted them. */
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unlistedFolders: number; unreached: number; photoLibraries: string[]; skipped: { raw?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unlistedFolders: number; unreached: number; photoLibraries: string[]; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 /** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
 export interface Folder { path: string; label: string; name: string; id: string; photos: boolean }
@@ -103,7 +102,8 @@ const TYPES: Record<string, string> = {
   'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
   'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
 };
-export const typeLabel = (mime: string) => TYPES[mime] || mime.replace(/^(image|video)\//, '').toUpperCase();
+// RAW photos are typed image/x- and their extension, like image/x-nef.
+export const typeLabel = (mime: string) => TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
 export const isVideo = (picture: { mime: string }) => picture.mime.startsWith('video/');
 /** A video's length as a clock reads it, like 0:42 or 1:02:03. */
 export function durationLabel(seconds: number) {
