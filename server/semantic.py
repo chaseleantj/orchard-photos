@@ -477,7 +477,7 @@ class SemanticIndex:
                             image.close()
             self._unreadable = frozenset(unreadable)
             failed = len(unreadable)
-            self._set_state("idle", f"{failed} {'image' if failed == 1 else 'images'} could not be read for visual search." if failed else None)
+            self._set_state("idle", f"{failed} {'file' if failed == 1 else 'files'} could not be read for visual search." if failed else None)
         except Exception as error:
             logger.exception("Visual search indexing failed")
             self._set_state("error", str(error))

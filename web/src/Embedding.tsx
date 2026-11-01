@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine, PER_SHEET } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
-import { APP_NAME, SET_UP, filterParams, megabytes, request, storageKey } from './types';
+import { APP_NAME, SET_UP, filterParams, megabytes, plural, request, storageKey } from './types';
 import { Progress } from './Progress';
 import { searchWork } from './Activity';
 import type { Filters, Model, SearchStatus } from './types';
@@ -28,11 +28,13 @@ function readCamera(key: string): MapCamera | undefined {
 }
 
 interface Props {
+  /** What the library's counts call its contents, from countNoun. */
+  noun: string;
   root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; model: Model; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
   onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; left: string; onSetUp: () => void; onReset: () => void;
 }
 
-export default function Embedding({ root, filters, highlight, search, model, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, left, onSetUp, onReset }: Props) {
+export default function Embedding({ noun, root, filters, highlight, search, model, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, left, onSetUp, onReset }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
@@ -150,7 +152,7 @@ export default function Embedding({ root, filters, highlight, search, model, sca
       ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
       : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a {megabytes(model.size)} MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>{SET_UP}</button></div>)}
     {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
-      <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${search.total.toLocaleString()} images ready. The map opens when they all are.`}{left && ` ${left}.`}</p>
+      <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${plural(search.total, noun)} ready. The map opens when they all are.`}{left && ` ${left}.`}</p>
       <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" /></div></div>}
     {phase === 'error' && <div className="empty map-message" role="alert"><h1>The map didn’t load</h1><p>{error}</p><button className="text-button secondary" onClick={() => setRetry(r => r + 1)}>Retry</button></div>}
     {empty && <div className="empty map-message"><h1>No images here</h1><p>{filtered ? 'Widen the date range, or choose another folder or file type.' : 'This folder has no images yet.'}</p>{(filtered || searching) && <button className="text-button secondary" onClick={onReset}>Clear search and filters</button>}</div>}

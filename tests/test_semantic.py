@@ -461,7 +461,7 @@ class SemanticTests(unittest.TestCase):
             self.search.index()
         status = self.search.status()
         self.assertEqual((status["indexed"], status["total"]), (1, 2))
-        self.assertIn("1 image", status["error"])
+        self.assertIn("1 file could not be read", status["error"])
         self.assertEqual(self.search.search(image_id="1"), [("1", 1.0)])
         # The image that can't be read doesn't hold the folder back, but a new one does.
         self.assertEqual(status["state"], "ready")
