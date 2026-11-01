@@ -18,6 +18,13 @@ const CRUMBS = 3;
 // Browsers refuse canvases much larger than this.
 const CLIPBOARD_PIXELS = 50_000_000;
 const ARROWS: Record<string, ['step' | 'climb', number]> = { ArrowLeft: ['step', -1], ArrowRight: ['step', 1], ArrowUp: ['climb', -1], ArrowDown: ['climb', 1] };
+// The native controls sit over a video's bottom edge and live inside it, so a draggable video would also start a drag
+// from the scrubber and volume. Their strip is a little taller than this in both WebKit and Chromium.
+const CONTROLS = 48;
+const dragVideo = (id: string) => (e: React.DragEvent<HTMLVideoElement>) => {
+  if (e.clientY > e.currentTarget.getBoundingClientRect().bottom - CONTROLS) e.preventDefault();
+  else dragImage(id)(e);
+};
 
 export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -159,7 +166,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           muted and looping over its first frame, since WebKit only starts a video without sound; its controls unmute it. */}
       <div ref={stage} className="image-stage">
         {failed ? <div className="empty"><p>{video ? 'This video can’t be played here. Download it to watch it.' : 'This image could not be shown. The file may have moved or changed.'}</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div>
-        : video ? <video key={item.id} src={imageUrl(item.id, 'display')} poster={imageUrl(item.id)} aria-label={fileName(item.path)} autoPlay muted loop controls playsInline onLoadedData={loadAhead} onError={fail} />
+        : video ? <video key={item.id} src={imageUrl(item.id, 'display')} poster={imageUrl(item.id)} aria-label={fileName(item.path)} autoPlay muted loop controls playsInline draggable onDragStart={dragVideo(item.id)} onLoadedData={loadAhead} onError={fail} />
         : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={fail} />}
       </div>
       <aside className="image-details">
