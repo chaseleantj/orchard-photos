@@ -75,7 +75,7 @@ The server takes these options:
 | `dist/` | The built page. |
 | `tests/` | Python tests, one file per server module. `tests/ui/` holds the Playwright test of the page. |
 | `orchard`, `orchard.cmd` | The launchers for macOS and Linux, and for Windows. They find a supported Python, install the packages, and start the server with `--window`. |
-| `scripts/install-app` | Builds the Mac app that opens a clone from the Dock. |
+| `scripts/install-app` | Builds the Mac app that opens a clone from the Dock; `--dev` builds Orchard Dev, which keeps its own cache and port. |
 | `scripts/build-app`, `scripts/app/` | Build the Mac DMG and the Windows zip, and their launchers. |
 | `scripts/smoke-test` | Installs and starts Orchard on a few generated images and a video, and checks the API. |
 | `scripts/build-coreml-model` | Builds the Core ML image encoder and the parity vector. |

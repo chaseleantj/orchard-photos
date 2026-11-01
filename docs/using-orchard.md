@@ -30,6 +30,8 @@ Orchard runs in WSL with its own window, through WSLg. Some things differ from L
 
 The downloaded Mac app needs nothing more. When you run Orchard from a clone, `scripts/install-app` installs `~/Applications/Orchard.app`, which opens this clone's window from the Dock or Spotlight. It compiles a small launcher with clang, so it needs the Xcode command line tools, which `xcode-select --install` installs. The first start sets things up, which takes about a minute. If the clone is in your Desktop or Documents folder, macOS asks whether Orchard may open it, and may ask again after you reinstall the app. If Orchard can't start, the app shows the end of its log, `~/Library/Logs/Orchard.log`.
 
+To try the branch checked out in a clone beside a downloaded Orchard, run `scripts/install-app --dev`. It installs `~/Applications/Orchard Dev.app`, which runs whatever the clone holds each time it opens, with its own cache in `~/Library/Application Support/orchard-dev`, its own port, 4401, and its own Photos permission, so the two never share anything.
+
 The app finds Python the way your terminal did when you ran `scripts/install-app`, so run it again if you install Python somewhere new. With Python from Homebrew or python.org, the window shows in the Dock as Orchard. With other Pythons, like pyenv's, it shows as Python.
 
 ## Browsing
