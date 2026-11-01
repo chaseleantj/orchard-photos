@@ -109,12 +109,15 @@ export default function Embedding({ noun, root, filters, highlight, search, mode
       if (versions !== shown.current.sheets) {
         let loaded = 0;
         sheets = [];
-        await Promise.all(needed.map(n => new Promise<void>((resolve, reject) => {
-          const image = new Image();
-          // Bitmaps stay decoded; a plain image can be evicted from the browser's cache and re-decoded mid-zoom.
-          image.onload = () => { setSheetsLoaded(++loaded / needed.length); createImageBitmap(image).then(bitmap => { sheets![n] = bitmap; resolve(); }, reject); }; image.onerror = () => reject(new Error('The map images could not load. Retry, or rescan the folder.'));
-          image.src = `/api/atlas/${n}?v=${result.sheets[n]}`;
-        })));
+        const unloaded = () => { throw new Error('The map images could not load. Retry, or rescan the folder.'); };
+        // Bitmaps stay decoded; a plain image can be evicted from the browser's cache and re-decoded mid-zoom. Decoding
+        // straight from the file's bytes keeps that work off the main thread.
+        await Promise.all(needed.map(async n => {
+          const response = await fetch(`/api/atlas/${n}?v=${result.sheets[n]}`, { signal: controller.signal });
+          if (!response.ok) unloaded();
+          sheets![n] = await createImageBitmap(await response.blob()).catch(unloaded);
+          setSheetsLoaded(++loaded / needed.length);
+        }));
       }
       if (controller.signal.aborted) return;
       const map = engine.current!;
