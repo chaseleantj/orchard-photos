@@ -157,10 +157,10 @@ Orchard skips:
 
 ## Apple Photos
 
-On a Mac, Orchard can show and search your Photos library. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
+On a Mac, Orchard can show and search your Photos library, photos and videos alike. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
 
 - Orchard reads each photo through Photos, with your edits, and never changes your library.
-- Hidden photos are skipped, and so are videos, which Info counts.
+- Videos are shown and searched too, with your edits. Hidden photos and videos are skipped.
 - Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
 - **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
 - Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then reload with **⌘R**.

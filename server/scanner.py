@@ -97,8 +97,7 @@ def walk(root: Path, skip=frozenset(), found=None):
     path.
     """
     files, unreadable, libraries, visited = [], [], [], set()
-    # Only a Photos library skips videos, but every source reports both counts.
-    skipped = dict.fromkeys(('raw', 'video'), 0)
+    skipped = {'raw': 0}
     stack, links = [('', str(root))], []
     while stack or links:
         relative, directory = stack.pop() if stack else links.pop()

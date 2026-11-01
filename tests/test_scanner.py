@@ -85,7 +85,7 @@ class ScannerTests(unittest.TestCase):
         stats = self.scanner.scan()
         self.assertEqual(set(self.files()), {'kept.jpg'})
         self.assertEqual(stats['unreadable'], 0)
-        self.assertEqual(stats['skipped'], {'raw': 3, 'video': 0})
+        self.assertEqual(stats['skipped'], {'raw': 3})
 
     def test_videos_get_a_length_a_thumbnail_and_frames_for_search(self):
         clip(self.root / 'trip/clip.MP4', creation_time='2024-06-12T11:02:31.000000Z')

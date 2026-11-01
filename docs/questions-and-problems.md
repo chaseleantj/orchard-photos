@@ -57,7 +57,7 @@ If the model downloaded but won't load, delete `models/`, and Orchard downloads 
 
 Check these, in order:
 
-- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files aren't shown, and neither are videos in a Photos library; Info counts both.
+- **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files). RAW files aren't shown, and Info counts them.
 - **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open. Reloading with **⌘R** (Ctrl+R elsewhere) tries those files again, for when you've fixed their permissions or downloaded them.
 - **Hidden files and Photos libraries.** Both are skipped inside a folder. To browse your Photos library, see [Apple Photos](using-orchard.md#apple-photos).
 - **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.

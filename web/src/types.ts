@@ -18,11 +18,10 @@ export const searchable = (search: SearchStatus) => search.indexed > 0;
 /** Visual search is downloading, starting, or preparing images for the first time. */
 export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
-/** `skipped` counts the RAW photos the scanner can't read, and the videos in a Photos library, from the last scan
- *  that counted them. */
+/** `skipped` counts the RAW photos the scanner can't read, from the last scan that counted them. */
 export interface LibraryStatus {
   counts: { images: number; files: number; duplicates: number; nearDuplicates: number; unreadable: number };
-  unlistedFolders: number; unreached: number; photoLibraries: string[]; skipped: { raw?: number; video?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
+  unlistedFolders: number; unreached: number; photoLibraries: string[]; skipped: { raw?: number }; scan: Scan; search: SearchStatus; updated?: string; revision: number;
 }
 /** `photos` says this is the Mac's Photos library, read through Photos rather than as files. */
 export interface Folder { path: string; label: string; name: string; id: string; photos: boolean }
