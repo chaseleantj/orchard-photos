@@ -25,6 +25,10 @@ IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
+# The type filter's value for every video format at once. Real mime types contain a slash, so it never collides with one.
+VIDEO_TYPE = 'video'
+# Matches every video's mime type in SQL.
+VIDEO_MIMES = VIDEO_TYPE + '/%'
 PREVIEW_EDGE = 4096
 # The most a viewer's time zone can be from UTC, in minutes.
 MAX_OFFSET = 1440
@@ -33,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def playable(mime: str) -> bool:
     """Whether the browser is given the original: an image it shows, or any video."""
-    return mime in WEB_TYPES or mime.startswith('video/')
+    return mime in WEB_TYPES or mime.startswith(VIDEO_TYPE + '/')
 
 
 def utc_offset(params) -> int:
@@ -128,7 +132,7 @@ class Library:
     def status(self):
         with connect(self.directory, rows=True) as db:
             images = db.execute('SELECT count(*) FROM images').fetchone()[0]
-            videos = db.execute("SELECT count(*) FROM images WHERE mime LIKE 'video/%'").fetchone()[0]
+            videos = db.execute('SELECT count(*) FROM images WHERE mime LIKE ?', (VIDEO_MIMES,)).fetchone()[0]
             files = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
@@ -152,7 +156,10 @@ class Library:
         if folder:
             where.append('(f.folder=? OR substr(f.folder,1,?)=?)')
             values += [folder, len(folder) + 1, folder + '/']
-        if params.get('type'):
+        if params.get('type') == VIDEO_TYPE:
+            where.append('i.mime LIKE ?')
+            values.append(VIDEO_MIMES)
+        elif params.get('type'):
             where.append('i.mime=?')
             values.append(params['type'])
         # Dates are the viewer's local days, so the stored UTC times are shifted by their offset before comparing.
@@ -261,11 +268,12 @@ class Library:
         return {'months': months, 'total': sum(month['count'] for month in months)}
 
     def facets(self):
-        """The subfolders and file types present, each with how many distinct images it holds."""
+        """The subfolders and file types present, each with how many distinct images it holds. Video formats count as one type."""
         with connect(self.directory, rows=True) as db:
             pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
             types = [dict(row) for row in db.execute(
-                'SELECT mime, count(*) AS count FROM images GROUP BY mime ORDER BY count DESC, mime')]
+                """SELECT CASE WHEN mime LIKE ? THEN ? ELSE mime END AS mime, count(*) AS count
+                   FROM images GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
         folders: dict[str, set] = {}
         for folder, image_id in pairs:
             # A folder counts the images in its subfolders too.

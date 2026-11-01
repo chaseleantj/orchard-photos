@@ -67,6 +67,13 @@ class LibraryTests(unittest.TestCase):
         self.image(2)
         self.assertEqual(self.ids({'type': 'image/png'}), [png])
 
+    def test_video_type_filter_matches_every_video_format(self):
+        mov = self.image(1, 'a.mov', mime='video/quicktime')
+        mp4 = self.image(2, 'b.mp4', mime='video/mp4')
+        self.image(3, mime='image/png')
+        self.assertEqual(sorted(self.ids({'type': 'video'})), sorted([mov, mp4]))
+        self.assertEqual(self.ids({'type': 'video/mp4'}), [mp4])
+
     def test_name_search_treats_wildcards_as_literal_characters(self):
         literal = self.image(1, r'Export at 100%/photo_final C:\images.jpg')
         self.image(2, 'Export at 1000/photoXfinal C:images.jpg')
@@ -177,6 +184,13 @@ class LibraryTests(unittest.TestCase):
         facets = self.library.facets()
         self.assertEqual(facets['folders'], [{'path': 'a', 'count': 2}, {'path': 'a/b', 'count': 2}, {'path': 'a/b/c', 'count': 1}])
         self.assertEqual(facets['types'], [{'mime': 'image/jpeg', 'count': 2}, {'mime': 'image/png', 'count': 1}])
+
+    def test_facets_list_video_formats_as_one_type(self):
+        self.image(1, 'a.mov', mime='video/quicktime')
+        self.image(2, 'b.mp4', mime='video/mp4')
+        self.image(3, 'c.m4v', mime='video/x-m4v')
+        self.image(4, 'd.png', mime='image/png')
+        self.assertEqual(self.library.facets()['types'], [{'mime': 'video', 'count': 3}, {'mime': 'image/png', 'count': 1}])
 
     def test_originals_resolve_only_to_copies_of_that_image(self):
         image = self.image(1, 'a/one.jpg')

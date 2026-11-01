@@ -76,7 +76,7 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 **Filter** narrows the grid by:
 
 - **Subfolder**, including the folders inside it.
-- **File type**.
+- **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
 Filters also apply to search and the map.

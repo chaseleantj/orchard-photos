@@ -73,6 +73,8 @@ export const downloadUrl = (id: string, path: string) => `/api/images/${id}/orig
 export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
 interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
+// Filters saved before videos shared one type name a single format, like video/quicktime.
+const savedType = (type: unknown) => typeof type !== 'string' ? '' : isVideo({ mime: type }) ? VIDEO_TYPE : type;
 export function readPreferences(): Preferences {
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
@@ -81,7 +83,7 @@ export function readPreferences(): Preferences {
     const text = (s: unknown) => typeof s === 'string' ? s : '';
     const validDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
     const custom = validDate(f.from) || validDate(f.to);
-    const filters: Filters = { folder: text(f.folder), type: text(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
+    const filters: Filters = { folder: text(f.folder), type: savedType(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
     if (filters.from && filters.to && filters.from > filters.to) { filters.from = ''; filters.to = ''; }
     return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root) };
   } catch { return { filters: defaults, theme, view: 'grid', root: '' }; }
@@ -99,13 +101,15 @@ export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month
 export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+/** The type filter's value for every video format, matching the server's. */
+export const VIDEO_TYPE = 'video';
 const TYPES: Record<string, string> = {
   'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
   'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
 };
 // RAW photos are typed image/x- and their extension, like image/x-nef.
-export const typeLabel = (mime: string) => TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
-export const isVideo = (picture: { mime: string }) => picture.mime.startsWith('video/');
+export const typeLabel = (mime: string) => mime === VIDEO_TYPE ? 'Videos' : TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
+export const isVideo = (picture: { mime: string }) => picture.mime.startsWith(`${VIDEO_TYPE}/`);
 /** A video's length as a clock reads it, like 0:42 or 1:02:03. */
 export function durationLabel(seconds: number) {
   const whole = Math.round(seconds), hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60, rest = String(whole % 60).padStart(2, '0');
