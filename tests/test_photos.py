@@ -1,8 +1,10 @@
 from io import BytesIO
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -160,18 +162,30 @@ class ListingTests(unittest.TestCase):
 
     def test_paths_keep_the_asset_id_and_original_name_and_unchanged_photos_are_not_described_again(self):
         library = PhotosLibrary(self.directory)
-        (library.exports / 'old').mkdir(parents=True)
         entries, unreadable, libraries = library.list()
         self.assertEqual(entries, [('A/L0/001/A.heic', '', 1234, 10_000_000_000), ('B/L0/001/B.heic', '', 1234, 20_000_000_000),
                                    ('V/L0/001/V.MOV', '', 1234, 30_000_000_000)])
         self.assertEqual((unreadable, libraries), ([], []))
-        self.assertFalse(library.exports.exists(), 'Exports of viewed photos go with each scan')
         with connect(self.directory) as db:
             db.executemany('INSERT INTO files VALUES (?,?,?,?,?,?,?)', [(path, '', None, size, mtime, '', None) for path, _, size, mtime in entries])
         self.described.clear()
         self.assets[1].modified = 21.0
         library.list()
         self.assertEqual(self.described, ['B/L0/001'])
+
+    def test_exports_go_once_their_asset_is_edited_or_they_go_unused(self):
+        library = PhotosLibrary(self.directory)
+        entries, *_ = library.list()
+        with connect(self.directory) as db:
+            db.executemany('INSERT INTO files VALUES (?,?,?,?,?,?,?)', [(path, '', None, size, mtime, '', None) for path, _, size, mtime in entries])
+        for folder in ('A-L0-001', 'B-L0-001', 'unused'):
+            (library.exports / folder).mkdir(parents=True)
+            (library.exports / folder / 'file').write_bytes(b'')
+        long_ago = time.time() - photos.EXPORT_IDLE - 60
+        os.utime(library.exports / 'unused' / 'file', (long_ago, long_ago))
+        self.assets[1].modified = 21.0  # B is edited in Photos.
+        library.list()
+        self.assertEqual(sorted(folder.name for folder in library.exports.iterdir()), ['A-L0-001'])
 
     def test_a_video_is_written_with_its_edits_once_for_viewing_and_only_briefly_for_reading(self):
         library = PhotosLibrary(self.directory)

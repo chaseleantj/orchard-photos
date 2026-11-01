@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 from server.cache import connect, while_open
 from server.scanner import FolderUnavailable, OnlyInCloud, video_type
@@ -27,6 +28,9 @@ SHOW = ['osascript', '-e', 'on run argv', '-e', 'tell application "Photos"', '-e
         'spotlight media item id (item 1 of argv)', '-e', 'end tell', '-e', 'end run']
 # What osascript says when macOS doesn't let it control Photos, and when Photos has no such photo.
 NOT_ALLOWED, NOT_FOUND = '-1743', '-1728'
+# How long a photo or video written out for viewing is kept after it was last asked for. A video streamed by byte
+# range asks again for each range, so one being watched is kept.
+EXPORT_IDLE = 15 * 60
 # PhotoKit's values, so they can be compared before it is imported.
 NOT_DETERMINED, RESTRICTED, DENIED, AUTHORIZED = 0, 1, 2, 3
 logger = logging.getLogger(__name__)
@@ -76,6 +80,8 @@ class PhotosLibrary:
     def __init__(self, directory: Path):
         self.directory = Path(directory)
         self.exports = self.directory / 'exports'
+        # Writes one video for viewing at a time, so the byte ranges a player asks for at once don't each write it.
+        self._writing = threading.Lock()
 
     def check(self):
         """Ask for access the first time. macOS shows its prompt once; after that, only System Settings changes it."""
@@ -101,7 +107,7 @@ class PhotosLibrary:
         with connect(self.directory, rows=True) as db:
             known = {identifier(row['path']): (row['path'], row['size'], row['mtime_ns'])
                      for row in db.execute('SELECT path, size, mtime_ns FROM files')}
-        entries = []
+        entries, changed = [], set()
         for kind, resource_type in ((Photos.PHAssetMediaTypeImage, Photos.PHAssetResourceTypePhoto),
                                     (Photos.PHAssetMediaTypeVideo, Photos.PHAssetResourceTypeVideo)):
             assets = Photos.PHAsset.fetchAssetsWithMediaType_options_(kind, None)
@@ -113,12 +119,30 @@ class PhotosLibrary:
                 path, size, mtime = known.get(asset_id, (None, None, None))
                 if mtime != mtime_ns:
                     path, size = self._describe(asset, resource_type)
+                    changed.add(asset_id)
                 entries.append((path, '', size, mtime_ns))
                 if found and len(entries) % 500 == 0:
                     found(len(entries))
-        # Exports are only for what is being viewed, so they go with each scan.
-        shutil.rmtree(self.exports, ignore_errors=True)
+        self._prune(changed)
         return entries, [], []
+
+    def _exported(self, asset_id: str) -> Path:
+        """The folder an asset is written out to for viewing."""
+        return self.exports / asset_id.replace('/', '-')
+
+    def _prune(self, changed: set):
+        """Remove what was written out for assets edited since, and anything not asked for in EXPORT_IDLE."""
+        if not self.exports.is_dir():
+            return
+        edited = {self._exported(asset_id) for asset_id in changed}
+        stale = time.time() - EXPORT_IDLE
+        for folder in self.exports.iterdir():
+            try:
+                used = max((file.stat().st_mtime for file in folder.iterdir()), default=folder.stat().st_mtime)
+            except OSError:
+                continue
+            if folder in edited or used < stale:
+                shutil.rmtree(folder, ignore_errors=True)
 
     @staticmethod
     def _describe(asset, resource_type):
@@ -209,13 +233,16 @@ class PhotosLibrary:
         return stream
 
     def file(self, path: str) -> Path:
-        """The photo or video written out, for viewing and downloading, and kept until the next scan, so a video
-        streamed by byte range is written once. It keeps its original name."""
+        """The photo or video written out, for viewing and downloading. It keeps its original name. A video is written
+        once and kept while it is asked for, so each byte range a player asks for reads the same file."""
         name = path.rpartition('/')[2]
-        target = self.exports / identifier(path).replace('/', '-') / name
+        target = self._exported(identifier(path)) / name
         if video_type(path):
-            if not target.is_file():
-                self.write_video(path, target)
+            with self._writing:
+                if target.is_file():
+                    os.utime(target)  # Asked for again, so it is kept.
+                else:
+                    self.write_video(path, target)
             return target
         data, extension = self.read(path)
         target = target.with_suffix(extension)
