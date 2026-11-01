@@ -66,7 +66,17 @@ class DragTests(unittest.TestCase):
     def test_images_can_be_dragged_out_of_the_grid(self):
         # Otherwise pywebview's page script cancels the drag of any image or link.
         with patch('webview.windows', []):
-            self.assertTrue(window.Window('Orchard', 'http://127.0.0.1:1').view.draggable)
+            self.assertTrue(window.Window('Orchard', 'http://127.0.0.1:1', lambda image_id: None).view.draggable)
+
+    def test_a_dragged_image_is_found_in_the_pages_drag_data(self):
+        image_id = 'ab' * 32
+        # WebKit's copy of the page's drag data, with its own framing around the types and values.
+        data = b'\x01\x00\x00\x00\x15http://127.0.0.1:4400\x1bapplication/x-library-image\x4elibrary-image:' + image_id.encode() + b'\x00'
+        self.assertEqual(window.marked_image(data), image_id)
+
+    def test_other_drags_carry_no_image(self):
+        self.assertIsNone(window.marked_image(None))
+        self.assertIsNone(window.marked_image(b'library-image:not-an-id'))
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'Only macOS has the Window menu')

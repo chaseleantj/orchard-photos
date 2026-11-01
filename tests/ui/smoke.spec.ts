@@ -87,6 +87,13 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(viewer).toBeHidden();
   });
 
+  await test.step('a tile dropped on the search bar searches with its image', async () => {
+    await pictures.first().locator('img').dragTo(page.getByRole('search'));
+    await expect(page.getByRole('search').getByAltText('Image you are matching')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear search' }).click();
+    await expect(meta).toHaveText(plural(FIXTURE.images, 'image'));
+  });
+
   await test.step('filters narrow the grid by folder, type and date', async () => {
     await filter(page, 'Folder', 'trips');
     await expect(meta).toHaveText(`${plural(FIXTURE.trips, 'image')} · in trips`);
