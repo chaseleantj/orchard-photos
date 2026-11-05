@@ -1,5 +1,7 @@
 Pillow==12.3.0
 pillow-heif==1.8.0
+# Reads videos: their length, tags and frames. Its wheels bring their own FFmpeg.
+av==19.0.2
 numpy==2.5.3
 onnxruntime==1.31.0; sys_platform != "win32" or platform_machine != "AMD64"
 # On Windows x64, ONNX Runtime's DirectML build takes onnxruntime's place. It lags onnxruntime by several versions.

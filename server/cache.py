@@ -1,8 +1,10 @@
 """Where one folder's cache keeps its index, thumbnails and previews, and how its files are opened and replaced."""
 from contextlib import contextmanager
+import os
 from pathlib import Path
 import sqlite3
 import sys
+import threading
 import time
 
 DATABASE = 'library.sqlite'
@@ -29,9 +31,22 @@ def thumbnail_path(directory: Path, image_id: str) -> Path:
     return Path(directory) / 'thumbnails' / f'{image_id}.webp'
 
 
+def frame_path(directory: Path, image_id: str, place: int) -> Path:
+    """One of the frames visual search reads from a video."""
+    return Path(directory) / 'frames' / f'{image_id}-{place}.webp'
+
+
 def preview_path(directory: Path, image_id: str) -> Path:
     """A full-size JPEG for formats browsers cannot show, drawn when first viewed."""
     return Path(directory) / 'previews' / f'{image_id}.jpg'
+
+
+def write_image(image, target: Path, format: str, **options):
+    """Save an image in one step, so a reader never sees half of it."""
+    target.parent.mkdir(exist_ok=True)
+    temporary = target.with_suffix(f'.{os.getpid()}-{threading.get_ident()}.tmp')
+    image.save(temporary, format, **options)
+    while_open(temporary.replace, target)
 
 
 def while_open(change, *args, **options):

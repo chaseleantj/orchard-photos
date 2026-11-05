@@ -1,3 +1,9 @@
+import { imageUrl, isVideo, type Picture } from './types';
+
+/** The image loaded ahead of the viewer for a picture: the one it shows, or a video's poster, since the video itself
+ *  streams once it is shown. */
+export const aheadUrl = (picture: Picture) => imageUrl(picture.id, isVideo(picture) ? 'thumbnail' : 'display');
+
 /** Images loaded and decoded before they are shown. `keep(urls)` starts loading those not yet loading and lets go of
  *  the rest, which stops their loading and bounds memory to the window. */
 export function imagesAhead() {

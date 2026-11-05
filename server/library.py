@@ -11,10 +11,10 @@ from PIL import Image
 
 from server import photos
 from server.atlas import Atlas
-from server.cache import connect, preview_path, thumbnail_path, while_open
+from server.cache import connect, preview_path, thumbnail_path, write_image
 from server.groups import Groups
 from server.layout import Layout
-from server.scanner import FolderUnavailable, ScanCancelled, Scanner, scaled
+from server.scanner import RAW, FolderUnavailable, ScanCancelled, Scanner, raw_preview, scaled
 from server.semantic import SemanticIndex
 
 PAGE_SIZE = 80
@@ -25,10 +25,19 @@ IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
+# The type filter's value for every video format at once. Real mime types contain a slash, so it never collides with one.
+VIDEO_TYPE = 'video'
+# Matches every video's mime type in SQL.
+VIDEO_MIMES = VIDEO_TYPE + '/%'
 PREVIEW_EDGE = 4096
 # The most a viewer's time zone can be from UTC, in minutes.
 MAX_OFFSET = 1440
 logger = logging.getLogger(__name__)
+
+
+def playable(mime: str) -> bool:
+    """Whether the browser is given the original: an image it shows, or any video."""
+    return mime in WEB_TYPES or mime.startswith(VIDEO_TYPE + '/')
 
 
 def utc_offset(params) -> int:
@@ -123,12 +132,13 @@ class Library:
     def status(self):
         with connect(self.directory, rows=True) as db:
             images = db.execute('SELECT count(*) FROM images').fetchone()[0]
+            videos = db.execute('SELECT count(*) FROM images WHERE mime LIKE ?', (VIDEO_MIMES,)).fetchone()[0]
             files = db.execute('SELECT count(*) FROM files WHERE image_id IS NOT NULL').fetchone()[0]
             unreadable_count = db.execute('SELECT count(*) FROM files WHERE error IS NOT NULL').fetchone()[0]
             near = db.execute('SELECT count(*) - count(DISTINCT group_id) FROM image_groups WHERE image_id IN (SELECT id FROM images)').fetchone()[0]
-        return {'counts': {'images': images, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
+        return {'counts': {'images': images, 'videos': videos, 'files': files, 'duplicates': files - images, 'nearDuplicates': near, 'unreadable': unreadable_count},
                 'unlistedFolders': self.stats.get('unlisted_folders', 0), 'unreached': self.stats.get('unreached', 0),
-                'photoLibraries': self.stats.get('photo_libraries', []), 'skipped': self.stats.get('skipped', {}),
+                'photoLibraries': self.stats.get('photo_libraries', []),
                 'scan': self.scan_state, 'search': self.search_status(), 'updated': self.stats.get('updated'),
                 'revision': self.revision}
 
@@ -146,7 +156,10 @@ class Library:
         if folder:
             where.append('(f.folder=? OR substr(f.folder,1,?)=?)')
             values += [folder, len(folder) + 1, folder + '/']
-        if params.get('type'):
+        if params.get('type') == VIDEO_TYPE:
+            where.append('i.mime LIKE ?')
+            values.append(VIDEO_MIMES)
+        elif params.get('type'):
             where.append('i.mime=?')
             values.append(params['type'])
         # Dates are the viewer's local days, so the stored UTC times are shifted by their offset before comparing.
@@ -191,7 +204,7 @@ class Library:
             FROM matching WHERE rank=1
         )'''
         shown = 'WHERE p.place=1 ORDER BY p.date DESC,i.id' if collapse else 'ORDER BY p.place'
-        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
+        sql = f'''{matching} SELECT i.id,i.width,i.height,i.mime,i.size,i.duration,p.date,CASE WHEN i.taken IS NULL THEN 'modified' ELSE 'taken' END AS dated,
                          p.path,p.copies,p.grp AS "group",p.members
                   FROM images i JOIN pictures p ON p.image_id=i.id {shown}'''
         # Grouping needs every matching row, so SQL can't page this any cheaper than slicing the whole list.
@@ -255,11 +268,12 @@ class Library:
         return {'months': months, 'total': sum(month['count'] for month in months)}
 
     def facets(self):
-        """The subfolders and file types present, each with how many distinct images it holds."""
+        """The subfolders and file types present, each with how many distinct images it holds. Video formats count as one type."""
         with connect(self.directory, rows=True) as db:
             pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
             types = [dict(row) for row in db.execute(
-                'SELECT mime, count(*) AS count FROM images GROUP BY mime ORDER BY count DESC, mime')]
+                """SELECT CASE WHEN mime LIKE ? THEN ? ELSE mime END AS mime, count(*) AS count
+                   FROM images GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
         folders: dict[str, set] = {}
         for folder, image_id in pairs:
             # A folder counts the images in its subfolders too.
@@ -277,7 +291,7 @@ class Library:
             files = [dict(row) for row in db.execute(
                 'SELECT path, modified FROM files WHERE image_id=? ORDER BY modified DESC, path', (image_id,))]
         return {**dict(image), 'root': photos.NAME if self.photos else str(self.folder), 'source': 'photos' if self.photos else 'folder',
-                'files': files, 'preview': image['mime'] not in WEB_TYPES}
+                'files': files, 'preview': not playable(image['mime'])}
 
     def path(self, image_id, relative=None):
         """An image's path in the folder: the named copy if given and it holds this image, else the first."""
@@ -304,22 +318,21 @@ class Library:
         return thumbnail_path(self.directory, image_id)
 
     def display(self, image_id):
-        """A file the browser can show: the original when it can, otherwise a JPEG drawn once and kept."""
+        """A file the browser can show: the original when it can, otherwise a JPEG drawn once and kept. A video is always
+        its original, which the browser plays if it can."""
         path = self.original(image_id)
         if path is None:
             return None
         with connect(self.directory, rows=True) as db:
             mime = db.execute('SELECT mime FROM images WHERE id=?', (image_id,)).fetchone()['mime']
-        if mime in WEB_TYPES or not path.is_file():
+        if playable(mime) or not path.is_file():
             return path
         preview = preview_path(self.directory, image_id)
         if not preview.is_file():
-            preview.parent.mkdir(exist_ok=True)
-            with Image.open(path) as source:
+            source = raw_preview(path.read_bytes())[0] if path.suffix.lower() in RAW else Image.open(path)
+            with source:
                 image = scaled(source, PREVIEW_EDGE)
-                temporary = preview.with_suffix(f'.{threading.get_ident()}.tmp')
-                (image.convert('RGB') if image.mode == 'RGBA' else image).save(temporary, 'JPEG', quality=90)
-                while_open(temporary.replace, preview)
+                write_image(image.convert('RGB') if image.mode == 'RGBA' else image, preview, 'JPEG', quality=90)
         return preview
 
     def map(self, params):

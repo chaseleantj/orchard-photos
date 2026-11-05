@@ -1,19 +1,21 @@
-"""The Mac's Photos library as a source of images, read through PhotoKit with the user's permission.
+"""The Mac's Photos library as a source of images and videos, read through PhotoKit with the user's permission.
 
 macOS keeps the library's files closed to other apps, so they are never read from disk. Photos hands over each photo's
-current version, with any edits, and the scanner treats it like a file in a folder. PhotoKit reads only the System
+and video's current version, with any edits, and the scanner treats it like a file in a folder. PhotoKit reads only the System
 Photo Library, wherever it is, so that is the one library Orchard opens.
 """
 from io import BytesIO
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import threading
+import time
 
-from server.cache import connect
-from server.scanner import FolderUnavailable, OnlyInCloud
+from server.cache import connect, while_open
+from server.scanner import FolderUnavailable, OnlyInCloud, video_type
 
 # How Orchard names the System Photo Library, as a folder it can remember. The path is only a name: PhotoKit finds the
 # library wherever it is.
@@ -26,6 +28,9 @@ SHOW = ['osascript', '-e', 'on run argv', '-e', 'tell application "Photos"', '-e
         'spotlight media item id (item 1 of argv)', '-e', 'end tell', '-e', 'end run']
 # What osascript says when macOS doesn't let it control Photos, and when Photos has no such photo.
 NOT_ALLOWED, NOT_FOUND = '-1743', '-1728'
+# How long a photo or video written out for viewing is kept after it was last asked for. A video streamed by byte
+# range asks again for each range, so one being watched is kept.
+EXPORT_IDLE = 15 * 60
 # PhotoKit's values, so they can be compared before it is imported.
 NOT_DETERMINED, RESTRICTED, DENIED, AUTHORIZED = 0, 1, 2, 3
 logger = logging.getLogger(__name__)
@@ -68,12 +73,15 @@ def show(path: str):
 
 
 class PhotosLibrary:
-    """A source for the scanner, like scanner.Folder. A photo's path is its asset's id and its original file name,
-    so searching file names finds it, and its folder is empty, since Photos has no folders on disk."""
+    """A source for the scanner, like scanner.Folder. A photo's or video's path is its asset's id and its original file
+    name, so searching file names finds it and the scanner knows a video by it. Its folder is empty, since Photos has
+    no folders on disk."""
 
     def __init__(self, directory: Path):
         self.directory = Path(directory)
         self.exports = self.directory / 'exports'
+        # Writes one video for viewing at a time, so the byte ranges a player asks for at once don't each write it.
+        self._writing = threading.Lock()
 
     def check(self):
         """Ask for access the first time. macOS shows its prompt once; after that, only System Settings changes it."""
@@ -92,54 +100,79 @@ class PhotosLibrary:
                                     'open it from its app, or the one scripts/install-app makes.')
 
     def list(self, found=None):
-        """Every photo as (path, folder, size, mtime_ns), with no unreadable folders or libraries, and the videos
-        skipped. A photo whose modification date hasn't changed keeps its path and size, so only new and edited
-        photos are asked about."""
+        """Every photo and video as (path, folder, size, mtime_ns), with no unreadable folders or libraries. One whose
+        modification date hasn't changed keeps its path and size, so only new and edited ones are asked about."""
         import Photos
 
         with connect(self.directory, rows=True) as db:
             known = {identifier(row['path']): (row['path'], row['size'], row['mtime_ns'])
                      for row in db.execute('SELECT path, size, mtime_ns FROM files')}
-        assets = Photos.PHAsset.fetchAssetsWithMediaType_options_(Photos.PHAssetMediaTypeImage, None)
-        entries = []
-        for index in range(assets.count()):
-            asset = assets.objectAtIndex_(index)
-            asset_id = asset.localIdentifier()
-            moment = asset.modificationDate() or asset.creationDate()
-            mtime_ns = int(moment.timeIntervalSince1970() * 1e9) if moment else 0
-            path, size, mtime = known.get(asset_id, (None, None, None))
-            if mtime != mtime_ns:
-                path, size = self._describe(asset)
-            entries.append((path, '', size, mtime_ns))
-            if found and len(entries) % 500 == 0:
-                found(len(entries))
-        # Exports are only for the image being viewed, so they go with each scan.
-        shutil.rmtree(self.exports, ignore_errors=True)
-        videos = Photos.PHAsset.fetchAssetsWithMediaType_options_(Photos.PHAssetMediaTypeVideo, None).count()
-        return entries, [], [], {'raw': 0, 'video': videos}
+        entries, changed = [], set()
+        for kind, resource_type in ((Photos.PHAssetMediaTypeImage, Photos.PHAssetResourceTypePhoto),
+                                    (Photos.PHAssetMediaTypeVideo, Photos.PHAssetResourceTypeVideo)):
+            assets = Photos.PHAsset.fetchAssetsWithMediaType_options_(kind, None)
+            for index in range(assets.count()):
+                asset = assets.objectAtIndex_(index)
+                asset_id = asset.localIdentifier()
+                moment = asset.modificationDate() or asset.creationDate()
+                mtime_ns = int(moment.timeIntervalSince1970() * 1e9) if moment else 0
+                path, size, mtime = known.get(asset_id, (None, None, None))
+                if mtime != mtime_ns:
+                    path, size = self._describe(asset, resource_type)
+                    changed.add(asset_id)
+                entries.append((path, '', size, mtime_ns))
+                if found and len(entries) % 500 == 0:
+                    found(len(entries))
+        self._prune(changed)
+        return entries, [], []
+
+    def _exported(self, asset_id: str) -> Path:
+        """The folder an asset is written out to for viewing."""
+        return self.exports / asset_id.replace('/', '-')
+
+    def _prune(self, changed: set):
+        """Remove what was written out for assets edited since, and anything not asked for in EXPORT_IDLE."""
+        if not self.exports.is_dir():
+            return
+        edited = {self._exported(asset_id) for asset_id in changed}
+        stale = time.time() - EXPORT_IDLE
+        for folder in self.exports.iterdir():
+            try:
+                used = max((file.stat().st_mtime for file in folder.iterdir()), default=folder.stat().st_mtime)
+            except OSError:
+                continue
+            if folder in edited or used < stale:
+                shutil.rmtree(folder, ignore_errors=True)
 
     @staticmethod
-    def _describe(asset):
-        """The path and size for an asset, from its original file."""
+    def _describe(asset, resource_type):
+        """The path and size for an asset, from its original file: the resource of `resource_type`, or else its first."""
         import Photos
 
         resources = Photos.PHAssetResource.assetResourcesForAsset_(asset)
-        original = next((resource for resource in resources if resource.type() == Photos.PHAssetResourceTypePhoto), None)
+        original = next((resource for resource in resources if resource.type() == resource_type), None)
         original = original or (resources[0] if resources else None)
-        name = original.originalFilename() if original else 'Photo'
+        name = original.originalFilename() if original else ('Video' if resource_type == Photos.PHAssetResourceTypeVideo else 'Photo')
         try:
             size = int(original.valueForKey_('fileSize'))
         except Exception:
             size = 1  # Unknown, but not empty.
         return f'{asset.localIdentifier()}/{name}', size or 1
 
-    def read(self, path: str) -> tuple[bytes, str]:
-        """The photo's current version, with any edits, and its file extension."""
+    @staticmethod
+    def _asset(path: str):
         import Photos
 
         assets = Photos.PHAsset.fetchAssetsWithLocalIdentifiers_options_([identifier(path)], None)
         if not assets.count():
             raise FileNotFoundError(path)
+        return assets.objectAtIndex_(0)
+
+    def read(self, path: str) -> tuple[bytes, str]:
+        """The photo's current version, with any edits, and its file extension."""
+        import Photos
+
+        asset = self._asset(path)
         options = Photos.PHImageRequestOptions.alloc().init()
         options.setSynchronous_(True)
         options.setVersion_(Photos.PHImageRequestOptionsVersionCurrent)
@@ -148,7 +181,7 @@ class PhotosLibrary:
         options.setNetworkAccessAllowed_(False)
         result = {}
         Photos.PHImageManager.defaultManager().requestImageDataAndOrientationForAsset_options_resultHandler_(
-            assets.objectAtIndex_(0), options, lambda data, uti, orientation, info: result.update(data=data, uti=uti, info=info))
+            asset, options, lambda data, uti, orientation, info: result.update(data=data, uti=uti, info=info))
         if result.get('data') is None:
             info = result.get('info') or {}
             if info.get(Photos.PHImageResultIsInCloudKey):
@@ -156,14 +189,63 @@ class PhotosLibrary:
             raise OSError(f'Photos could not provide {path}')
         return bytes(result['data']), EXTENSIONS.get(str(result.get('uti')), Path(path).suffix)
 
+    def write_video(self, path: str, target: Path):
+        """Have Photos write the video's current version, with any edits, to `target`. Videos are written rather than
+        read into memory, since they can be large."""
+        from Foundation import NSURL
+        import Photos
+
+        resources = {resource.type(): resource for resource in Photos.PHAssetResource.assetResourcesForAsset_(self._asset(path))}
+        resource = resources.get(Photos.PHAssetResourceTypeFullSizeVideo) or resources.get(Photos.PHAssetResourceTypeVideo)
+        if resource is None:
+            raise OSError(f'Photos has no video for {path}')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(f'.{os.getpid()}-{threading.get_ident()}.tmp')
+        options = Photos.PHAssetResourceRequestOptions.alloc().init()
+        # As with photos, a video kept only in iCloud isn't downloaded unasked.
+        options.setNetworkAccessAllowed_(False)
+        done, failed = threading.Event(), []
+
+        # PhotoKit calls this on its own queue. It must return None: anything else, or an exception, aborts the app.
+        def finished(error):
+            failed.append(error)
+            done.set()
+        Photos.PHAssetResourceManager.defaultManager().writeDataForAssetResource_toFile_options_completionHandler_(
+            resource, NSURL.fileURLWithPath_(str(temporary)), options, finished)
+        done.wait()
+        if failed[0] is not None:
+            temporary.unlink(missing_ok=True)
+            try:
+                local = bool(resource.valueForKey_('locallyAvailable'))
+            except Exception:
+                local = True
+            raise OnlyInCloud(path) if not local else OSError(f'Photos could not provide {path}: {failed[0]}')
+        while_open(temporary.replace, target)
+
     def open(self, path: str):
-        return BytesIO(self.read(path)[0])
+        """A stream of the photo or video. A video is written to a file that goes as soon as the stream closes."""
+        if not video_type(path):
+            return BytesIO(self.read(path)[0])
+        written = self.exports / 'reading' / f'{os.getpid()}-{threading.get_ident()}'
+        self.write_video(path, written)
+        stream = written.open('rb')
+        written.unlink()  # The open stream still reads it.
+        return stream
 
     def file(self, path: str) -> Path:
-        """The photo written out, for viewing and downloading. It keeps its original name."""
-        data, extension = self.read(path)
+        """The photo or video written out, for viewing and downloading. It keeps its original name. A video is written
+        once and kept while it is asked for, so each byte range a player asks for reads the same file."""
         name = path.rpartition('/')[2]
-        target = self.exports / identifier(path).replace('/', '-') / (Path(name).stem + extension)
+        target = self._exported(identifier(path)) / name
+        if video_type(path):
+            if not target.is_file():
+                with self._writing:
+                    if not target.is_file():
+                        self.write_video(path, target)
+            os.utime(target)  # Asked for again, so it is kept.
+            return target
+        data, extension = self.read(path)
+        target = target.with_suffix(extension)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         return target

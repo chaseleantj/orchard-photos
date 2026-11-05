@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/hero.gif" width="800" alt="Orchard Photos: a photo of the Colosseum is dragged onto the search bar and similar photos of Rome fill the grid; typing &quot;a bowl of noodles&quot; brings up photos of noodles; the map then lights up those noodle photos, grouped together among similar food."></p>
 
-Orchard is a free app for finding photos on your computer. Open a folder, and Orchard shows every photo in it as one timeline. To find a photo, describe it, like "dog on a beach", or drop in a similar photo.
+Orchard is a free app for finding photos and videos on your computer. Open a folder, and Orchard shows every photo and video in it as one timeline. To find a photo, describe it, like "dog on a beach", or drop in a similar photo.
 
 Most photo apps with this kind of search upload your library to a server. Orchard keeps everything on your computer: the search runs locally, nothing is uploaded, and Orchard never moves or changes your files.
 
@@ -11,7 +11,9 @@ Most photo apps with this kind of search upload your library to a server. Orchar
 - **Search by describing a photo**, in English or another language.
 - **Find similar photos** by dropping one onto the search bar.
 - **See your photos on a map**, where photos that look alike sit together.
-- **Open your Apple Photos library** on a Mac, without exporting it.
+- **Play and search your videos.** Search finds a video by what is in it.
+- **See camera RAW photos**, such as NEF, CR2, ARW and DNG, by the preview the camera stores in each one.
+- **Open your Apple Photos library** on a Mac, photos and videos alike, without exporting it.
 - **Filter** by subfolder, file type and date.
 - **See fewer duplicates.** Copies, bursts and edits of the same photo share one tile.
 

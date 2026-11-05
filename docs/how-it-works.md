@@ -14,17 +14,19 @@ your folder
 
 ## Scanning
 
-The scanner walks the whole folder and finds every image file. It counts RAW photos and videos too, which it can't read, so Info can say they aren't shown. For each new or changed file, it:
+The scanner walks the whole folder and finds every image and video file. Pillow can't decode camera RAW, so a RAW photo is read by the largest JPEG preview inside it, turned the way the RAW's own EXIF says. For each new or changed file, it:
 
 1. Hashes the contents with SHA-256.
-2. Reads the width, height, camera and date taken from EXIF.
-3. Draws a 720 px WebP thumbnail.
+2. Reads the width, height, camera and date taken from EXIF, or for a video, its length and the tags its container holds.
+3. Draws a 720 px WebP thumbnail, of a video's first frame.
 
-Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. So is a file that couldn't be read, until **Rescan now** asks for it again. A file the scanner couldn't reach at all, as when a network drive drops, isn't recorded, so the next scan reads it, and Info counts it. If the folder itself has gone, or a whole batch of files couldn't be reached, the scan stops there. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
+Videos are decoded with PyAV, which brings its own FFmpeg. For visual search, the scanner also keeps three small frames of each video, from a quarter, half and three quarters of the way through, and search sees the video as the average of their vectors. The server answers byte ranges, which is how the viewer streams and seeks a video.
+
+Images are stored by their hash, so identical files share one entry, and a renamed or moved file keeps its thumbnail and search data. A file whose size and modification time haven't changed is skipped, so rescans are fast. So is a file that couldn't be read, until reloading the page asks for it again. A file the scanner couldn't reach at all, as when a network drive drops, isn't recorded, so the next scan reads it, and Info counts it. If the folder itself has gone, or a whole batch of files couldn't be reached, the scan stops there. Files that have disappeared are removed from the index, along with any thumbnails no file uses.
 
 Large images are decoded in turn, within a shared memory budget, and shrunk before they're turned upright, so a folder of huge PNGs or TIFFs doesn't run out of memory. Images over 300 megapixels are refused.
 
-On a Mac, the scanner can read the Photos library instead of a folder. macOS keeps the library's files closed to other apps, so `server/photos.py` asks Photos for them through PhotoKit, with the user's permission. It lists every photo with its asset id, original file name and modification date, and hands over each new or edited photo's current version, which the scanner hashes, reads and draws like a file. A photo whose modification date hasn't changed isn't read again.
+On a Mac, the scanner can read the Photos library instead of a folder. macOS keeps the library's files closed to other apps, so `server/photos.py` asks Photos for them through PhotoKit, with the user's permission. It lists every photo and video with its asset id, original file name and modification date, and hands over each new or edited one's current version, which the scanner hashes, reads and draws like a file. Photos are handed over in memory; a video is written to a file in the cache, which goes as soon as the scanner has it open, and one being viewed is kept while it is asked for, and for 15 minutes after, so each byte range the viewer asks for reads the same file. One whose modification date hasn't changed isn't read again.
 
 The server rescans the open folder every minute. A folder that's slow to list, like one on a network drive, is rechecked less often: the wait is at least 20 times as long as the last listing took.
 
@@ -63,6 +65,8 @@ The map uses UMAP to squeeze the vectors down to two dimensions, so similar imag
 Positions are saved. When new images arrive, each is placed at the weighted centre of its nearest neighbours, so the map stays put. Orchard fits the layout again only once new images make up more than a fifth of the map.
 
 To draw thousands of images quickly, the server packs small icons into sheets of 1,024 icons each, so the page loads a handful of sheets instead of one image per request. The map shows at most the newest 25,000 images that match the filters, and new images get their icon slots newest first, so those images share the first sheets.
+
+The page decodes the sheets away from the main thread and keeps them decoded. Zoomed out, it draws the icons once and slides that picture as you pan. Zoomed in, each icon gets its sharp thumbnail, decoded at about the size it's drawn.
 
 ## The server
 

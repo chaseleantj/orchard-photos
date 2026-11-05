@@ -2,6 +2,7 @@
 
 import hashlib
 from io import BytesIO
+from itertools import count, takewhile
 import logging
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ import platform
 import sys
 import threading
 
-from server.cache import connect, thumbnail_path
+from server.cache import connect, frame_path, thumbnail_path
 
 # The embedding space. Vectors are stored under this key, so vectors from another model are never mixed with its own.
 MODEL = "google/siglip2-base-patch16-256"
@@ -411,14 +412,26 @@ class SemanticIndex:
         with connect(self.directory) as connection:
             connection.execute("DELETE FROM semantic_embeddings WHERE model != ?", (MODEL,))
 
-    def _open_image(self, image_id):
+    def _open_images(self, image_id) -> list:
+        """What search reads of an image: its thumbnail, or for a video the frames the scanner kept."""
         from PIL import Image
 
-        with Image.open(thumbnail_path(self.directory, image_id)) as image:
-            return image.convert("RGB")
+        frames = list(takewhile(Path.is_file, (frame_path(self.directory, image_id, place) for place in count())))
+        opened = []
+        try:
+            for path in frames or [thumbnail_path(self.directory, image_id)]:
+                with Image.open(path) as image:
+                    opened.append(image.convert("RGB"))
+        except (OSError, ValueError):
+            for image in opened:
+                image.close()
+            raise
+        return opened
 
     def index(self, cancelled=lambda: False):
         """Embed new images until none are left, including any a scan adds meanwhile."""
+        import numpy
+
         if not self._index_lock.acquire(blocking=False):
             return
         try:
@@ -438,18 +451,22 @@ class SemanticIndex:
                     if cancelled():
                         self._set_state("idle")
                         return
-                    images, ids = [], []
+                    # A video's frames sit together in `images`, and `counts` says how many each image has.
+                    images, ids, counts = [], [], []
                     for image_id in pending[offset:offset + BATCH_SIZE]:
                         try:
-                            images.append(self._open_image(image_id))
+                            opened = self._open_images(image_id)
+                            images += opened
                             ids.append(image_id)
+                            counts.append(len(opened))
                         except (OSError, ValueError):
                             unreadable.add(image_id)
                             logger.warning("Could not read image %s for visual search", image_id)
                     if not images:
                         continue
                     try:
-                        vectors = self.encoder.features(images=images)
+                        features = numpy.split(self.encoder.features(images=images), numpy.cumsum(counts)[:-1])
+                        vectors = _unit(numpy.stack([frames.mean(axis=0) for frames in features]))
                         with connect(self.directory) as connection:
                             connection.executemany(
                                 "INSERT OR REPLACE INTO semantic_embeddings VALUES (?, ?, ?)",
@@ -460,7 +477,7 @@ class SemanticIndex:
                             image.close()
             self._unreadable = frozenset(unreadable)
             failed = len(unreadable)
-            self._set_state("idle", f"{failed} {'image' if failed == 1 else 'images'} could not be read for visual search." if failed else None)
+            self._set_state("idle", f"{failed} {'file' if failed == 1 else 'files'} could not be read for visual search." if failed else None)
         except Exception as error:
             logger.exception("Visual search indexing failed")
             self._set_state("error", str(error))

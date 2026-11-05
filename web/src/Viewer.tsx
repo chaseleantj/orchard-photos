@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
-import { Disclosure } from './Panels';
-import { dateLabel, downloadUrl, dragImage, fileName, filterParams, folderOf, imageUrl, plural, post, request, sizeLabel, typeLabel } from './types';
-import { imagesAhead, shared } from './preload';
+import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel } from './types';
+import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
 
@@ -18,6 +17,13 @@ const CRUMBS = 3;
 // Browsers refuse canvases much larger than this.
 const CLIPBOARD_PIXELS = 50_000_000;
 const ARROWS: Record<string, ['step' | 'climb', number]> = { ArrowLeft: ['step', -1], ArrowRight: ['step', 1], ArrowUp: ['climb', -1], ArrowDown: ['climb', 1] };
+// The native controls sit over a video's bottom edge and live inside it, so a draggable video would also start a drag
+// from the scrubber and volume. Their strip is a little taller than this in both WebKit and Chromium.
+const CONTROLS = 48;
+const dragVideo = (id: string) => (e: React.DragEvent<HTMLVideoElement>) => {
+  if (e.clientY > e.currentTarget.getBoundingClientRect().bottom - CONTROLS) e.preventDefault();
+  else dragImage(id)(e);
+};
 
 export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -42,6 +48,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const showMember = (place: number) => setStack({ ...stack!, shown: place });
   const item = members[shown] ?? front;
   const details = loaded?.id === item.id ? loaded : null;
+  const video = isVideo(item);
   const folder = photos ? '' : folderOf(item.path);
   const reveal = photos ? 'Show in Photos' : platform === 'darwin' ? 'Show in Finder' : 'Show in folder';
   const RevealIcon = photos ? Images : FolderOpen;
@@ -58,8 +65,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   }, [ahead]);
   const loadDetails = (id: string) => ahead.details(id, () => request<Details>(`/api/images/${id}`));
   const loadStack = (picture: Picture) => ahead.stacks(picture.group, () => request<Results>(`/api/images?${new URLSearchParams({ ...filterParams(filters), group: picture.group })}`).then(data => data.items));
-  // Each image starts fitted, with nothing shown that belonged to the one before.
-  useEffect(() => zoom.current!.set(photo.current), [item.id, failed]);
+  // Each image starts fitted, with nothing shown that belonged to the one before. A video isn't zoomed.
+  useEffect(() => zoom.current!.set(photo.current), [item.id, failed, video]);
   useEffect(() => {
     let current = true;
     setFailed(false); setError('');
@@ -86,8 +93,9 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     }
     const reachable = near.filter(entry => entry && entry.id !== item.id);
     for (const entry of reachable) loadDetails(entry.id).catch(() => { /* Retried when it is shown. */ });
-    ahead.images.keep(reachable.map(entry => imageUrl(entry.id, 'display')));
+    ahead.images.keep(reachable.map(aheadUrl));
   };
+  const fail = () => { setFailed(true); loadAhead(); };
   const canStep = (direction: number) => !loadingMore && (direction < 0 ? index > 0 : index < items.length - 1 || hasMore);
   const step = (direction: number) => { if (!canStep(direction)) return; heading.current = direction; onChange(index + direction); };
   const climb = (direction: number) => { if (members[shown + direction]) showMember(shown + direction); };
@@ -110,7 +118,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     if (e.defaultPrevented || e.isComposing) return;
     const node = dialog.current!;
     if (!e.composedPath().includes(node)) node.focus({ preventScroll: true });
-    if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !getSelection()?.toString()) { e.preventDefault(); void copy(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !video && !getSelection()?.toString()) { e.preventDefault(); void copy(); return; }
     if (zoom.current!.key(e) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !ARROWS[e.key]) return;
     // Every arrow is taken, even with nowhere to go, since the Mac window beeps at a key the page leaves.
     e.preventDefault();
@@ -136,10 +144,6 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     window.addEventListener('keydown', keydown);
     return () => { node.removeEventListener('wheel', wheel); window.removeEventListener('keydown', keydown); };
   }, []);
-  const file = details?.files.find(f => f.path === item.path);
-  const others = details?.files.filter(f => f.path !== item.path) ?? [];
-  // The date not already shown under the name.
-  const otherDate = item.dated === 'taken' ? file && `Modified ${dateLabel(file.modified, true)}` : details?.taken && `Taken ${dateLabel(details.taken, true)}`;
   const parts = folder ? folder.split('/') : [rootName];
   const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
   return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose}>
@@ -149,39 +153,36 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         <span>{(index + 1).toLocaleString()} / {total.toLocaleString()}</span>
         <button className="icon-button" aria-label="Next image" title="Next image" disabled={!canStep(1)} onClick={() => step(1)}><ArrowRight /></button>
       </div><div className="viewer-navigation">
-        <button className="icon-button" aria-label={zoomed ? 'Fit to screen' : 'Zoom in'} aria-keyshortcuts={zoomed ? 'Escape' : undefined} title={zoomed ? 'Fit to screen (Esc)' : 'Zoom in'} onClick={() => zoom.current!.toggle()}>{zoomed ? <ZoomOut /> : <ZoomIn />}</button>
+        {!video && <button className="icon-button" aria-label={zoomed ? 'Fit to screen' : 'Zoom in'} aria-keyshortcuts={zoomed ? 'Escape' : undefined} title={zoomed ? 'Fit to screen (Esc)' : 'Zoom in'} onClick={() => zoom.current!.toggle()}>{zoomed ? <ZoomOut /> : <ZoomIn />}</button>}
         <button className="icon-button" aria-label="Close image" title="Close" onClick={onClose}><X /></button>
       </div></header>
       {/* One image element for every step: it keeps showing the last image until the next has loaded, so quick
-          steps never flash an empty stage, and each new step replaces the load before it. */}
+          steps never flash an empty stage, and each new step replaces the load before it. A video plays at once,
+          muted and looping over its first frame, since WebKit only starts a video without sound; its controls unmute it. */}
       <div ref={stage} className="image-stage">
-        {failed ? <div className="empty"><p>This image could not be shown. The file may have moved or changed.</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div> : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={() => { setFailed(true); loadAhead(); }} />}
+        {failed ? <div className="empty"><p>{video ? 'This video can’t be played here. Download it to watch it.' : 'This image could not be shown. The file may have moved or changed.'}</p><button className="text-button secondary" onClick={() => setFailed(false)}>Retry</button></div>
+        : video ? <video key={item.id} src={imageUrl(item.id, 'display')} poster={imageUrl(item.id)} aria-label={fileName(item.path)} autoPlay muted loop controls playsInline draggable onDragStart={dragVideo(item.id)} onLoadedData={loadAhead} onError={fail} />
+        : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={fail} />}
       </div>
       <aside className="image-details">
         <div className="detail-summary">
           <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
           <p>{item.dated === 'taken' ? 'Taken' : 'Modified'} {dateLabel(item.date, true)}</p>
           <button className="crumbs" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button>
-          <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
+          <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()}{item.duration ? ` · ${durationLabel(item.duration)}` : ''} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
           {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         </div>
         <div className="detail-actions">
           {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
-          <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>
+          {!video && <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>}
           <a className="text-button" href={downloadUrl(item.id, item.path)} download><Download />Download original</a>
           <button className="text-button" onClick={() => show(item.path)}><RevealIcon />{reveal}</button>
         </div>
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
         {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
           <h2>{plural(members.length, 'near-duplicate')}</h2>
-          <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} title={member.path} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
+          <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
         </section>}
-        {details && <Disclosure summary="Details">
-          <p className="path">{photos ? `In your ${details.root} library` : `${details.root}/${item.path}`}</p>
-          {otherDate && <p>{otherDate}</p>}
-          {details.camera && <p>{details.camera}</p>}
-          {!!others.length && <><p>Also saved in {plural(others.length, 'other place')}</p><ul className="file-list">{others.map(other => <li key={other.path}><span className="path">{photos ? fileName(other.path) : other.path}</span><button className="icon-button" aria-label={`${reveal}: ${photos ? fileName(other.path) : other.path}`} title={reveal} onClick={() => show(other.path)}><RevealIcon /></button></li>)}</ul></>}
-        </Disclosure>}
       </aside>
     </div>
   </dialog>;

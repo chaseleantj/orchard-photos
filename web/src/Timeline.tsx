@@ -48,8 +48,8 @@ export default function Timeline({ data, loaded, gallery, header, onReach }: Pro
   const labelOf = (index: number) => months.length ? monthLabel(monthStart(months[monthOf(index)].month)) : '';
   const currentYear = months[monthOf(current)]?.month.slice(0, 4);
   // Where crowded years compete for room, the newest, the oldest and the current year are named first, then the
-  // years with the most images. The rest keep a tick, so a missing label never reads as a missing year.
-  const { labels, ticks } = useMemo(() => {
+  // years with the most images. The rest go unnamed.
+  const labels = useMemo(() => {
     const all: { year: string; y: number; index: number; count: number }[] = [];
     months.forEach(({ month, count }, place) => {
       const year = month.slice(0, 4);
@@ -60,7 +60,7 @@ export default function Timeline({ data, loaded, gallery, header, onReach }: Pro
     const order = [...all].sort((a, b) => first(b) - first(a) || b.count - a.count);
     const labels: typeof all = [];
     for (const year of order) if (labels.every(label => Math.abs(label.y - year.y) >= LABEL)) labels.push(year);
-    return { labels: labels.sort((a, b) => a.y - b.y), ticks: all.filter(year => !labels.includes(year)) };
+    return labels.sort((a, b) => a.y - b.y);
   }, [months, starts, total, height, currentYear]); // eslint-disable-line react-hooks/exhaustive-deps
   // A point on the column: inside a label it is that year's start, so hovering a year previews where a click goes.
   const target = (y: number) => {
@@ -180,7 +180,6 @@ export default function Timeline({ data, loaded, gallery, header, onReach }: Pro
     onPointerDown={onPointerDown} onMouseDown={e => e.preventDefault()} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => setHover(null)}
     onKeyDown={onKeyDown} onFocus={e => setFocused(e.currentTarget.matches(':focus-visible'))} onBlur={() => setFocused(false)}>
     {labels.map(label => <span key={label.year} className="timeline-year" data-current={label.year === currentYear || undefined} style={{ top: label.y }}>{label.year}</span>)}
-    {ticks.map(tick => <span key={tick.year} className="timeline-tick" style={{ top: tick.y }} />)}
     {pointing && <span className="timeline-hover" style={{ top: pointing.y }} />}
     <span className="timeline-marker" style={{ top: yOf(current) }} />
     <span className="timeline-chip" data-shown={shown || undefined} aria-hidden="true" style={{ top: pointing ? pointing.y : yOf(current) }}>{labelOf(pointing ? pointing.index : current)}</span>
