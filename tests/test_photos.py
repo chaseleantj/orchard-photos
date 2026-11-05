@@ -187,6 +187,7 @@ class ListingTests(unittest.TestCase):
         library.list()
         self.assertEqual(sorted(folder.name for folder in library.exports.iterdir()), ['A-L0-001'])
 
+    @unittest.skipIf(sys.platform == 'win32', 'Photos runs only on a Mac, and Windows cannot remove an open file')
     def test_a_video_is_written_with_its_edits_once_for_viewing_and_only_briefly_for_reading(self):
         library = PhotosLibrary(self.directory)
         path = 'V/L0/001/V.MOV'
