@@ -96,12 +96,12 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
   const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanLeft ? `. ${scanLeft}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
   const ledger = [
-    { label: 'Files', value: counts.files + counts.unreadable, shown: true },
+    { label: 'Images and videos', value: counts.files + counts.unreadable, shown: true },
     { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
     { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
   ].filter(row => row.shown);
-  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'In the grid';
+  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'Total shown';
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <dl className="counts">
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
