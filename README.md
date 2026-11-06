@@ -45,7 +45,3 @@ Orchard only goes online to download the search model, and to check for updates 
 - [Using Orchard](docs/using-orchard.md): everything the app can do.
 - [Questions and problems](docs/questions-and-problems.md): if something doesn't work.
 - [How Orchard works](docs/how-it-works.md) and [Developing Orchard](docs/development.md), for the technical details.
-
-## License
-
-[MIT](LICENSE)

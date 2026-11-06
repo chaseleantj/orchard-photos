@@ -213,13 +213,28 @@ class Encoder:
                                 [DIRECTML, "CPUExecutionProvider"], options)
         return None
 
+    def _cpu_vision(self):
+        import onnxruntime
+
+        return onnxruntime.InferenceSession(str(self._path(*_files(False)[0])), providers=["CPUExecutionProvider"])
+
     def features(self, *, images=None, text=None):
         import numpy
 
         with self.lock:
             self.load()
             if images is not None:
-                features = _run(self._vision, numpy.stack([_pixels(image) for image in images]))
+                pixels = numpy.stack([_pixels(image) for image in images])
+                try:
+                    features = _run(self._vision, pixels)
+                except Exception as error:
+                    # A GPU can drop out partway, as DirectML does when Windows resets the driver. The session stays
+                    # broken, so the CPU takes over. Its vectors match the GPU's, which passed the parity check.
+                    if self.engine == "CPU" or not self._complete(_files(False)[:1]):
+                        raise
+                    logger.warning("%s stopped running the search model, so the CPU runs it: %s", self.engine, error)
+                    self._vision = self._cpu_vision()
+                    features = _run(self._vision, pixels)
             else:
                 lowered = [description.lower() for description in text]
                 tokens = numpy.array([encoding.ids for encoding in self._tokenizer.encode_batch(lowered)], dtype=numpy.int64)

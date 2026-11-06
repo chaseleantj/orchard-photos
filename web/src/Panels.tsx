@@ -2,8 +2,8 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
 import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
 import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
-import { Progress } from './Progress';
-import { searchWork } from './Activity';
+import { type Estimate, Progress } from './Progress';
+import { estimated, searchWork } from './Activity';
 
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
@@ -85,23 +85,23 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
 }
 
 /** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known.
- *  `scanLeft` and `searchLeft` estimate the time left for reading and for visual search. */
-export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanLeft: string; searchLeft: string; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
+ *  `scanProgress` and `searchProgress` estimate how far reading and visual search are, and the time they have left. */
+export function LibraryPanel({ status, shown, narrowed, scanProgress, searchProgress, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanProgress: Estimate; searchProgress: Estimate; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
   const library = status.library!;
   const { counts, scan, search } = library;
   const noun = countNoun(library);
   const scanning = scan.state === 'scanning';
   const complete = search.state === 'ready';
-  const work = searchWork(search);
-  const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanLeft ? `. ${scanLeft}` : ''}` : 'Looking for images…';
+  const work = estimated(searchWork(search), searchProgress);
+  const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanProgress.left ? `. ${scanProgress.left}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
   const ledger = [
-    { label: 'Files', value: counts.files + counts.unreadable, shown: true },
+    { label: 'Images and videos', value: counts.files + counts.unreadable, shown: true },
     { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
     { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
     { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
   ].filter(row => row.shown);
-  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'In the grid';
+  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'Total shown';
   return <Panel title="Info" anchor={anchor} onClose={onClose}>
     <dl className="counts">
       {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
@@ -112,15 +112,15 @@ export function LibraryPanel({ status, shown, narrowed, scanLeft, searchLeft, an
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {!!library.unreached && <p>{plural(library.unreached, 'file')} could not be reached. Each scan tries {library.unreached === 1 ? 'it' : 'them'} again.</p>}
-    {scanning && <Progress value={scan.changed ? (scan.done ?? 0) / scan.changed : null} label="Reading images" />}
+    {scanning && <Progress value={scanProgress.value} label="Reading images" />}
     {scanning && <p>{scanLabel}</p>}
     {scan.error && <p className="error-copy">{scan.error}</p>}
     <hr className="rule" /><h3>Visual search</h3>
     {work && !work.error ? <>
       <p>{work.label}{work.detail && <span className="numbers"> · {work.detail}</span>}</p>
       <Progress value={work.value} label={work.label} />
-      {search.state === 'downloading' && <p>{searchLeft ? `${searchLeft}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
-      {search.state === 'indexing' && <p>{searchLeft ? `${searchLeft}. ` : ''}Prepared images can be searched already.</p>}
+      {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
+      {search.state === 'indexing' && <p>{searchProgress.left ? `${searchProgress.left}. ` : ''}Prepared images can be searched already.</p>}
     </> : search.state === 'error' ? <>
       <p className="error-copy" role="alert">{search.error}</p>
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>

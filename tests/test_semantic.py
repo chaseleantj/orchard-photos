@@ -260,6 +260,23 @@ class SemanticTests(unittest.TestCase):
                                   (Path(TEXT).name, ["CPUExecutionProvider"])])
                 self.assertTrue(self.encoder.loaded)
 
+    def test_a_gpu_that_fails_partway_hands_the_image_encoder_to_the_cpu(self):
+        self.place(False)
+        self.encoder._vision = Mock(**{"get_providers.return_value": [semantic.DIRECTML, "CPUExecutionProvider"],
+                                       "get_inputs.side_effect": RuntimeError("The GPU device instance has been suspended")})
+        cpu = self.session(np.array([3.0, 4.0], dtype=np.float32))
+        cpu.get_providers.return_value = ["CPUExecutionProvider"]
+        with patch("onnxruntime.InferenceSession", return_value=cpu) as open_session, \
+                self.assertLogs("server.semantic", level="WARNING") as logs:
+            np.testing.assert_allclose(self.encoder.features(images=[Image.new("RGB", (8, 8))]), [[0.6, 0.8]])
+        self.assertIn("DirectML stopped running the search model, so the CPU runs it", logs.output[0])
+        self.assertEqual(open_session.call_args.kwargs["providers"], ["CPUExecutionProvider"])
+        self.assertEqual(self.encoder.engine, "CPU")
+        # The CPU failing too is an error to report, with nothing left to fall back to.
+        cpu.get_inputs.side_effect = RuntimeError("out of memory")
+        with self.assertRaisesRegex(RuntimeError, "out of memory"):
+            self.encoder.features(images=[Image.new("RGB", (8, 8))])
+
     def test_the_engine_is_named_from_the_image_encoder_s_session_and_the_one_tried_first_from_its_core_ml_state(self):
         self.assertIsNone(self.encoder.engine)
         for providers, engine in ((["CoreMLExecutionProvider", "CPUExecutionProvider"], "Core ML"), (["CPUExecutionProvider"], "CPU")):

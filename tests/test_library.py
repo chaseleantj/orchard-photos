@@ -281,6 +281,27 @@ class LibraryTests(unittest.TestCase):
         self.library.index()
         self.assertEqual(len(runs), 2)
 
+    def test_preparing_waits_while_a_scan_reads_files_but_not_while_it_only_lists(self):
+        stops, grouped = [], []
+        self.library.semantic = SimpleNamespace(index=lambda cancelled: stops.append(cancelled()))
+        self.library.groups = SimpleNamespace(update=lambda: grouped.append(1))
+        for scan_state, stopped in (({'state': 'scanning', 'found': 500, 'done': 0, 'changed': 0}, False),
+                                    ({'state': 'scanning', 'found': 900, 'done': 48, 'changed': 900}, True),
+                                    ({'state': 'ready'}, False)):
+            with self.subTest(scan_state=scan_state):
+                self.library.scan_state = scan_state
+                self.library.index()
+                self.assertEqual((stops[-1], len(grouped)), (stopped, len(stops) - stops.count(True)))
+
+    def test_preparing_resumes_after_a_scan_that_fails_partway(self):
+        self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True)
+        with patch.object(self.library.scanner, 'scan', side_effect=OSError('drive gone')), \
+                patch('server.library.threading.Thread') as thread, self.assertLogs('server.library', level='ERROR'):
+            self.library.scan()
+        self.assertEqual(self.library.scan_state['state'], 'error')
+        self.assertEqual(thread.call_args.kwargs['target'], self.library.index)
+        thread.return_value.start.assert_called_once()
+
     def test_visual_search_is_not_ready_while_the_scan_has_files_to_read(self):
         image = self.image(1)
         with connect(self.library.directory, rows=True) as db:

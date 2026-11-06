@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Progress } from './Progress';
+import { type Estimate, Progress } from './Progress';
 import type { LibraryStatus, Scan, SearchStatus } from './types';
 import { megabytes } from './types';
 
@@ -26,11 +26,14 @@ export function searchWork(search: SearchStatus): Work | null {
 
 const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}` : work.label;
 
+/** Work whose amount done is known, with its bar at the estimate that moves on every second. */
+export const estimated = (work: Work | null, progress: Estimate) => work && work.value !== null ? { ...work, value: progress.value ?? work.value } : work;
+
 /** Background work, in the line under the search bar. Each item opens Library, where the details are. A first scan
  *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen. */
-export function Activity({ library, gathering, hideError, onOpen }: { library: LibraryStatus; gathering: boolean; hideError: boolean; onOpen: () => void }) {
-  const search = searchWork(library.search);
-  const jobs = [gathering ? null : scanWork(library.scan), search?.error && hideError ? null : search].filter((job): job is Work => !!job);
+export function Activity({ library, scanProgress, searchProgress, gathering, hideError, onOpen }: { library: LibraryStatus; scanProgress: Estimate; searchProgress: Estimate; gathering: boolean; hideError: boolean; onOpen: () => void }) {
+  const search = estimated(searchWork(library.search), searchProgress);
+  const jobs = [gathering ? null : estimated(scanWork(library.scan), scanProgress), search?.error && hideError ? null : search].filter((job): job is Work => !!job);
   // Setting up visual search ends with a word that it worked; routine preparing of new images ends quietly.
   const [done, setDone] = useState(false);
   const setup = useRef(false);

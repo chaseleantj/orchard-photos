@@ -34,7 +34,7 @@ The server rescans the open folder every minute. A folder that's slow to list, l
 
 Orchard uses SigLIP 2 ([`google/siglip2-base-patch16-256`](https://huggingface.co/google/siglip2-base-patch16-256)), a model trained to turn both images and text into vectors. An image and a sentence that describe the same thing get vectors that point in a similar direction. It reads descriptions in many languages.
 
-After a scan, the server runs each new thumbnail through the model and stores its vector, newest images first. To search, it turns your description, or your example image, into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
+After a scan, the server runs each new thumbnail through the model and stores its vector, newest images first. It waits while a scan reads new files, since on a laptop the GPU and CPU share one power budget, and the scan finishes sooner alone. To search, it turns your description, or your example image, into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
 
 The model runs with ONNX Runtime, from an ONNX export of the same weights ([`onnx-community/siglip2-base-patch16-256-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-256-ONNX)). The image half is full precision. The text half is the 8-bit copy, which is a quarter of the size and ranks searches just as well. Both are downloaded once from Hugging Face at a pinned revision, and shared by every folder.
 
@@ -44,7 +44,7 @@ Where it can, Orchard runs the image half on the GPU:
 - **Windows on x64** uses DirectML, which works with any DirectX 12 GPU, from NVIDIA, AMD or Intel. It runs the same file as the CPU.
 - **Everything else**, including Windows on Arm and Linux, uses the CPU. On Linux, installing `onnxruntime-gpu` in place of `onnxruntime` runs it on an NVIDIA GPU through CUDA.
 
-Before using Core ML or DirectML, Orchard runs a fixed test image and compares its vector with the CPU's, stored in `server/parity-vector.npy`. If the GPU fails to load the model or its vector is off, the CPU runs it instead, and on a Mac, downloads the full-precision file first. The text half runs on the CPU, or on CUDA when `onnxruntime-gpu` is installed. On the CPU, a search takes a few tens of milliseconds.
+Before using Core ML or DirectML, Orchard runs a fixed test image and compares its vector with the CPU's, stored in `server/parity-vector.npy`. If the GPU fails to load the model or its vector is off, the CPU runs it instead, and on a Mac, downloads the full-precision file first. If DirectML stops working partway, as it does when Windows resets the graphics driver, the CPU takes over. The text half runs on the CPU, or on CUDA when `onnxruntime-gpu` is installed. On the CPU, a search takes a few tens of milliseconds.
 
 Vectors are stored with the name of the model that made them. Vectors from any other model are deleted when a folder opens, along with the map and stacks made from them, since vectors from two models can't be compared.
 

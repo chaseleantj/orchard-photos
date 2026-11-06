@@ -242,8 +242,9 @@ def refuse_oversized(image):
 
 
 def save(image, target: Path):
-    """Write a thumbnail or a search frame as WebP."""
-    write_image(image, target, 'WEBP', quality=82)
+    """Write a thumbnail or a search frame as WebP. Method 0 encodes about 5x faster than the default for files about a
+    sixth larger, which matters most on slow computers scanning many photos."""
+    write_image(image, target, 'WEBP', quality=82, method=0)
 
 
 def upright(frame):
