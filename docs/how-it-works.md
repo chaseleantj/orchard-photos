@@ -34,7 +34,7 @@ The server rescans the open folder every minute. A folder that's slow to list, l
 
 Orchard uses SigLIP 2 ([`google/siglip2-base-patch16-256`](https://huggingface.co/google/siglip2-base-patch16-256)), a model trained to turn both images and text into vectors. An image and a sentence that describe the same thing get vectors that point in a similar direction. It reads descriptions in many languages.
 
-After a scan, the server runs each new thumbnail through the model and stores its vector, newest images first. To search, it turns your description, or your example image, into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
+After a scan, the server runs each new thumbnail through the model and stores its vector, newest images first. It waits while a scan reads new files, since on a laptop the GPU and CPU share one power budget, and the scan finishes sooner alone. To search, it turns your description, or your example image, into a vector, and ranks every image by cosine similarity to it. Even with tens of thousands of images, this is one quick matrix multiplication, so there's no separate search index.
 
 The model runs with ONNX Runtime, from an ONNX export of the same weights ([`onnx-community/siglip2-base-patch16-256-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-256-ONNX)). The image half is full precision. The text half is the 8-bit copy, which is a quarter of the size and ranks searches just as well. Both are downloaded once from Hugging Face at a pinned revision, and shared by every folder.
 

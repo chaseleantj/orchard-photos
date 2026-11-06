@@ -101,9 +101,6 @@ class Library:
             self.stats['updated'] = datetime.now(UTC).isoformat()
             self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
             self.scan_state = {'state': 'ready'}
-            # Once the model is on this computer, new images are indexed and grouped without asking.
-            if self.semantic.encoder.downloaded():
-                threading.Thread(target=self.index, daemon=True).start()
         except ScanCancelled:
             self.scan_state = {'state': 'ready'}
         except FolderUnavailable as error:
@@ -113,16 +110,27 @@ class Library:
             self.scan_state = {'state': 'error', 'error': 'The folder could not be read completely. Rescan to retry.'}
         finally:
             self.scan_lock.release()
+            # Once the model is on this computer, new images are indexed and grouped without asking, including those
+            # a failed scan committed before it stopped, since indexing waited for the scan.
+            if not self.closed.is_set() and self.semantic.encoder.downloaded():
+                threading.Thread(target=self.index, daemon=True).start()
+
+    def reading(self) -> bool:
+        """Whether a scan is reading new or changed files, rather than only listing the folder."""
+        return self.scan_state.get('state') == 'scanning' and bool(self.scan_state.get('changed'))
 
     def index(self):
         """Prepare new images for visual search and group near-duplicates. A call made while this runs is folded
-        into another round, so images a scan adds midway are not left waiting for the next scan."""
+        into another round, so images a scan adds midway are not left waiting for the next scan.
+
+        It waits while a scan reads files, which on a laptop share its power, so the scan finishes sooner. The scan
+        calls this again once it is done."""
         self.index_wanted = True
         while self.index_wanted and not self.closed.is_set() and self.semantic_lock.acquire(blocking=False):
             try:
                 self.index_wanted = False
-                self.semantic.index(self.closed.is_set)
-                if not self.closed.is_set() and self.groups.update():
+                self.semantic.index(lambda: self.closed.is_set() or self.reading())
+                if not self.closed.is_set() and not self.reading() and self.groups.update():
                     self.revision += 1
             except Exception:
                 logger.exception('Grouping near-duplicates failed')
