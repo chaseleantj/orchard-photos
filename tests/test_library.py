@@ -1,6 +1,8 @@
 import errno
+import os
 from pathlib import Path
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -8,7 +10,7 @@ from unittest.mock import Mock, patch
 from PIL import Image
 
 from server.cache import connect, preview_path
-from server.library import Library
+from server.library import HEAD_START, Library
 from server.semantic import MODEL, Encoder
 
 
@@ -281,17 +283,33 @@ class LibraryTests(unittest.TestCase):
         self.library.index()
         self.assertEqual(len(runs), 2)
 
-    def test_preparing_waits_while_a_scan_reads_files_but_not_while_it_only_lists(self):
-        stops, grouped = [], []
-        self.library.semantic = SimpleNamespace(index=lambda cancelled: stops.append(cancelled()))
+    def test_preparing_waits_while_a_scan_reads_files_once_it_has_a_head_start(self):
+        stops, grouped, indexed = [], [], [0]
+        self.library.semantic = SimpleNamespace(index=lambda cancelled: stops.append(cancelled()),
+                                                status=lambda: {'indexed': indexed[0]})
         self.library.groups = SimpleNamespace(update=lambda: grouped.append(1))
-        for scan_state, stopped in (({'state': 'scanning', 'found': 500, 'done': 0, 'changed': 0}, False),
-                                    ({'state': 'scanning', 'found': 900, 'done': 48, 'changed': 900}, True),
-                                    ({'state': 'ready'}, False)):
-            with self.subTest(scan_state=scan_state):
-                self.library.scan_state = scan_state
+        listing = {'state': 'scanning', 'found': 500, 'done': 0, 'changed': 0}
+        reading = {'state': 'scanning', 'found': 900, 'done': 48, 'changed': 900}
+        # Near-duplicates are grouped only once the scan has read everything.
+        for scan_state, prepared, stopped, grouping in ((listing, 0, False, True), (reading, HEAD_START - 1, False, False),
+                                                        (reading, HEAD_START, True, False), ({'state': 'ready'}, HEAD_START, False, True)):
+            with self.subTest(scan_state=scan_state, prepared=prepared):
+                self.library.scan_state, indexed[0], before = scan_state, prepared, len(grouped)
                 self.library.index()
-                self.assertEqual((stops[-1], len(grouped)), (stopped, len(stops) - stops.count(True)))
+                self.assertEqual((stops[-1], len(grouped) - before), (stopped, int(grouping)))
+
+    def test_a_scan_starts_preparing_the_newest_images_until_they_have_a_head_start(self):
+        Image.new('RGB', (8, 8)).save(self.folder / 'one.png')
+        self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True)
+        # Once on the scan's commit, and once after the scan.
+        for started, preparing in ((False, 2), (True, 1)):
+            calls = threading.Semaphore(0)
+            with self.subTest(started=started), patch.object(self.library, 'head_started', return_value=started), \
+                    patch.object(self.library, 'index', side_effect=calls.release):
+                os.utime(self.folder / 'one.png', ns=(started + 1, started + 1))
+                self.library.scan()
+                self.assertTrue(all(calls.acquire(timeout=5) for _ in range(preparing)))
+                self.assertFalse(calls.acquire(timeout=.2))
 
     def test_preparing_resumes_after_a_scan_that_fails_partway(self):
         self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True)
