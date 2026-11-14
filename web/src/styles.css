@@ -92,6 +92,9 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .picture { position: absolute; padding: 0; overflow: hidden; border-radius: var(--radius); background: var(--soft); display: block; }
 .picture img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
 .picture:hover img { opacity: .87; }
+/* An image that had to load fades in over the tile's ground, rather than popping onto it. */
+.picture img.arrived { animation: appear var(--motion-slow) var(--ease); }
+@keyframes appear { from { opacity: 0; } }
 .picture:focus-visible { outline-offset: var(--s1); }
 .picture .missing { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); padding: var(--s4); }
 .picture .duration { left: var(--s2); }

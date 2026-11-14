@@ -163,6 +163,12 @@ interface TileProps { item: Picture; index: number; style: React.CSSProperties; 
 const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onPrepare }: TileProps) {
   const [failed, setFailed] = useState(false);
   const resting = useRef(0);
+  // An image that loads after its tile is drawn fades in. One the page already holds, as when scrolling back to it,
+  // is simply there.
+  const image = useRef<HTMLImageElement>(null);
+  const awaited = useRef(false);
+  const [arrived, setArrived] = useState(false);
+  useLayoutEffect(() => { awaited.current = !image.current!.complete; }, []);
   const name = fileName(item.path);
   const label = item.members > 1 ? `Open ${name} and ${plural(item.members - 1, 'near-duplicate')}` : `Open ${name}`;
   // Only a pointer that moves readies the image, so a tile drawn under a still one, as when the viewer closes onto new
@@ -171,7 +177,7 @@ const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onP
     onPointerMove={() => { resting.current ||= window.setTimeout(() => onPrepare(item), PREPARE_DELAY); }}
     onPointerLeave={() => { clearTimeout(resting.current); resting.current = 0; }}
     onPointerDown={() => onPrepare(item)}>
-    {failed ? <span className="missing">Preview unavailable</span> : <img src={imageUrl(item.id)} alt={name} decoding="async" onDragStart={dragImage(item.id)} onError={() => setFailed(true)} />}
+    {failed ? <span className="missing">Preview unavailable</span> : <img ref={image} className={arrived ? 'arrived' : undefined} src={imageUrl(item.id)} alt={name} decoding="async" onDragStart={dragImage(item.id)} onLoad={() => setArrived(awaited.current)} onError={() => setFailed(true)} />}
     {isVideo(item) && <span className="duration" aria-hidden="true"><Play />{item.duration ? durationLabel(item.duration) : null}</span>}
     {item.members > 1 && <span className="members" aria-hidden="true"><Layers />{item.members.toLocaleString()}</span>}
   </button>;
