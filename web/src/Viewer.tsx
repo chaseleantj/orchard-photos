@@ -10,6 +10,10 @@ interface Props {
   items: Picture[]; index: number; total: number; hasMore: boolean; loadingMore: boolean; pageError: string; rootName: string; platform: string; filters: Filters;
   /** The Photos library has no folders, and its photos are shown in Photos rather than Finder. */
   photos: boolean;
+  /** Given for a viewer open over the map: an arrow key then goes to it, to move the way the key points there. */
+  onArrow?: (id: string, key: string) => void;
+  /** Given for a viewer open over the map: where the image sits there, so that closing shrinks it back into place. */
+  home?: (id: string) => { x: number; y: number; size: number } | null;
   onChange: (index: number) => void; onClose: () => void; onSimilar: ((id: string) => void) | null; onFolder: (folder: string) => void;
 }
 // The deepest folders name a place; the rest of a long path is in the tooltip and under Details.
@@ -25,7 +29,7 @@ const dragVideo = (id: string) => (e: React.DragEvent<HTMLVideoElement>) => {
   else dragImage(id)(e);
 };
 
-export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
+export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onArrow, home, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const stackHeading = useId();
   const stage = useRef<HTMLDivElement>(null);
@@ -63,6 +67,18 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     const zooming = zoom.current = stageZoom(stage.current!);
     return () => { node.close(); document.body.style.overflow = previous; focus?.focus(); zooming.stop(); ahead.images.clear(); };
   }, [ahead]);
+  // Closing over the map shrinks the image back to where the map draws it, as the rest of the viewer fades. Anything
+  // that can't be shrunk there, like a video or an image the map doesn't show, closes at once.
+  const close = () => {
+    const image = photo.current, node = dialog.current!;
+    const to = !failed && !matchMedia('(prefers-reduced-motion: reduce)').matches && image ? home?.(front.id) : null;
+    if (!image || !to || node.classList.contains('closing')) { if (!node.classList.contains('closing')) onClose(); return; }
+    zoom.current!.set(null);
+    const box = image.getBoundingClientRect();
+    image.style.setProperty('--home', `translate(${to.x - (box.left + box.width / 2)}px, ${to.y - (box.top + box.height / 2)}px) scale(${to.size / Math.max(box.width, box.height)})`);
+    image.addEventListener('animationend', onClose, { once: true });
+    node.classList.add('closing');
+  };
   const loadDetails = (id: string) => ahead.details(id, () => request<Details>(`/api/images/${id}`));
   const loadStack = (picture: Picture) => ahead.stacks(picture.group, () => request<Results>(`/api/images?${new URLSearchParams({ ...filterParams(filters), group: picture.group })}`).then(data => data.items));
   // Each image starts fitted, with nothing shown that belonged to the one before. A video isn't zoomed.
@@ -122,6 +138,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     if (zoom.current!.key(e) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !ARROWS[e.key]) return;
     // Every arrow is taken, even with nowhere to go, since the Mac window beeps at a key the page leaves.
     e.preventDefault();
+    if (onArrow) { onArrow(front.id, e.key); return; }
     const [kind, direction] = ARROWS[e.key];
     if (kind === 'step') step(direction); else climb(direction);
   };
@@ -147,14 +164,14 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const parts = folder ? folder.split('/') : [rootName];
   // A path too long for its line breaks between folders before it breaks inside a folder's name.
   const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).map(unbroken).join('\u00A0› ');
-  return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose}>
+  return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={e => { e.preventDefault(); close(); }}>
     <div className="viewer-layout">
       <header className="viewer-top"><div className="viewer-navigation">
         <button className="icon-button" aria-label="Previous image" title="Previous image" disabled={!canStep(-1)} onClick={() => step(-1)}><ArrowLeft /></button>
         <span>{(index + 1).toLocaleString()} / {total.toLocaleString()}</span>
         <button className="icon-button" aria-label="Next image" title="Next image" disabled={!canStep(1)} onClick={() => step(1)}><ArrowRight /></button>
       </div><div className="viewer-navigation">
-        <button className="icon-button" aria-label="Close image" title="Close" onClick={onClose}><X /></button>
+        <button className="icon-button" aria-label="Close image" title="Close" onClick={close}><X /></button>
       </div></header>
       {/* One image element for every step: it keeps showing the last image until the next has loaded, so quick
           steps never flash an empty stage, and each new step replaces the load before it. A video plays at once,

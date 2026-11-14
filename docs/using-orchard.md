@@ -63,7 +63,7 @@ Click its folder to show only images from that folder.
 
 Click the image to zoom in where you clicked, and click again to zoom out. While zoomed, drag or scroll with two fingers to move around. Pinch, or press Cmd and plus or minus on a Mac, or Ctrl elsewhere, to zoom around the pointer, and Cmd+0 or Ctrl+0 to fit the image again.
 
-Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer.
+Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer. Over the map, all four arrow keys move to the nearest image that way on the map, and closing the viewer shrinks the image back to its place there.
 
 In Orchard's window on a Mac, drag an image from the grid or the viewer into another app, like Finder, Mail or a website, to give it the original file, as dragging from Finder does. The other app always gets a copy, so the file in your folder stays where it is.
 

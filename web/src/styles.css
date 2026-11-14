@@ -186,6 +186,14 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .viewer[open], .viewer[open]::backdrop { animation: appear var(--motion) var(--ease); }
 .viewer[open] .image-stage { animation: settle var(--motion-slow) var(--ease); }
 @keyframes settle { from { transform: scale(.97); } }
+/* Closing over the map, the viewer clears to show it while the image shrinks back to its place there. */
+.viewer.closing, .viewer.closing::backdrop { animation: clear var(--motion-slow) var(--ease) forwards; }
+.viewer.closing .viewer-top, .viewer.closing .image-details { animation: vanish var(--motion-slow) var(--ease) forwards; }
+.viewer.closing .image-stage { overflow: visible; }
+.viewer.closing .image-stage img { animation: go-home var(--motion-slow) var(--ease) forwards; }
+@keyframes go-home { to { transform: var(--home); opacity: 0; } }
+@keyframes clear { to { background-color: transparent; } }
+@keyframes vanish { to { opacity: 0; } }
 .viewer:focus { outline: none; }
 /* The details column is as wide as a panel, which fits every routine fact on one line, and gives way to the image in a
    smaller window. */

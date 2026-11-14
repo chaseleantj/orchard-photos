@@ -5,6 +5,7 @@ import Gallery from './Gallery';
 import type { GalleryHandle } from './Gallery';
 import Timeline from './Timeline';
 import Embedding from './Embedding';
+import type { MapHandle } from './Embedding';
 import Viewer from './Viewer';
 import { Progress, useEstimate } from './Progress';
 import { Activity, searchWork } from './Activity';
@@ -88,6 +89,7 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const galleryRef = useRef<GalleryHandle>(null);
+  const mapRef = useRef<MapHandle>(null);
   // Each panel opens under its own control, whatever opened it.
   const anchors = { search: useRef<HTMLFormElement>(null), filters: useRef<HTMLButtonElement>(null), library: useRef<HTMLButtonElement>(null), folder: useRef<HTMLButtonElement>(null) };
   const anchor = (name: PanelName) => anchors[name].current;
@@ -350,7 +352,7 @@ export default function App() {
       {offline && <div className="notice error" role="alert"><span>{APP_NAME} is not responding. If you quit it or closed its Terminal window, start it again.</span><button className="text-button secondary" onClick={refreshStatus}>Retry</button></div>}
       {status && !folder ? <div className="empty welcome"><Mark className="welcome-mark" /><h1>Choose a folder of images</h1><p>{APP_NAME} shows every image inside it, including subfolders, and keeps its own cache. Your files are never changed.</p>{status.platform === 'darwin' && !status.photos && <p>Apple Photos libraries are skipped. Export photos to a folder to include them.</p>}<FolderChooser status={status} offerSetup={!status.model.present} onOpened={applyStatus} onSetUp={setUpSearch} /></div>
       : !ready ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
-      : mapped ? <Embedding key={root} noun={countNoun(library)} root={root} filters={filters} highlight={highlight} search={library!.search} condition={condition!} model={status!.model} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onCarry={carry} progress={searchProgress} onSetUp={setUpSearch} onReset={reset} onWaiting={setMapWaiting} /> : <>
+      : mapped ? <Embedding key={root} noun={countNoun(library)} root={root} filters={filters} highlight={highlight} search={library!.search} condition={condition!} model={status!.model} revision={revision + live} filtered={filtered} searching={searching} onOpen={setPicked} onSimilar={findSimilar} onCarry={carry} progress={searchProgress} onSetUp={setUpSearch} onReset={reset} onWaiting={setMapWaiting} ref={mapRef} /> : <>
       {scan?.state === 'error' && <div className="notice error" role="alert"><span>{scan.error}{library!.counts.images ? ' Showing the images from the last scan.' : ''}</span><button className="text-button secondary" onClick={() => setPanel('folder')}>Choose folder</button></div>}
       {error && <div className="notice error" role="alert"><span>{error}</span>{offerSetup ? <button className="text-button secondary" onClick={() => { clearSearch(); setError(''); void setUpSearch(); }}>{setUpLabel}</button> : <button className="text-button secondary" onClick={() => setRevision(r => r + 1)}>Retry</button>}</div>}
       {loading && !items.length ? <div className="skeleton" aria-label="Loading images">{Array.from({ length: 5 }, (_, i) => <span key={i} />)}</div>
@@ -368,7 +370,7 @@ export default function App() {
     {panel === 'folder' && status && <FolderPanel status={status} anchor={anchor('folder')} onOpened={applyStatus} onClose={() => setPanel(null)} />}
     {panel === 'search' && status && <SearchMenu mode={effectiveMode} condition={condition} library={library} model={status.model} anchor={anchor('search')} onMode={next => { setMode(next); if (submitted) setAskedMode(next); }} onSetUp={() => { setMode('visual'); void setUpSearch(); }} onUpload={() => uploadRef.current?.click()} onClose={() => setPanel(null)} />}
     {selected !== null && items[selected] && <Viewer items={items} index={selected} onChange={changeSelected} total={total} hasMore={more} loadingMore={loadingMore} pageError={error} rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} photos={!!folder?.photos} onClose={() => setSelected(null)} onSimilar={visualReady ? findSimilar : null} onFolder={showFolder} />}
-    {picked && <Viewer items={[picked]} index={0} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} photos={!!folder?.photos} onClose={() => setPicked(null)} onSimilar={visualReady ? findSimilar : null} onFolder={showFolder} />}
+    {picked && <Viewer items={[picked]} index={0} onArrow={(id, key) => mapRef.current?.towards(id, key)} home={id => mapRef.current?.place(id) ?? null} onChange={() => {}} total={1} hasMore={false} loadingMore={false} pageError="" rootName={folder?.name ?? ''} platform={status?.platform ?? ''} filters={filters} photos={!!folder?.photos} onClose={() => setPicked(null)} onSimilar={visualReady ? findSimilar : null} onFolder={showFolder} />}
     {carried && <img className="carried" src={imageUrl(carried.id)} alt="" style={{ left: carried.x, top: carried.y }} />}
     <input className="sr-only" ref={uploadRef} type="file" accept="image/*,.heic,.heif" aria-label="Image to match" tabIndex={-1} onChange={e => { if (e.target.files?.[0]) searchWithImage(e.target.files[0]); e.target.value = ''; }} />
   </div>;

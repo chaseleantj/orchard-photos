@@ -6,10 +6,11 @@ const DETAIL = 2;
 const LEAST_MOST = 4;
 const CLICK = 2;
 // How far a pinch's wheel event zooms per unit of travel, and how far one press of Cmd or Ctrl and plus or minus goes.
-const PINCH_RATE = .01;
-// How many times as far as the fingers a pinch zooms, so a short pinch reaches the detail.
+// Both are twice a browser's own pace, so a short pinch or a couple of presses reach the detail.
+const PINCH_RATE = .02;
+// WebKit reports a pinch as the fingers' own scale, which is raised to this to keep that pace.
 const PINCH_GAIN = 2;
-const KEY_STEP = 1.5;
+const KEY_STEP = 2.25;
 // Pointer travel that turns a click into a drag.
 const DRAG_SLOP = 4;
 
@@ -100,7 +101,7 @@ export function stageZoom(stage: HTMLElement): StageZoom {
   // A trackpad pinch arrives as wheel events with ctrlKey. Taking every one keeps the page itself from zooming.
   stage.addEventListener('wheel', event => {
     if (!photo) return;
-    if (event.ctrlKey) { event.preventDefault(); zoomTo(scale * Math.exp(-event.deltaY * PINCH_RATE * PINCH_GAIN), event); return; }
+    if (event.ctrlKey) { event.preventDefault(); zoomTo(scale * Math.exp(-event.deltaY * PINCH_RATE), event); return; }
     // While zoomed two fingers pan, and the rest of that gesture, its momentum included, stays with the stage after
     // a zoom out, so it never reaches the swipe that moves to another image.
     if (!zoomed() && event.timeStamp - wheelAt >= GESTURE_QUIET) return;

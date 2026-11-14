@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine, PER_SHEET } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
@@ -27,6 +27,13 @@ function readCamera(key: string): MapCamera | undefined {
   } catch { /* A missing camera just means the map starts fitted. */ }
 }
 
+/** What a viewer open over the map asks of it. */
+export interface MapHandle {
+  /** Open the nearest image the way an arrow key points from the image shown. */
+  towards: (id: string, key: string) => void;
+  /** Where the map draws an image in the window, as its middle and its size, or null if it doesn't show it. */
+  place: (id: string) => { x: number; y: number; size: number } | null;
+}
 interface Props {
   /** What the library's counts call its contents, from countNoun. */
   noun: string;
@@ -34,9 +41,10 @@ interface Props {
   onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; progress: Estimate; onSetUp: () => void; onReset: () => void;
   /** Hears whether the map is waiting for visual search, and saying so, rather than showing images. */
   onWaiting: (waiting: boolean) => void;
+  ref?: React.Ref<MapHandle>;
 }
 
-export default function Embedding({ noun, root, filters, highlight, search, condition, model, revision, filtered, searching, onOpen, onSimilar, onCarry, progress, onSetUp, onReset, onWaiting }: Props) {
+export default function Embedding({ noun, root, filters, highlight, search, condition, model, revision, filtered, searching, onOpen, onSimilar, onCarry, progress, onSetUp, onReset, onWaiting, ref }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
@@ -141,6 +149,10 @@ export default function Embedding({ noun, root, filters, highlight, search, cond
   const wasLit = useRef(false);
   useEffect(() => { if (phase === 'ready' && wasLit.current && !lit) engine.current?.fit(); wasLit.current = !!lit; }, [lit, phase]);
 
+  useImperativeHandle(ref, () => ({
+    towards: (id, key) => { const next = engine.current?.towards(id, key); if (next) callbacks.current.open(next); },
+    place: id => engine.current?.place(id) ?? null,
+  }), []);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && selectedId) { e.preventDefault(); callbacks.current.open(selectedId); return; }
     if ((e.key === 's' || e.key === 'S') && selectedId && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSimilar(selectedId); return; }
