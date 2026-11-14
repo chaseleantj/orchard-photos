@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
 import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel, unbroken } from './types';
@@ -27,6 +27,7 @@ const dragVideo = (id: string) => (e: React.DragEvent<HTMLVideoElement>) => {
 
 export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const stackHeading = useId();
   const stage = useRef<HTMLDivElement>(null);
   const photo = useRef<HTMLImageElement>(null);
   const zoom = useRef<StageZoom>(null);
@@ -183,8 +184,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           <button className="text-button" onClick={() => show(item.path)}><RevealIcon />{reveal}</button>
         </div>
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
-        {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
-          <h2>{plural(members.length, 'near-duplicate')}</h2>
+        {members.length > 1 && <section className="near-duplicates" aria-labelledby={stackHeading}>
+          <h2 id={stackHeading}>{plural(members.length, 'near-duplicate')}</h2>
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
         </section>}
       </aside>

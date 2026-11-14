@@ -28,24 +28,29 @@ export function searchWork(search: SearchStatus): Work | null {
 /** A job and how far it has got, as one phrase: "Reading images: 1,200 of 7,872". */
 export const workLabel = (work: Work) => work.detail ? `${work.label}: ${work.detail}` : work.label;
 
-/** What visual search is waiting on while it is starting, in the status line's words. */
+/** Why visual search can't answer yet, for where it is chosen. How far along it is stays in the status line. */
 export function waitingOn(library: LibraryStatus) {
-  const work = searchWork(library.search);
-  if (work) return workLabel(work);
-  if (library.scan.state === 'scanning') return 'Ready once your images are read.';
-  return preparing(library.search) ? 'Preparing visual search' : 'Ready once this folder has images.';
+  const { state } = library.search;
+  if (state === 'downloading') return 'Ready once visual search has downloaded.';
+  if (state === 'loading') return 'Ready once visual search has started.';
+  if (library.scan.state === 'scanning' && state !== 'indexing') return 'Ready once your images are read.';
+  return preparing(library.search) ? 'Ready once the first images are prepared.' : 'Ready once this folder has images.';
 }
+
+/** What the page under the status line is already saying, which the line then leaves out: a first scan's progress in
+ *  the grid, visual search's progress or failure in the map, and an offer to set up visual search. */
+export interface Below { scan: boolean; search: boolean; setUp: boolean }
 
 /** Work whose amount done is known, with its bar at the estimate that moves on every second. */
 export const estimated = (work: Work | null, progress: Estimate) => work && work.value !== null ? { ...work, value: progress.value ?? work.value } : work;
 
 /** Background work in the line under the search bar: a spinner, then the job and how far it has got. Each job opens
  *  Info, where the bars and time left are.
- *  Until visual search is set up, the line offers it, and the download's progress then takes its place. A first scan
- *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen. */
-export function Activity({ library, condition, size, gathering, hideError, onOpen, onSetUp }: { library: LibraryStatus; condition: SearchCondition; size: number; gathering: boolean; hideError: boolean; onOpen: () => void; onSetUp: () => void }) {
+ *  Until visual search is set up, the line offers it, and the download's progress then takes its place. Nothing the
+ *  page says `below` is said here too; `hideError` drops a failure already seen. */
+export function Activity({ library, condition, size, below, hideError, onOpen, onSetUp }: { library: LibraryStatus; condition: SearchCondition; size: number; below: Below; hideError: boolean; onOpen: () => void; onSetUp: () => void }) {
   const search = searchWork(library.search);
-  const jobs = [gathering ? null : scanWork(library.scan), search?.error && hideError ? null : search].filter((job): job is Work => !!job);
+  const jobs = [below.scan ? null : scanWork(library.scan), below.search || (search?.error && hideError) ? null : search].filter((job): job is Work => !!job);
   // Setting up visual search ends with a word that it worked; routine preparing of new images ends quietly.
   const [done, setDone] = useState(false);
   const setup = useRef(false);
@@ -63,7 +68,7 @@ export function Activity({ library, condition, size, gathering, hideError, onOpe
     {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
       {!job.error && <LoaderCircle className="spinner" />}<span>{job.detail ? <><span className="wide-only">{job.label}: </span><span className="numbers">{job.detail}</span></> : job.label}</span>
     </button>)}
-    {condition === 'off' && <button className="activity-item" title={`Find images by describing them. Downloads a ${megabytes(size)} MB model once, which runs on this computer.`} onClick={onSetUp}>
+    {condition === 'off' && !below.setUp && <button className="activity-item" title={`Find images by describing them. Downloads a ${megabytes(size)} MB model once, which runs on this computer.`} onClick={onSetUp}>
       <span>{SET_UP}<span className="wide-only"> · {megabytes(size)} MB, once</span></span>
     </button>}
     {ready && <button className="activity-item" title={READY} onClick={onOpen}><span>{READY}</span></button>}
