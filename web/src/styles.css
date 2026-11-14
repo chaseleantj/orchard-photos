@@ -202,8 +202,10 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
 .image-stage video { display: block; max-width: 100%; max-height: 100%; }
-/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
-.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
+/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans.
+   The image keeps a layer of its own, since WebKit, drawing it into the stage's, left strips of it behind on the way
+   back out. */
+.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); will-change: transform; }
 .image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
 .image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
 /* The sidebar has two text styles, both at body size: ink for the name and each fact, muted for what names a fact and
