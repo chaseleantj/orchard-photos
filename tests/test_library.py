@@ -247,7 +247,7 @@ class LibraryTests(unittest.TestCase):
 
     def test_map_requires_prepared_visual_search(self):
         self.image(1)
-        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'state': 'idle'})
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'total': 1, 'state': 'idle', 'downloaded': False})
         with self.assertRaisesRegex(ValueError, 'not set up'):
             self.library.map({})
 
@@ -312,6 +312,21 @@ class LibraryTests(unittest.TestCase):
         # A rescan that finds nothing new leaves it ready.
         self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 0, 'changed': 0}
         self.assertEqual(self.library.status()['search']['state'], 'ready')
+
+    def test_visual_search_waits_once_the_model_is_here_and_images_are_still_to_prepare(self):
+        self.image(1)
+        self.assertEqual(self.library.status()['search']['state'], 'idle')
+        self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True, activity=None, failure=None)
+        self.assertEqual(self.library.status()['search']['state'], 'waiting')
+        with self.assertRaisesRegex(ValueError, 'still getting ready'):
+            self.library.pictures({'q': 'sunset', 'mode': 'visual'})
+        # Before a first scan has read anything, the files it found are waiting too.
+        with connect(self.library.directory, rows=True) as db:
+            db.execute('DELETE FROM files')
+            db.execute('DELETE FROM images')
+        self.assertEqual(self.library.status()['search']['state'], 'idle')
+        self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 0, 'changed': 1000}
+        self.assertEqual(self.library.status()['search']['state'], 'waiting')
 
     def test_scan_counts_revisions_and_reports_a_missing_folder(self):
         Image.new('RGB', (8, 8)).save(self.folder / 'one.png')

@@ -380,8 +380,10 @@ class Scanner:
         """Bring the index in line with the source. Unchanged files are recognised by size and modification time,
         and so are files that could not be read, unless `retry` asks to try them again.
 
-        A file that could not be reached is left out, so the next scan reads it. If the source is gone, or a whole
-        batch could not be reached, the scan stops, and the next one carries on once the source is back."""
+        New and changed files are read newest first, by modification time, so the top of the grid, which is in date
+        order, fills in first. A file that could not be reached is left out, so the next scan reads it. If the source
+        is gone, or a whole batch could not be reached, the scan stops, and the next one carries on once the source is
+        back."""
         self.source.check()
         started = time.monotonic()
         found, unreadable, libraries = self.source.list(progress and (lambda count: progress({'found': count, 'done': 0, 'changed': 0})))
@@ -390,7 +392,8 @@ class Scanner:
             known = {row['path']: (row['size'], row['mtime_ns']) for row in db.execute(
                 'SELECT path, size, mtime_ns FROM files' + (' WHERE error IS NULL' if retry else ''))}
             self._seen = {row[0] for row in db.execute('SELECT id FROM images')}
-        changed = [entry for entry in found if known.get(entry[0]) != (entry[2], entry[3])]
+        changed = sorted((entry for entry in found if known.get(entry[0]) != (entry[2], entry[3])),
+                         key=lambda entry: entry[3], reverse=True)
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
         if progress:
             progress(dict(stats))

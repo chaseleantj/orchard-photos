@@ -247,6 +247,15 @@ class ScannerTests(unittest.TestCase):
         self.assertNotEqual(self.files()['changing.png']['image_id'], old)
         self.assertFalse(thumbnail_path(self.cache, old).exists())
 
+    def test_new_files_are_read_newest_first_by_modification_time(self):
+        for age, name in enumerate(('newest.png', 'middle.png', 'oldest.png')):
+            moment = 1_700_000_000_000_000_000 - age * 86_400_000_000_000
+            os.utime(picture(self.root / name, (age, 0, 0)), ns=(moment, moment))
+        read = []
+        with patch('server.scanner.BATCH', 1):
+            self.scanner.scan(committed=lambda: read.extend(path for path in self.files() if path not in read))
+        self.assertEqual(read, ['newest.png', 'middle.png', 'oldest.png'])
+
     def test_a_missing_folder_keeps_its_cache(self):
         picture(self.root / 'one.png')
         self.scanner.scan()

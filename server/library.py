@@ -151,10 +151,15 @@ class Library:
                 'revision': self.revision}
 
     def search_status(self):
-        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too."""
+        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too.
+        Once the model is on this computer, anything still to prepare that isn't being prepared is 'waiting', for the
+        scan to finish reading or for preparing to start, so 'idle' with a model means there is nothing to do."""
         search = self.semantic.status()
-        if search['state'] == 'ready' and self.scan_state.get('changed', 0) > self.scan_state.get('done', 0):
+        unread = self.scan_state.get('changed', 0) > self.scan_state.get('done', 0)
+        if search['state'] == 'ready' and unread:
             search['state'] = 'idle'
+        if search['state'] == 'idle' and search['downloaded'] and (unread or search['indexed'] < search['total']):
+            search['state'] = 'waiting'
         return search
 
     def filters(self, params):
@@ -220,9 +225,8 @@ class Library:
             return db.execute(sql, values).fetchall()
 
     def require_search(self):
-        search = self.semantic.status()
-        if search['indexed'] == 0:
-            raise ValueError('Visual search is still getting ready.' if search['state'] in ('downloading', 'loading', 'indexing')
+        if self.semantic.status()['indexed'] == 0:
+            raise ValueError('Visual search is still getting ready.' if self.search_status()['state'] in ('waiting', 'downloading', 'loading', 'indexing')
                              else 'Visual search is not set up yet.')
 
     def pictures(self, params, image_bytes=None):
