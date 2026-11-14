@@ -112,7 +112,7 @@ export function LibraryPanel({ status, condition, shown, narrowed, scanProgress,
     {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
     {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
     {!!library.unreached && <p>{plural(library.unreached, 'file')} could not be reached. Each scan tries {library.unreached === 1 ? 'it' : 'them'} again.</p>}
-    {scanning && <Progress value={scanProgress.value} label="Reading images" />}
+    {scanning && <Progress value={scanProgress.value} label="Reading images" steady />}
     {scanning && <p>{scanLabel}</p>}
     {scan.error && <p className="error-copy">{scan.error}</p>}
     <hr className="rule" /><h3>Visual search</h3>
@@ -124,7 +124,7 @@ export function LibraryPanel({ status, condition, shown, narrowed, scanProgress,
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>
     </> : work ? <>
       <p>{work.label}{work.detail && <span className="numbers"> · {work.detail}</span>}</p>
-      <Progress value={work.value} label={work.label} />
+      <Progress value={work.value} label={work.label} steady />
       {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
       {search.state === 'indexing' && (!!searchProgress.left || !!search.indexed) && <p>{[searchProgress.left && `${searchProgress.left}.`, search.indexed && 'Prepared images can be searched already.'].filter(Boolean).join(' ')}</p>}
     </> : search.state === 'waiting' ? <p>{unprepared} to prepare{scanning ? ' once reading finishes' : ''}.{search.indexed ? ' Prepared images can be searched already.' : ''}</p>
