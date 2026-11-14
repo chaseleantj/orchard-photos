@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-/** A thin bar for work that takes a while. Omit `value` when the amount done is unknown. */
-export function Progress({ value, label }: { value?: number | null; label: string }) {
+/** A thin bar for work that takes a while. Omit `value` when the amount done is unknown. `steady` is for a value from
+ *  useEstimate, which moves on every TICK: the bar takes that long to reach it, so it never stops between two. */
+export function Progress({ value, label, steady }: { value?: number | null; label: string; steady?: boolean }) {
   const known = typeof value === 'number';
   return <div className="progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={known ? Math.round(value * 100) : undefined} data-indeterminate={known ? undefined : ''}>
-    <span style={known ? { width: `${Math.max(0, Math.min(1, value)) * 100}%` } : undefined} />
+    <span style={known ? { width: `${Math.max(0, Math.min(1, value)) * 100}%`, transition: steady ? `width ${TICK}ms linear` : undefined } : undefined} />
   </div>;
 }
 

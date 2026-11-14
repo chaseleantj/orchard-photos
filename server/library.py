@@ -32,6 +32,9 @@ VIDEO_MIMES = VIDEO_TYPE + '/%'
 PREVIEW_EDGE = 4096
 # The most a viewer's time zone can be from UTC, in minutes.
 MAX_OFFSET = 1440
+# How many of the newest images are prepared for visual search while a scan still reads files, so a large folder can
+# be searched soon after it opens. The rest wait for the scan, which on a laptop shares their power.
+HEAD_START = 300
 logger = logging.getLogger(__name__)
 
 
@@ -97,6 +100,8 @@ class Library:
 
             def committed():
                 self.revision += 1
+                if not self.closed.is_set() and self.semantic.encoder.downloaded() and not self.head_started():
+                    threading.Thread(target=self.index, daemon=True).start()
             self.stats = self.scanner.scan(progress, committed, self.closed.is_set, retry)
             self.stats['updated'] = datetime.now(UTC).isoformat()
             self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
@@ -119,17 +124,21 @@ class Library:
         """Whether a scan is reading new or changed files, rather than only listing the folder."""
         return self.scan_state.get('state') == 'scanning' and bool(self.scan_state.get('changed'))
 
+    def head_started(self) -> bool:
+        """Whether visual search has the head start it may take while a scan reads files."""
+        return self.semantic.status()['indexed'] >= HEAD_START
+
     def index(self):
         """Prepare new images for visual search and group near-duplicates. A call made while this runs is folded
         into another round, so images a scan adds midway are not left waiting for the next scan.
 
-        It waits while a scan reads files, which on a laptop share its power, so the scan finishes sooner. The scan
-        calls this again once it is done."""
+        While a scan reads files, which on a laptop share its power, it prepares only the first HEAD_START images, then
+        waits, so the scan finishes sooner. The scan calls this again once it is done."""
         self.index_wanted = True
         while self.index_wanted and not self.closed.is_set() and self.semantic_lock.acquire(blocking=False):
             try:
                 self.index_wanted = False
-                self.semantic.index(lambda: self.closed.is_set() or self.reading())
+                self.semantic.index(lambda: self.closed.is_set() or (self.reading() and self.head_started()))
                 if not self.closed.is_set() and not self.reading() and self.groups.update():
                     self.revision += 1
             except Exception:
@@ -151,10 +160,15 @@ class Library:
                 'revision': self.revision}
 
     def search_status(self):
-        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too."""
+        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too.
+        Once the model is on this computer, anything still to prepare that isn't being prepared is 'waiting', for the
+        scan to finish reading or for preparing to start, so 'idle' with a model means there is nothing to do."""
         search = self.semantic.status()
-        if search['state'] == 'ready' and self.scan_state.get('changed', 0) > self.scan_state.get('done', 0):
+        unread = self.scan_state.get('changed', 0) > self.scan_state.get('done', 0)
+        if search['state'] == 'ready' and unread:
             search['state'] = 'idle'
+        if search['state'] == 'idle' and search['downloaded'] and (unread or search['indexed'] < search['total']):
+            search['state'] = 'waiting'
         return search
 
     def filters(self, params):
@@ -220,9 +234,8 @@ class Library:
             return db.execute(sql, values).fetchall()
 
     def require_search(self):
-        search = self.semantic.status()
-        if search['indexed'] == 0:
-            raise ValueError('Visual search is still getting ready.' if search['state'] in ('downloading', 'loading', 'indexing')
+        if self.semantic.status()['indexed'] == 0:
+            raise ValueError('Visual search is still getting ready.' if self.search_status()['state'] in ('waiting', 'downloading', 'loading', 'indexing')
                              else 'Visual search is not set up yet.')
 
     def pictures(self, params, image_bytes=None):

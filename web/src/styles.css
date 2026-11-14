@@ -10,12 +10,14 @@
   --radius: 4px; --control-radius: 8px; --surface-radius: 12px; --pill: 100px;
   /* Two control heights: one nested inside another control, one for everything else. */
   --control: 40px; --control-nested: 32px; --motion: 180ms; --motion-slow: 320ms; --ease: cubic-bezier(.2,.7,.2,1); --shadow: 0 8px 40px #00000014;
-  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --detail-width: 300px; --empty-height: 55vh; --icon: 18px;
+  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --empty-height: 55vh; --icon: 18px;
   /* How far an icon sits inside its button. Text and the timeline's years at the right end there too, so the right
      edge lines up down the page. */
   --inset: calc((var(--control) - var(--icon)) / 2);
   color: var(--ink); background: var(--bg); color-scheme: light;
 }
+/* Switching between light and dark cross-fades the whole page. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--motion-slow); animation-timing-function: var(--ease); }
 :root[data-theme='dark'] { --bg: #171816; --surface: #21221f; --soft: #292a26; --ink: #ebebe5; --muted: #a6a89e; --line: #44453e; --focus: #b1bea5; --danger: #ef9c88; --shadow: 0 8px 40px #00000040; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -80,12 +82,14 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
 .library-meta :focus-visible { outline-offset: -2px; }
-/* Background work sits beside the count it is changing: a short bar and what it is doing. */
+/* Background work sits beside the count it is changing: a spinner while it runs, then what it is doing. Each job
+   fades in as it starts. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
-.activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; }
+.activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; animation: appear var(--motion-slow) var(--ease); }
 .activity-item:hover { background: var(--soft); color: var(--ink); }
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
-.activity-item .progress { width: var(--s8); flex-shrink: 0; }
+.spinner { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .gallery { margin: 0 var(--page); position: relative; }
 .gallery:focus { outline: none; }
 /* A month heading over each run of images; the grid restarts under it. */
@@ -93,6 +97,9 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .picture { position: absolute; padding: 0; overflow: hidden; border-radius: var(--radius); background: var(--soft); display: block; }
 .picture img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
 .picture:hover img { opacity: .87; }
+/* An image that had to load fades in over the tile's ground, rather than popping onto it. */
+.picture img.arrived { animation: appear var(--motion-slow) var(--ease); }
+@keyframes appear { from { opacity: 0; } }
 .picture:focus-visible { outline-offset: var(--s1); }
 .picture .missing { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); padding: var(--s4); }
 .picture .duration { left: var(--s2); }
@@ -122,7 +129,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .skeleton span:nth-child(2n) { height: 90%; }
 /* Panels open under the control that opened them; App places them. The header stays put while the body scrolls. */
 .panel { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--surface-radius); padding: 0; width: var(--panel-width); box-shadow: var(--shadow); margin: 0; position: fixed; inset: var(--s20) var(--page) auto auto; max-height: calc(100dvh - var(--s20) - var(--s6)); overflow: hidden; }
-.panel[open] { display: flex; flex-direction: column; }
+/* A panel eases down out of the control that opened it. */
+.panel[open] { display: flex; flex-direction: column; animation: panel-in var(--motion) var(--ease); }
+@keyframes panel-in { from { opacity: 0; transform: translateY(calc(var(--s2) * -1)); } }
 .panel:focus { outline: none; }
 .panel::backdrop { background: transparent; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s3) var(--s2) var(--s6); border-bottom: 1px solid transparent; transition: border-color var(--motion) var(--ease); }
@@ -161,32 +170,56 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* A link inside a sentence, for an action the sentence names. */
 .inline-link { padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .inline-link:hover:not(:disabled) { color: var(--ink); }
+/* Named values, one to a row: what each is, in muted, then the value. Info's ledger and the viewer's facts share these
+   rows, whose padding sets lines of one value closer together than two rows are. */
+.counts, .facts { display: grid; }
+.counts dt, .counts dd, .facts dt, .facts dd { margin: 0; padding: var(--s1) 0; }
+.counts dt, .facts dt { color: var(--muted); }
 /* A ledger: each row taken from the one above, ending at what the grid shows. */
-.counts { display: grid; grid-template-columns: 1fr auto; margin: var(--s4) 0; }
-.counts dt, .counts dd { padding: var(--s1) 0; }
-.counts dt { color: var(--muted); }
-.counts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.counts { grid-template-columns: 1fr auto; margin: var(--s4) 0; }
+.counts dd { text-align: right; font-variant-numeric: tabular-nums; }
 .counts .total { border-top: 1px solid var(--line); margin-top: var(--s1); padding-top: var(--s2); color: var(--ink); }
 .rule { border: 0; border-top: 1px solid var(--line); margin: var(--s6) 0; }
 .viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; padding: 0; border: none; margin: 0; background: var(--bg); color: var(--ink); }
 .viewer::backdrop { background: var(--bg); }
+/* The viewer fades in over the grid while its image settles to size. */
+.viewer[open], .viewer[open]::backdrop { animation: appear var(--motion) var(--ease); }
+.viewer[open] .image-stage { animation: settle var(--motion-slow) var(--ease); }
+@keyframes settle { from { transform: scale(.97); } }
+/* Closing over the map, the viewer clears to show it while the image shrinks back to its place there. */
+.viewer.closing, .viewer.closing::backdrop { animation: clear var(--motion-slow) var(--ease) forwards; }
+.viewer.closing .viewer-top, .viewer.closing .image-details { animation: vanish var(--motion-slow) var(--ease) forwards; }
+.viewer.closing .image-stage { overflow: visible; }
+.viewer.closing .image-stage img { animation: go-home var(--motion-slow) var(--ease) forwards; }
+@keyframes go-home { to { transform: var(--home); opacity: 0; } }
+@keyframes clear { to { background-color: transparent; } }
+@keyframes vanish { to { opacity: 0; } }
 .viewer:focus { outline: none; }
-.viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--detail-width); grid-template-rows: var(--s20) minmax(0,1fr); }
+/* The details column is as wide as a panel, which fits every routine fact on one line, and gives way to the image in a
+   smaller window. */
+.viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 30vw, var(--panel-width)); grid-template-rows: var(--s20) minmax(0,1fr); }
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
 .image-stage video { display: block; max-width: 100%; max-height: 100%; }
-/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans. */
-.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
+/* Zoom scales the fitted image in place, around the pointer: a click zooms in, another zooms out, and a drag pans.
+   The image keeps a layer of its own, since WebKit, drawing it into the stage's, left strips of it behind on the way
+   back out. */
+.image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); will-change: transform; }
 .image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
 .image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
-/* The sidebar has two text styles, both at body size: ink for the name and path, muted for everything else. */
-.image-details { padding: var(--s8); overflow: auto; color: var(--muted); }
+/* The sidebar has two text styles, both at body size: ink for the name and each fact, muted for what names a fact and
+   for notes. Its text starts level with the top of the stage, so it lines up with a tall image, and ends at the page's
+   margin, under the header's last button. */
+.image-details { padding: 0 var(--page) var(--s8) var(--s8); overflow: auto; color: var(--muted); }
 .image-details h1 { margin: 0; font: inherit; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .image-details p { margin: 0; }
-.detail-summary { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
-.crumbs { padding: 0; text-align: left; color: var(--muted); overflow-wrap: anywhere; }
-.crumbs:hover { color: var(--ink); }
+/* The facts about a file: what each is, then the fact, in Info's rows. The folder is a link that shows only that folder. */
+.facts { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); margin: var(--s4) 0 0; }
+.facts dd { color: var(--ink); overflow-wrap: anywhere; }
+.facts .inline-link { text-align: left; text-decoration-color: var(--muted); transition: text-decoration-color var(--motion) var(--ease); }
+.facts .inline-link:hover { text-decoration-color: currentColor; }
+.facts + p { margin-top: var(--s3); }
 /* Pulled left so the icons line up with the text above, not their hit areas. */
 .detail-actions { display: flex; flex-direction: column; align-items: flex-start; margin: var(--s4) 0 0 calc(var(--s3) * -1); }
 .detail-status { min-height: 1.5em; }
@@ -258,8 +291,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }
- /* One job at a time on a phone, as a bar and its name. */
- .activity-item:not(:first-of-type), .activity-item:not(.error-copy) > span { display: none; }
+ /* One job at a time on a phone, as its numbers, which the count beside it gives way to. */
+ .activity { flex-shrink: 0; }
+ .activity-item:not(:first-of-type), .activity-item .wide-only { display: none; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */
  .timeline { display: none; }
@@ -269,4 +303,4 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  .image-stage { flex: 0 0 52dvh; margin: 0 var(--page); }
  .image-details { overflow: visible; padding: var(--s6) var(--page); }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }

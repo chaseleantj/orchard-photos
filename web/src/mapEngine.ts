@@ -2,6 +2,8 @@ import type { Picture } from './types';
 import { imageUrl, isVideo } from './types';
 
 export interface MapPoint extends Picture { x: number; y: number; slot: number }
+/** The way each arrow key points on the map. */
+const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 export interface MapCamera { x: number; y: number; zoom: number }
 export interface MapCallbacks {
   /** The keyboard's current image, or none. */
@@ -267,17 +269,39 @@ export class MapEngine {
 
   /** Move to the nearest image in a direction, within a 50 degree cone. */
   step(dx: number, dy: number) {
-    if (this.selected < 0) return;
-    const from = this.points[this.selected];
+    const best = this.neighbour(this.selected, dx, dy);
+    if (best >= 0) this.select(this.points[best].id, true);
+  }
+
+  /** Move from an image to the nearest one the way an arrow key points, for a viewer open over the map. Returns the
+   *  image moved to, or null with none that way. */
+  towards(id: string, key: string) {
+    const best = key in ARROWS ? this.neighbour(this.index.get(id) ?? -1, ...ARROWS[key]) : -1;
+    if (best < 0) return null;
+    this.select(this.points[best].id, true);
+    return this.points[best].id;
+  }
+
+  /** Where an image is drawn in the window, as its middle and its size, or null if the map doesn't show it. */
+  place(id: string) {
+    const i = this.index.get(id) ?? -1;
+    if (i < 0 || (this.members && !this.members.has(i))) return null;
+    const p = this.points[i], box = this.canvas.getBoundingClientRect();
+    return { x: box.left + (p.x - this.cam.x) * this.cam.k + this.w / 2, y: box.top + (p.y - this.cam.y) * this.cam.k + this.h / 2, size: this.iconSize() };
+  }
+
+  private neighbour(start: number, dx: number, dy: number) {
+    if (start < 0) return -1;
+    const from = this.points[start];
     let best = -1, bestScore = Infinity;
     this.points.forEach((p, i) => {
-      if (i === this.selected || (this.members && !this.members.has(i))) return;
+      if (i === start || (this.members && !this.members.has(i))) return;
       const ax = p.x - from.x, ay = p.y - from.y, along = ax * dx + ay * dy, across = Math.abs(ax * dy - ay * dx);
       if (along <= 1e-6 || across > along * 1.2) return;
       const score = along + across * 0.6;
       if (score < bestScore) { bestScore = score; best = i; }
     });
-    if (best >= 0) this.select(this.points[best].id, true);
+    return best;
   }
 
   /** The image nearest the middle of the view. */
@@ -634,10 +658,9 @@ export class MapEngine {
   // ---- Keyboard --------------------------------------------------------------------------------
 
   key(e: KeyboardEvent) {
-    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
-    if (e.key in arrows) {
-      const [dx, dy] = arrows[e.key];
+    if (e.key in ARROWS) {
+      const [dx, dy] = ARROWS[e.key];
       if (this.selected >= 0 && !e.shiftKey) this.step(dx, dy); else this.panBy(dx * 120, dy * 120, false);
     } else if (e.key === '+' || e.key === '=') this.zoomBy(1.6);
     else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.6);

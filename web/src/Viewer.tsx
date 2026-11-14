@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
-import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel } from './types';
+import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel, unbroken } from './types';
 import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
@@ -10,6 +10,10 @@ interface Props {
   items: Picture[]; index: number; total: number; hasMore: boolean; loadingMore: boolean; pageError: string; rootName: string; platform: string; filters: Filters;
   /** The Photos library has no folders, and its photos are shown in Photos rather than Finder. */
   photos: boolean;
+  /** Given for a viewer open over the map: an arrow key then goes to it, to move the way the key points there. */
+  onArrow?: (id: string, key: string) => void;
+  /** Given for a viewer open over the map: where the image sits there, so that closing shrinks it back into place. */
+  home?: (id: string) => { x: number; y: number; size: number } | null;
   onChange: (index: number) => void; onClose: () => void; onSimilar: ((id: string) => void) | null; onFolder: (folder: string) => void;
 }
 // The deepest folders name a place; the rest of a long path is in the tooltip and under Details.
@@ -25,12 +29,12 @@ const dragVideo = (id: string) => (e: React.DragEvent<HTMLVideoElement>) => {
   else dragImage(id)(e);
 };
 
-export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onChange, onClose, onSimilar, onFolder }: Props) {
+export default function Viewer({ items, index, total, hasMore, loadingMore, pageError, rootName, platform, filters, photos, onArrow, home, onChange, onClose, onSimilar, onFolder }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const stackHeading = useId();
   const stage = useRef<HTMLDivElement>(null);
   const photo = useRef<HTMLImageElement>(null);
   const zoom = useRef<StageZoom>(null);
-  const [zoomed, setZoomed] = useState(false);
   const [loaded, setLoaded] = useState<Details | null>(null);
   const [error, setError] = useState('');
   const [failed, setFailed] = useState(false);
@@ -60,9 +64,21 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     node.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const zooming = zoom.current = stageZoom(stage.current!, setZoomed);
+    const zooming = zoom.current = stageZoom(stage.current!);
     return () => { node.close(); document.body.style.overflow = previous; focus?.focus(); zooming.stop(); ahead.images.clear(); };
   }, [ahead]);
+  // Closing over the map shrinks the image back to where the map draws it, as the rest of the viewer fades. Anything
+  // that can't be shrunk there, like a video or an image the map doesn't show, closes at once.
+  const close = () => {
+    const image = photo.current, node = dialog.current!;
+    const to = !failed && !matchMedia('(prefers-reduced-motion: reduce)').matches && image ? home?.(front.id) : null;
+    if (!image || !to || node.classList.contains('closing')) { if (!node.classList.contains('closing')) onClose(); return; }
+    zoom.current!.set(null);
+    const box = image.getBoundingClientRect();
+    image.style.setProperty('--home', `translate(${to.x - (box.left + box.width / 2)}px, ${to.y - (box.top + box.height / 2)}px) scale(${to.size / Math.max(box.width, box.height)})`);
+    image.addEventListener('animationend', onClose, { once: true });
+    node.classList.add('closing');
+  };
   const loadDetails = (id: string) => ahead.details(id, () => request<Details>(`/api/images/${id}`));
   const loadStack = (picture: Picture) => ahead.stacks(picture.group, () => request<Results>(`/api/images?${new URLSearchParams({ ...filterParams(filters), group: picture.group })}`).then(data => data.items));
   // Each image starts fitted, with nothing shown that belonged to the one before. A video isn't zoomed.
@@ -122,6 +138,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     if (zoom.current!.key(e) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !ARROWS[e.key]) return;
     // Every arrow is taken, even with nowhere to go, since the Mac window beeps at a key the page leaves.
     e.preventDefault();
+    if (onArrow) { onArrow(front.id, e.key); return; }
     const [kind, direction] = ARROWS[e.key];
     if (kind === 'step') step(direction); else climb(direction);
   };
@@ -145,16 +162,16 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     return () => { node.removeEventListener('wheel', wheel); window.removeEventListener('keydown', keydown); };
   }, []);
   const parts = folder ? folder.split('/') : [rootName];
-  const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
-  return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose}>
+  // A path too long for its line breaks between folders before it breaks inside a folder's name.
+  const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).map(unbroken).join('\u00A0› ');
+  return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={e => { e.preventDefault(); close(); }}>
     <div className="viewer-layout">
       <header className="viewer-top"><div className="viewer-navigation">
         <button className="icon-button" aria-label="Previous image" title="Previous image" disabled={!canStep(-1)} onClick={() => step(-1)}><ArrowLeft /></button>
         <span>{(index + 1).toLocaleString()} / {total.toLocaleString()}</span>
         <button className="icon-button" aria-label="Next image" title="Next image" disabled={!canStep(1)} onClick={() => step(1)}><ArrowRight /></button>
       </div><div className="viewer-navigation">
-        {!video && <button className="icon-button" aria-label={zoomed ? 'Fit to screen' : 'Zoom in'} aria-keyshortcuts={zoomed ? 'Escape' : undefined} title={zoomed ? 'Fit to screen (Esc)' : 'Zoom in'} onClick={() => zoom.current!.toggle()}>{zoomed ? <ZoomOut /> : <ZoomIn />}</button>}
-        <button className="icon-button" aria-label="Close image" title="Close" onClick={onClose}><X /></button>
+        <button className="icon-button" aria-label="Close image" title="Close" onClick={close}><X /></button>
       </div></header>
       {/* One image element for every step: it keeps showing the last image until the next has loaded, so quick
           steps never flash an empty stage, and each new step replaces the load before it. A video plays at once,
@@ -165,13 +182,16 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={fail} />}
       </div>
       <aside className="image-details">
-        <div className="detail-summary">
-          <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
-          <p>{item.dated === 'taken' ? 'Taken' : 'Modified'} {dateLabel(item.date, true)}</p>
-          <button className="crumbs" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button>
-          <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()}{item.duration ? ` · ${durationLabel(item.duration)}` : ''} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
-          {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
-        </div>
+        <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
+        {/* One fact to a row, each named. The file's type is the end of its name, so it has no row. */}
+        <dl className="facts">
+          <dt>{item.dated === 'taken' ? 'Taken' : 'Modified'}</dt><dd>{dateLabel(item.date, true)}</dd>
+          {!photos && <><dt>Folder</dt><dd><button className="inline-link" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button></dd></>}
+          <dt>Dimensions</dt><dd className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()}</dd>
+          {!!item.duration && <><dt>Length</dt><dd className="numbers">{durationLabel(item.duration)}</dd></>}
+          <dt>Size</dt><dd className="numbers">{sizeLabel(item.size)}</dd>
+        </dl>
+        {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         <div className="detail-actions">
           {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
           {!video && <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>}
@@ -179,8 +199,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           <button className="text-button" onClick={() => show(item.path)}><RevealIcon />{reveal}</button>
         </div>
         <p className={error || pageError ? 'detail-status error-copy' : 'detail-status'} role="status">{error || pageError || (copied?.id === item.id ? copied.note : '')}</p>
-        {members.length > 1 && <section className="near-duplicates" aria-label="Near-duplicates">
-          <h2>{plural(members.length, 'near-duplicate')}</h2>
+        {members.length > 1 && <section className="near-duplicates" aria-labelledby={stackHeading}>
+          <h2 id={stackHeading}>{plural(members.length, 'near-duplicate')}</h2>
           <ul>{members.map((member, place) => <li key={member.id}><button aria-pressed={place === shown} aria-label={`Show ${fileName(member.path)}`} onClick={() => showMember(place)}><img src={imageUrl(member.id)} alt="" decoding="async" onDragStart={dragImage(member.id)} /></button></li>)}</ul>
         </section>}
       </aside>

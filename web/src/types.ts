@@ -11,12 +11,20 @@ export interface Filters { folder: string; type: string; range: Range; from: str
 export interface Picture { id: string; width: number; height: number; mime: string; size: number; duration: number | null; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 interface FileCopy { path: string; modified: string }
 export interface Details { id: string; width: number; height: number; mime: string; size: number; duration: number | null; taken: string | null; camera: string | null; root: string; source: 'folder' | 'photos'; files: FileCopy[]; preview: boolean }
-/** `received` and `size` are bytes, sent while the model downloads. */
-export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
-/** Visual queries can be answered: some images are prepared. */
-export const searchable = (search: SearchStatus) => search.indexed > 0;
-/** Visual search is downloading, starting, or preparing images for the first time. */
-export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
+/** `received` and `size` are bytes, sent while the model downloads. `waiting` means the model is here and images are
+ *  still to prepare, but none are being prepared right now, usually because a scan is reading files. */
+export interface SearchStatus { state: 'idle' | 'waiting' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
+/** Visual search is fetching, starting or preparing images, or about to. */
+export const preparing = (search: SearchStatus) => ['waiting', 'downloading', 'loading', 'indexing'].includes(search.state);
+/** Where visual search stands, for every part of the page: `off` until it is set up, `starting` while it is on its way
+ *  but can't answer yet, `on` once some images are prepared, even while more are, and `failed` when setting up failed
+ *  before any were. */
+export type SearchCondition = 'off' | 'starting' | 'on' | 'failed';
+export function searchCondition(model: Model, search: SearchStatus): SearchCondition {
+  if (search.indexed > 0) return 'on';
+  if (search.state === 'error') return 'failed';
+  return model.present ? 'starting' : 'off';
+}
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
   /** `images` counts videos too, and `videos` how many of them are videos. */
@@ -92,8 +100,13 @@ export function savePreferences(preferences: Preferences) {
   try { localStorage.setItem(STORAGE, JSON.stringify(preferences)); } catch { /* Browsing remains available without storage. */ }
 }
 
+/** Text that stays on one line: where a longer line has to break, it breaks beside this rather than inside it. */
+export const unbroken = (text: string) => text.replace(/ /g, '\u00A0');
+/** A date as "Jun 12, 2026". With `full`, the time follows it, and a line too short for both breaks between them. */
 export function dateLabel(date: string, full = false) {
-  return new Date(date).toLocaleString(undefined, full ? { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' } : { year: 'numeric', month: 'short', day: 'numeric' });
+  const moment = new Date(date);
+  const day = moment.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return full ? `${unbroken(day)}, ${unbroken(moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))}` : day;
 }
 /** A month as the grid's headings and the timeline name it, like "June 2026". */
 export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month: 'long', year: 'numeric' });

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MapEngine, PER_SHEET } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
-import { APP_NAME, SET_UP, filterParams, megabytes, plural, request, storageKey } from './types';
+import { APP_NAME, SET_UP, filterParams, megabytes, plural, preparing, request, storageKey } from './types';
 import { type Estimate, Progress } from './Progress';
 import { estimated, searchWork } from './Activity';
-import type { Filters, Model, SearchStatus } from './types';
+import type { Filters, Model, SearchCondition, SearchStatus } from './types';
 
 interface Working { state: string; stage?: string; error?: string }
 interface MapData { points: MapPoint[]; pending: number; omitted: number; sheets: string[]; layout: Working }
@@ -27,14 +27,24 @@ function readCamera(key: string): MapCamera | undefined {
   } catch { /* A missing camera just means the map starts fitted. */ }
 }
 
+/** What a viewer open over the map asks of it. */
+export interface MapHandle {
+  /** Open the nearest image the way an arrow key points from the image shown. */
+  towards: (id: string, key: string) => void;
+  /** Where the map draws an image in the window, as its middle and its size, or null if it doesn't show it. */
+  place: (id: string) => { x: number; y: number; size: number } | null;
+}
 interface Props {
   /** What the library's counts call its contents, from countNoun. */
   noun: string;
-  root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; model: Model; scanning: boolean; revision: number; filtered: boolean; searching: boolean;
+  root: string; filters: Filters; highlight: string[] | null; search: SearchStatus; condition: SearchCondition; model: Model; revision: number; filtered: boolean; searching: boolean;
   onOpen: (point: MapPoint) => void; onSimilar: (id: string) => void; onCarry: MapCallbacks['onCarry']; progress: Estimate; onSetUp: () => void; onReset: () => void;
+  /** Hears whether the map is waiting for visual search, and saying so, rather than showing images. */
+  onWaiting: (waiting: boolean) => void;
+  ref?: React.Ref<MapHandle>;
 }
 
-export default function Embedding({ noun, root, filters, highlight, search, model, scanning, revision, filtered, searching, onOpen, onSimilar, onCarry, progress, onSetUp, onReset }: Props) {
+export default function Embedding({ noun, root, filters, highlight, search, condition, model, revision, filtered, searching, onOpen, onSimilar, onCarry, progress, onSetUp, onReset, onWaiting, ref }: Props) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<MapEngine | null>(null);
@@ -49,12 +59,12 @@ export default function Embedding({ noun, root, filters, highlight, search, mode
   const shown = useRef({ key: '', sheets: '' });
   // Each folder has its own map, and each filter its own remembered view of it.
   const key = JSON.stringify({ root, ...filterParams(filters) });
-  const unprepared = search.indexed === 0;
-  // With the model on this computer, images still being found or waiting for their turn are indexed without asking.
-  const preparing = search.state === 'downloading' || search.state === 'loading' || search.state === 'indexing' || (search.downloaded && search.state === 'idle' && (scanning || search.indexed < search.total));
+  const unprepared = condition !== 'on';
+  const filling = preparing(search);
   const work = estimated(searchWork(search), progress);
   // A folder's first map waits for all of its images, so its first layout is the real one.
-  const holding = preparing && !data;
+  const holding = filling && !data;
+  useEffect(() => { onWaiting(holding); return () => onWaiting(false); }, [holding, onWaiting]);
   const byId = useMemo(() => new Map((data?.points ?? []).map(p => [p.id, p])), [data]);
   const callbacks = useRef({ open: (id: string) => { const point = byId.get(id); if (point) onOpen(point); }, carry: onCarry });
   callbacks.current = { open: (id: string) => { const point = byId.get(id); if (point) onOpen(point); }, carry: onCarry };
@@ -130,7 +140,7 @@ export default function Embedding({ noun, root, filters, highlight, search, mode
     })().catch(e => { if (e.name !== 'AbortError') { setError(e instanceof TypeError ? `${APP_NAME} could not be reached. Check that it is running, then retry.` : e.message); setPhase('error'); } });
     return () => controller.abort();
     // The map reloads when the folder or filters change, a scan lands, or the user retries; search only lights points up.
-  }, [key, revision, retry, unprepared, preparing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, revision, retry, unprepared, filling]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lit = highlight;
   useEffect(() => { if (phase === 'ready') engine.current?.setHighlight(lit); }, [lit, phase, data]);
@@ -139,6 +149,10 @@ export default function Embedding({ noun, root, filters, highlight, search, mode
   const wasLit = useRef(false);
   useEffect(() => { if (phase === 'ready' && wasLit.current && !lit) engine.current?.fit(); wasLit.current = !!lit; }, [lit, phase]);
 
+  useImperativeHandle(ref, () => ({
+    towards: (id, key) => { const next = engine.current?.towards(id, key); if (next) callbacks.current.open(next); },
+    place: id => engine.current?.place(id) ?? null,
+  }), []);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && selectedId) { e.preventDefault(); callbacks.current.open(selectedId); return; }
     if ((e.key === 's' || e.key === 'S') && selectedId && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSimilar(selectedId); return; }
@@ -151,15 +165,15 @@ export default function Embedding({ noun, root, filters, highlight, search, mode
     {phase === 'loading' && !unprepared && !holding && <div className="map-placeholder" role="status" aria-label="Placing images">{placeholder.map((p, i) => <span key={i} style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }} />)}</div>}
     {slow && busy && <div className="map-progress"><Progress value={working ? null : sheetsLoaded} label={working?.stage || 'Loading the map'} /></div>}
     {slow && working && <p className="map-note" role="status">{working.stage}…</p>}
-    {unprepared && !preparing && (search.state === 'error'
-      ? <div className="empty map-message" role="alert"><h1>{work?.label ?? 'Visual search couldn’t start'}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>
-      : <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a {megabytes(model.size)} MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>{SET_UP}</button></div>)}
-    {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
-      <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${plural(search.total, noun)} ready. The map opens when they all are.`}{progress.left && ` ${progress.left}.`}</p>
-      <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" /></div></div>}
+    {condition === 'failed' && <div className="empty map-message" role="alert"><h1>{work?.label}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>}
+    {condition === 'off' && <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a {megabytes(model.size)} MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>{SET_UP}</button></div>}
+    {holding && <div className="empty map-message" role="status"><h1>{work?.label ?? 'Preparing visual search'}</h1>
+      <p>{search.state === 'downloading' ? `${work!.detail}. The map opens once your images are prepared.` : search.state === 'loading' ? 'The map opens once your images are prepared.' : search.state === 'waiting' ? 'The map opens once your images are read and prepared.' : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${plural(search.total, noun)} ready. The map opens when they all are.`}{progress.left && ` ${progress.left}.`}</p>
+      <div className="map-message-progress"><Progress value={work?.value ?? null} label={work?.label ?? 'Preparing visual search'} steady /></div></div>}
     {phase === 'error' && <div className="empty map-message" role="alert"><h1>The map didn’t load</h1><p>{error}</p><button className="text-button secondary" onClick={() => setRetry(r => r + 1)}>Retry</button></div>}
     {empty && <div className="empty map-message"><h1>No images here</h1><p>{filtered ? 'Widen the date range, or choose another folder or file type.' : 'This folder has no images yet.'}</p>{(filtered || searching) && <button className="text-button secondary" onClick={onReset}>Clear search and filters</button>}</div>}
-    {phase === 'ready' && !working && !!data?.pending && <p className="map-note" aria-live="polite">{data.pending.toLocaleString()} {data.pending === 1 ? 'image is' : 'images are'} still being prepared</p>}
+    {/* While images are being prepared, the status line counts them. */}
+    {phase === 'ready' && !working && !!data?.pending && search.state !== 'indexing' && <p className="map-note" aria-live="polite">{plural(data.pending, noun)} {data.pending === 1 ? 'isn’t' : 'aren’t'} on the map yet</p>}
     {phase === 'ready' && !working && !data?.pending && !!data?.omitted && <p className="map-note">The map shows the newest {data.points.length.toLocaleString()} images. Filter by date or folder to see the other {data.omitted.toLocaleString()}.</p>}
     {phase === 'ready' && !empty && <div className="map-controls" role="group" aria-label="Map view">
       <button className="icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => engine.current?.zoomBy(1.7)}><Plus /></button>
