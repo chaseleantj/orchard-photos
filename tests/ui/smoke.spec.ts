@@ -79,7 +79,6 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     const first = await name.textContent();
     await viewer.locator('.image-stage img').click();
     await expect(stage).toHaveClass(/zoomed/);
-    await expect(viewer.getByRole('button', { name: 'Fit to screen' })).toBeVisible();
     // Escape zooms out before it closes.
     await page.keyboard.press('Escape');
     await expect(stage).not.toHaveClass(/zoomed/);

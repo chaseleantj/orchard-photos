@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
 import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel, unbroken } from './types';
 import { aheadUrl, imagesAhead, shared } from './preload';
@@ -31,7 +31,6 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
   const stage = useRef<HTMLDivElement>(null);
   const photo = useRef<HTMLImageElement>(null);
   const zoom = useRef<StageZoom>(null);
-  const [zoomed, setZoomed] = useState(false);
   const [loaded, setLoaded] = useState<Details | null>(null);
   const [error, setError] = useState('');
   const [failed, setFailed] = useState(false);
@@ -61,7 +60,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     node.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const zooming = zoom.current = stageZoom(stage.current!, setZoomed);
+    const zooming = zoom.current = stageZoom(stage.current!);
     return () => { node.close(); document.body.style.overflow = previous; focus?.focus(); zooming.stop(); ahead.images.clear(); };
   }, [ahead]);
   const loadDetails = (id: string) => ahead.details(id, () => request<Details>(`/api/images/${id}`));
@@ -155,7 +154,6 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         <span>{(index + 1).toLocaleString()} / {total.toLocaleString()}</span>
         <button className="icon-button" aria-label="Next image" title="Next image" disabled={!canStep(1)} onClick={() => step(1)}><ArrowRight /></button>
       </div><div className="viewer-navigation">
-        {!video && <button className="icon-button" aria-label={zoomed ? 'Fit to screen' : 'Zoom in'} aria-keyshortcuts={zoomed ? 'Escape' : undefined} title={zoomed ? 'Fit to screen (Esc)' : 'Zoom in'} onClick={() => zoom.current!.toggle()}>{zoomed ? <ZoomOut /> : <ZoomIn />}</button>}
         <button className="icon-button" aria-label="Close image" title="Close" onClick={onClose}><X /></button>
       </div></header>
       {/* One image element for every step: it keeps showing the last image until the next has loaded, so quick
