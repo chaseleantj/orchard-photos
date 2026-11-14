@@ -252,9 +252,26 @@ class ScannerTests(unittest.TestCase):
             moment = 1_700_000_000_000_000_000 - age * 86_400_000_000_000
             os.utime(picture(self.root / name, (age, 0, 0)), ns=(moment, moment))
         read = []
-        with patch('server.scanner.BATCH', 1):
+        with patch('server.scanner.WORKERS', 1), patch('server.scanner.BATCH', 1):
             self.scanner.scan(committed=lambda: read.extend(path for path in self.files() if path not in read))
         self.assertEqual(read, ['newest.png', 'middle.png', 'oldest.png'])
+
+    def test_a_slow_file_does_not_hold_up_the_files_after_it(self):
+        for age, name in enumerate(('slow.png', 'quick.png', 'quicker.png')):
+            moment = 1_700_000_000_000_000_000 - age * 86_400_000_000_000
+            os.utime(picture(self.root / name, (age, 0, 0)), ns=(moment, moment))
+        examine, others_committed = self.scanner._examine, threading.Event()
+        def slow(entry):
+            if entry[0] == 'slow.png':
+                others_committed.wait(5)
+            return examine(entry)
+        def committed():
+            if {'quick.png', 'quicker.png'} <= set(self.files()):
+                others_committed.set()
+        with patch.object(self.scanner, '_examine', side_effect=slow), patch('server.scanner.BATCH', 1):
+            self.scanner.scan(committed=committed)
+        self.assertTrue(others_committed.is_set())
+        self.assertEqual(set(self.files()), {'slow.png', 'quick.png', 'quicker.png'})
 
     def test_a_missing_folder_keeps_its_cache(self):
         picture(self.root / 'one.png')

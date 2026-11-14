@@ -2,12 +2,13 @@
 
 Originals are only ever read. Identical files share one image, so thumbnails and vectors survive renames and moves.
 """
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import errno
 import hashlib
 from io import BytesIO
+from itertools import islice
 import logging
 import os
 from pathlib import Path
@@ -48,11 +49,15 @@ SEEK_FRAMES = 90
 # Anything larger is refused as a possible decompression bomb, by refuse_oversized.
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
+# How many files read are committed together. As many files in a row that could not be reached stop the scan.
 BATCH = 48
 BLOCKED = 'Blocked by macOS'
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
 WORKERS = min(8, os.cpu_count() or 2)
+# How many files are handed to the workers at once. A few spare keep every worker busy, and few enough keep the reading
+# close to newest first.
+AHEAD = 2 * WORKERS
 # The most bytes of decoded pixels held at once, so huge PNGs and TIFFs, which unlike JPEG can't decode straight to a
 # smaller scale, decode in turn rather than all together. Pillow keeps most modes at 4 bytes a pixel.
 DECODE_BYTES = 1 << 30
@@ -397,42 +402,48 @@ class Scanner:
         stats = {'found': len(found), 'done': 0, 'changed': len(changed)}
         if progress:
             progress(dict(stats))
-        missed = 0
+        # Files are handed to the workers as they free up, rather than in batches, so one long video doesn't leave the
+        # other workers idle until it is done. Results are committed in the order they finish.
+        missed = run = 0
+        # A network drive that stops answering can still be listed, so a run of files that can't be reached stops the
+        # scan too. One file alone may just be damaged, and is left to the next scan.
+        stop_after = min(BATCH, len(changed))
+        queue, reading, read = iter(changed), {}, []
         with ThreadPoolExecutor(WORKERS) as pool:
-            for start in range(0, len(changed), BATCH):
-                if cancelled():
-                    raise ScanCancelled
-                batch = changed[start:start + BATCH]
-                results = list(pool.map(self._examine, batch))
-                if any(result.get('error') == BLOCKED for result in results):
-                    raise blocked(self.folder)
-                lost = sum(1 for result in results if result.get('unreached'))
-                if lost:
-                    self.source.check()
-                    # A network drive that stops answering can still be listed, so a whole batch failing stops it too.
-                    # One file alone may just be damaged, and is left to the next scan.
-                    if lost == len(batch) > 1:
-                        raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
-                    missed += lost
-                with connect(self.directory, rows=True) as db:
-                    for (path, folder, size, mtime_ns), result in zip(batch, results):
-                        if result.get('unreached'):
+            try:
+                while True:
+                    if cancelled():
+                        raise ScanCancelled
+                    for entry in islice(queue, AHEAD - len(reading)):
+                        reading[pool.submit(self._examine, entry)] = entry
+                    if not reading:
+                        break
+                    finished, _ = wait(reading, return_when=FIRST_COMPLETED)
+                    for future in finished:
+                        entry, result = reading.pop(future), future.result()
+                        stats['done'] += 1
+                        if result.get('error') == BLOCKED:
+                            raise blocked(self.folder)
+                        if not result.get('unreached'):
+                            run = 0
+                            read.append((entry, result))
                             continue
-                        if 'width' in result:
-                            db.execute('INSERT OR IGNORE INTO images (id, width, height, mime, size, taken, camera, duration) '
-                                       'VALUES (?,?,?,?,?,?,?,?)',
-                                       (result['id'], result['width'], result['height'], result['mime'],
-                                        size, result['taken'], result['camera'], result.get('duration')))
-                        modified = utc(datetime.fromtimestamp(mtime_ns / 1e9, UTC))
-                        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
-                                   (path, folder, result.get('id') if 'error' not in result else None,
-                                    size, mtime_ns, modified, result.get('error')))
-                self._seen.update(result['id'] for result in results if 'width' in result)
-                stats['done'] += len(batch)
-                if committed:
-                    committed()
-                if progress:
-                    progress(dict(stats))
+                        self.source.check()
+                        run, missed = run + 1, missed + 1
+                        if run >= stop_after > 1:
+                            raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
+                    if len(read) >= BATCH or (read and not reading):
+                        self._commit(read)
+                        read = []
+                        if committed:
+                            committed()
+                        if progress:
+                            progress(dict(stats))
+            finally:
+                for future in reading:
+                    future.cancel()
+        if progress:
+            progress(dict(stats))
         removed = self._remove_missing({entry[0] for entry in found}, unreadable)
         if removed and committed:
             committed()
@@ -446,6 +457,21 @@ class Scanner:
         stats['unlisted_folders'] = len(unreadable)
         stats['photo_libraries'] = libraries
         return stats
+
+    def _commit(self, read):
+        """Record files read, each as (entry, result), and the new images among them."""
+        with connect(self.directory, rows=True) as db:
+            for (path, folder, size, mtime_ns), result in read:
+                if 'width' in result:
+                    db.execute('INSERT OR IGNORE INTO images (id, width, height, mime, size, taken, camera, duration) '
+                               'VALUES (?,?,?,?,?,?,?,?)',
+                               (result['id'], result['width'], result['height'], result['mime'],
+                                size, result['taken'], result['camera'], result.get('duration')))
+                modified = utc(datetime.fromtimestamp(mtime_ns / 1e9, UTC))
+                db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)',
+                           (path, folder, result.get('id') if 'error' not in result else None,
+                            size, mtime_ns, modified, result.get('error')))
+        self._seen.update(result['id'] for _, result in read if 'width' in result)
 
     def _examine(self, entry) -> dict:
         """Hash one file and, if its content is new, read its metadata and draw its thumbnail, and a video's frames for
