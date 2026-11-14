@@ -124,7 +124,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .skeleton span:nth-child(2n) { height: 90%; }
 /* Panels open under the control that opened them; App places them. The header stays put while the body scrolls. */
 .panel { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--surface-radius); padding: 0; width: var(--panel-width); box-shadow: var(--shadow); margin: 0; position: fixed; inset: var(--s20) var(--page) auto auto; max-height: calc(100dvh - var(--s20) - var(--s6)); overflow: hidden; }
-.panel[open] { display: flex; flex-direction: column; }
+/* A panel eases down out of the control that opened it. */
+.panel[open] { display: flex; flex-direction: column; animation: panel-in var(--motion) var(--ease); }
+@keyframes panel-in { from { opacity: 0; transform: translateY(calc(var(--s2) * -1)); } }
 .panel:focus { outline: none; }
 .panel::backdrop { background: transparent; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s3) var(--s2) var(--s6); border-bottom: 1px solid transparent; transition: border-color var(--motion) var(--ease); }
