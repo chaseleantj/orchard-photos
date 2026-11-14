@@ -80,12 +80,11 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
 .library-meta :focus-visible { outline-offset: -2px; }
-/* Background work sits beside the count it is changing: a short bar and what it is doing. */
+/* Background work sits beside the count it is changing, in words. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
 .activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; }
 .activity-item:hover { background: var(--soft); color: var(--ink); }
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
-.activity-item .progress { width: var(--s8); flex-shrink: 0; }
 .gallery { margin: 0 var(--page); position: relative; }
 .gallery:focus { outline: none; }
 /* A month heading over each run of images; the grid restarts under it. */
@@ -258,8 +257,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }
- /* One job at a time on a phone, as a bar and its name. */
- .activity-item:not(:first-of-type), .activity-item:not(.error-copy) > span { display: none; }
+ /* One job at a time on a phone, as its numbers, which the count beside it gives way to. */
+ .activity { flex-shrink: 0; }
+ .activity-item:not(:first-of-type), .activity-item .wide-only { display: none; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */
  .timeline { display: none; }

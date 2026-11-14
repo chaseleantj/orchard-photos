@@ -111,7 +111,7 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 Visual search and the map need a model called SigLIP 2. It's a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
 
-When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own.
+When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, click **Set up visual search** under the search bar, at the left, and the download's progress takes its place. You can also set it up from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own. Preparing waits while Orchard reads new files, and **Appearance** says what it is waiting on until it can search.
 
 Preparing takes a moment per image, and how long a whole folder takes depends mostly on whether Orchard can use the computer's [GPU](#which-gpu-orchard-uses). These rough times come from one Mac and one Intel laptop:
 
@@ -135,7 +135,7 @@ If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, lik
 
 ## Background work and Info
 
-Background work shows under the search bar, at the left: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds and how long background work has left. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere).
+Background work shows under the search bar, at the left, with how far it has got: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds, with a progress bar and the time left for each job. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere).
 
 At the bottom, Info shows Orchard's version, and:
 

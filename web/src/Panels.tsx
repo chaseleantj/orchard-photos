@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
-import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
-import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
+import type { Facets, Filters, LibraryStatus, Model, Range, SearchCondition, SearchMode, Status, Updates } from './types';
+import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, typeLabel } from './types';
 import { type Estimate, Progress } from './Progress';
-import { estimated, searchWork } from './Activity';
+import { estimated, searchWork, waitingOn } from './Activity';
 
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
@@ -86,12 +86,12 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
 
 /** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known.
  *  `scanProgress` and `searchProgress` estimate how far reading and visual search are, and the time they have left. */
-export function LibraryPanel({ status, shown, narrowed, scanProgress, searchProgress, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanProgress: Estimate; searchProgress: Estimate; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
+export function LibraryPanel({ status, condition, shown, narrowed, scanProgress, searchProgress, anchor, onClose, onSetUp }: { status: Status; condition: SearchCondition; shown: number | null; narrowed: boolean; scanProgress: Estimate; searchProgress: Estimate; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
   const library = status.library!;
   const { counts, scan, search } = library;
   const noun = countNoun(library);
   const scanning = scan.state === 'scanning';
-  const complete = search.state === 'ready';
+  const unprepared = plural(Math.max(0, counts.images - search.indexed), noun);
   const work = estimated(searchWork(search), searchProgress);
   const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanProgress.left ? `. ${scanProgress.left}` : ''}` : 'Looking for images…';
   // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
@@ -116,25 +116,21 @@ export function LibraryPanel({ status, shown, narrowed, scanProgress, searchProg
     {scanning && <p>{scanLabel}</p>}
     {scan.error && <p className="error-copy">{scan.error}</p>}
     <hr className="rule" /><h3>Visual search</h3>
-    {work && !work.error ? <>
+    {condition === 'off' ? <>
+      <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>
+      <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
+    </> : condition === 'failed' ? <>
+      <p className="error-copy" role="alert">{search.error}</p>
+      <button className="text-button secondary" onClick={onSetUp}>Try again</button>
+    </> : work ? <>
       <p>{work.label}{work.detail && <span className="numbers"> · {work.detail}</span>}</p>
       <Progress value={work.value} label={work.label} />
       {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
-      {search.state === 'indexing' && <p>{searchProgress.left ? `${searchProgress.left}. ` : ''}Prepared images can be searched already.</p>}
-    </> : search.state === 'error' ? <>
-      <p className="error-copy" role="alert">{search.error}</p>
-      <button className="text-button secondary" onClick={onSetUp}>Try again</button>
-    </> : complete ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
-    : search.downloaded && !counts.images && !scanning ? <p>Visual search is set up. Images added to this folder are prepared automatically.</p>
-    : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), noun)} to prepare once reading finishes.</p>
-    : search.downloaded ? <>
-      <p>{plural(Math.max(0, counts.images - search.indexed), noun)} still to prepare. New ones are prepared automatically.</p>
-      <button className="text-button primary" onClick={onSetUp}>Finish preparing</button>
-    </> : <>
-      <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>
-      <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
-    </>}
-    {search.error && search.state !== 'error' && <p className="error-copy">{search.error}</p>}
+      {search.state === 'indexing' && (!!searchProgress.left || !!search.indexed) && <p>{[searchProgress.left && `${searchProgress.left}.`, search.indexed && 'Prepared images can be searched already.'].filter(Boolean).join(' ')}</p>}
+    </> : search.state === 'waiting' ? <p>{unprepared} to prepare{scanning ? ' once reading finishes' : ''}.{search.indexed ? ' Prepared images can be searched already.' : ''}</p>
+    : search.state === 'ready' ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
+    : search.state === 'idle' && <p>Visual search is set up. Images added to this folder are prepared automatically.</p>}
+    {search.error && condition !== 'failed' && <p className="error-copy">{search.error}</p>}
     <hr className="rule" /><h3>{APP_NAME} {status.version}</h3>
     <About library={library} />
   </Panel>;
@@ -222,22 +218,22 @@ export function FolderPanel({ status, anchor, onOpened, onClose }: { status: Sta
 }
 
 /** How the search bar searches. It opens from the bar itself and is the one place the mode is chosen. Until visual
- *  search can answer, choosing Appearance sets it up. */
-export function SearchMenu({ mode, search, model, anchor, onMode, onSetUp, onUpload, onClose }: { mode: SearchMode; search: SearchStatus | null; model: Model; anchor: HTMLElement | null; onMode: (mode: SearchMode) => void; onSetUp: () => void; onUpload: () => void; onClose: () => void }) {
-  const ready = !!search && searchable(search);
-  const busy = !!search && settingUp(search);
+ *  search is set up, choosing Appearance sets it up; while it is starting, Appearance says what it is waiting on. */
+export function SearchMenu({ mode, condition, library, model, anchor, onMode, onSetUp, onUpload, onClose }: { mode: SearchMode; condition: SearchCondition | null; library: LibraryStatus | null; model: Model; anchor: HTMLElement | null; onMode: (mode: SearchMode) => void; onSetUp: () => void; onUpload: () => void; onClose: () => void }) {
+  const ready = condition === 'on';
+  const busy = condition === 'starting';
   const option = (value: SearchMode, label: string) => <button className="text-button menu-item" aria-pressed={mode === value} onClick={() => { onMode(value); onClose(); }}><Check />{label}</button>;
   return <Popover label="Search options" anchor={anchor} menu className="panel menu" onClose={onClose}>
     <div role="group" aria-labelledby="search-by">
       <div className="menu-label" id="search-by">Search by</div>
       {ready ? option('visual', 'Appearance') : <>
         <button className="text-button menu-item" aria-pressed={false} aria-describedby="appearance-note" disabled={busy} onClick={() => { onSetUp(); onClose(); }}><Check />Appearance</button>
-        <div className="menu-note" id="appearance-note">{busy ? 'Getting ready. Progress shows under the search bar.' : search?.state === 'error' ? 'The last try failed. Choose it to try again.' : `Sets up visual search: a ${megabytes(model.size)} MB download, once.`}</div>
+        <div className="menu-note" id="appearance-note">{busy ? waitingOn(library!) : condition === 'failed' ? 'The last try failed. Choose it to try again.' : `Sets up visual search: a ${megabytes(model.size)} MB download, once.`}</div>
       </>}
       {option('name', 'File name')}
     </div>
     <hr className="menu-rule" />
     <button className="text-button menu-item" disabled={!ready} onClick={() => { onClose(); onUpload(); }}><ImageIcon />Find images like a file…</button>
-    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : 'Works once visual search is set up.'}</div>
+    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : busy ? 'Works once visual search is ready.' : 'Works once visual search is set up.'}</div>
   </Popover>;
 }

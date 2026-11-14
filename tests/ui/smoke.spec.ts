@@ -36,6 +36,12 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
+  await test.step('the status line offers visual search in words, with its download size', async () => {
+    const line = page.locator('.activity');
+    await expect(line.getByRole('button', { name: /^Set up visual search · \d+ MB, once$/ })).toBeVisible();
+    await expect(line.getByRole('progressbar')).toHaveCount(0);
+  });
+
   await test.step('Ctrl+R reloads the page and rescans the folder', async () => {
     const rescan = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/scan'));
     await page.locator('body').press('Control+r');
@@ -209,4 +215,24 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(box).toBeFocused();
     await page.getByRole('button', { name: 'Grid', exact: true }).click();
   });
+});
+
+test('while the model is here and a scan reads, the page waits instead of offering setup', async ({ page }) => {
+  // The folder the first test opened, with the status of a first scan that visual search is waiting on.
+  await page.route('**/api/status', async route => {
+    const status = await (await route.fetch()).json();
+    status.model.present = true;
+    status.library.scan = { state: 'scanning', found: 7872, done: 1200, changed: 7872 };
+    status.library.search = { state: 'waiting', indexed: 0, total: 1200, downloaded: true };
+    await route.fulfill({ json: status });
+  });
+  await page.goto('/');
+  const line = page.locator('.activity');
+  await expect(line.getByRole('button', { name: 'Reading images · 1,200 of 7,872' })).toBeVisible();
+  await expect(line.getByRole('progressbar')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Search options' }).click();
+  const menu = page.getByRole('dialog', { name: 'Search options' });
+  await expect(menu.getByRole('button', { name: 'Appearance' })).toBeDisabled();
+  await expect(menu.getByText('Ready once your images are read')).toBeVisible();
+  await expect(page.getByText(/set up/i)).toHaveCount(0);
 });
