@@ -80,9 +80,9 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
 .library-meta :focus-visible { outline-offset: -2px; }
-/* Background work sits beside the count it is changing, in words. */
+/* Background work sits beside the count it is changing, in words. Each job fades in as it starts. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
-.activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; }
+.activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; animation: appear var(--motion-slow) var(--ease); }
 .activity-item:hover { background: var(--soft); color: var(--ink); }
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
 .gallery { margin: 0 var(--page); position: relative; }
