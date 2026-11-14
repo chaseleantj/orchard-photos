@@ -174,6 +174,10 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .rule { border: 0; border-top: 1px solid var(--line); margin: var(--s6) 0; }
 .viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; padding: 0; border: none; margin: 0; background: var(--bg); color: var(--ink); }
 .viewer::backdrop { background: var(--bg); }
+/* The viewer fades in over the grid while its image settles to size. */
+.viewer[open], .viewer[open]::backdrop { animation: appear var(--motion) var(--ease); }
+.viewer[open] .image-stage { animation: settle var(--motion-slow) var(--ease); }
+@keyframes settle { from { transform: scale(.97); } }
 .viewer:focus { outline: none; }
 .viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--detail-width); grid-template-rows: var(--s20) minmax(0,1fr); }
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
