@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
-import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel } from './types';
+import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel, unbroken } from './types';
 import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
@@ -145,7 +145,8 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
     return () => { node.removeEventListener('wheel', wheel); window.removeEventListener('keydown', keydown); };
   }, []);
   const parts = folder ? folder.split('/') : [rootName];
-  const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).join(' › ');
+  // A path too long for its line breaks between folders before it breaks inside a folder's name.
+  const crumbs = (parts.length > CRUMBS ? ['…', ...parts.slice(-CRUMBS)] : parts).map(unbroken).join('\u00A0› ');
   return <dialog ref={dialog} tabIndex={-1} className="viewer" aria-label="Image viewer" onCancel={onClose}>
     <div className="viewer-layout">
       <header className="viewer-top"><div className="viewer-navigation">
@@ -165,13 +166,16 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
         : <img ref={photo} src={imageUrl(item.id, 'display')} alt={fileName(item.path)} onDragStart={dragImage(item.id)} onLoad={loadAhead} onError={fail} />}
       </div>
       <aside className="image-details">
-        <div className="detail-summary">
-          <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
-          <p>{item.dated === 'taken' ? 'Taken' : 'Modified'} {dateLabel(item.date, true)}</p>
-          <button className="crumbs" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button>
-          <p className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()}{item.duration ? ` · ${durationLabel(item.duration)}` : ''} · {sizeLabel(item.size)} · {typeLabel(item.mime)}</p>
-          {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
-        </div>
+        <h1 title={fileName(item.path)}>{fileName(item.path)}</h1>
+        {/* One fact to a row, each named. The file's type is the end of its name, so it has no row. */}
+        <dl className="facts">
+          <dt>{item.dated === 'taken' ? 'Taken' : 'Modified'}</dt><dd>{dateLabel(item.date, true)}</dd>
+          {!photos && <><dt>Folder</dt><dd><button className="inline-link" title={`${folder || rootName}. Show only this folder`} onClick={() => onFolder(folder)}>{crumbs}</button></dd></>}
+          <dt>Dimensions</dt><dd className="numbers">{item.width.toLocaleString()} × {item.height.toLocaleString()}</dd>
+          {!!item.duration && <><dt>Length</dt><dd className="numbers">{durationLabel(item.duration)}</dd></>}
+          <dt>Size</dt><dd className="numbers">{sizeLabel(item.size)}</dd>
+        </dl>
+        {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
         <div className="detail-actions">
           {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
           {!video && <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>}

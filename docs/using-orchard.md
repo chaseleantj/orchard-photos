@@ -50,7 +50,7 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 ## Viewing an image
 
-Click an image to open it. The viewer shows the file name, date, folder, size and type.
+Click an image to open it. Beside the image, the viewer lists when it was taken, its folder, its dimensions and its size, under the file name. Click the folder to show only that folder.
 
 The viewer's buttons are labelled:
 

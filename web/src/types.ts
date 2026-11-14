@@ -100,8 +100,13 @@ export function savePreferences(preferences: Preferences) {
   try { localStorage.setItem(STORAGE, JSON.stringify(preferences)); } catch { /* Browsing remains available without storage. */ }
 }
 
+/** Text that stays on one line: where a longer line has to break, it breaks beside this rather than inside it. */
+export const unbroken = (text: string) => text.replace(/ /g, '\u00A0');
+/** A date as "Jun 12, 2026". With `full`, the time follows it, and a line too short for both breaks between them. */
 export function dateLabel(date: string, full = false) {
-  return new Date(date).toLocaleString(undefined, full ? { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' } : { year: 'numeric', month: 'short', day: 'numeric' });
+  const moment = new Date(date);
+  const day = moment.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return full ? `${unbroken(day)}, ${unbroken(moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))}` : day;
 }
 /** A month as the grid's headings and the timeline name it, like "June 2026". */
 export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month: 'long', year: 'numeric' });

@@ -10,7 +10,7 @@
   --radius: 4px; --control-radius: 8px; --surface-radius: 12px; --pill: 100px;
   /* Two control heights: one nested inside another control, one for everything else. */
   --control: 40px; --control-nested: 32px; --motion: 180ms; --motion-slow: 320ms; --ease: cubic-bezier(.2,.7,.2,1); --shadow: 0 8px 40px #00000014;
-  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --detail-width: 300px; --empty-height: 55vh; --icon: 18px;
+  --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --empty-height: 55vh; --icon: 18px;
   /* How far an icon sits inside its button. Text and the timeline's years at the right end there too, so the right
      edge lines up down the page. */
   --inset: calc((var(--control) - var(--icon)) / 2);
@@ -170,11 +170,14 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* A link inside a sentence, for an action the sentence names. */
 .inline-link { padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .inline-link:hover:not(:disabled) { color: var(--ink); }
+/* Named values, one to a row: what each is, in muted, then the value. Info's ledger and the viewer's facts share these
+   rows, whose padding sets lines of one value closer together than two rows are. */
+.counts, .facts { display: grid; }
+.counts dt, .counts dd, .facts dt, .facts dd { margin: 0; padding: var(--s1) 0; }
+.counts dt, .facts dt { color: var(--muted); }
 /* A ledger: each row taken from the one above, ending at what the grid shows. */
-.counts { display: grid; grid-template-columns: 1fr auto; margin: var(--s4) 0; }
-.counts dt, .counts dd { padding: var(--s1) 0; }
-.counts dt { color: var(--muted); }
-.counts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.counts { grid-template-columns: 1fr auto; margin: var(--s4) 0; }
+.counts dd { text-align: right; font-variant-numeric: tabular-nums; }
 .counts .total { border-top: 1px solid var(--line); margin-top: var(--s1); padding-top: var(--s2); color: var(--ink); }
 .rule { border: 0; border-top: 1px solid var(--line); margin: var(--s6) 0; }
 .viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; padding: 0; border: none; margin: 0; background: var(--bg); color: var(--ink); }
@@ -184,7 +187,9 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .viewer[open] .image-stage { animation: settle var(--motion-slow) var(--ease); }
 @keyframes settle { from { transform: scale(.97); } }
 .viewer:focus { outline: none; }
-.viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--detail-width); grid-template-rows: var(--s20) minmax(0,1fr); }
+/* The details column is as wide as a panel, which fits every routine fact on one line, and gives way to the image in a
+   smaller window. */
+.viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 30vw, var(--panel-width)); grid-template-rows: var(--s20) minmax(0,1fr); }
 .viewer-top { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--page); }
 .viewer-navigation { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-variant-numeric: tabular-nums; }
 .image-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; margin: 0 0 var(--s8) var(--page); }
@@ -193,13 +198,18 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; transition: transform var(--motion) var(--ease); }
 .image-stage.zoomed, .image-stage.zoomed img { cursor: zoom-out; touch-action: none; }
 .image-stage.dragging, .image-stage.dragging img { cursor: grabbing; }
-/* The sidebar has two text styles, both at body size: ink for the name and path, muted for everything else. */
-.image-details { padding: var(--s8); overflow: auto; color: var(--muted); }
+/* The sidebar has two text styles, both at body size: ink for the name and each fact, muted for what names a fact and
+   for notes. Its text starts level with the top of the stage, so it lines up with a tall image, and ends at the page's
+   margin, under the header's last button. */
+.image-details { padding: 0 var(--page) var(--s8) var(--s8); overflow: auto; color: var(--muted); }
 .image-details h1 { margin: 0; font: inherit; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .image-details p { margin: 0; }
-.detail-summary { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
-.crumbs { padding: 0; text-align: left; color: var(--muted); overflow-wrap: anywhere; }
-.crumbs:hover { color: var(--ink); }
+/* The facts about a file: what each is, then the fact, in Info's rows. The folder is a link that shows only that folder. */
+.facts { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); margin: var(--s4) 0 0; }
+.facts dd { color: var(--ink); overflow-wrap: anywhere; }
+.facts .inline-link { text-align: left; text-decoration-color: var(--muted); transition: text-decoration-color var(--motion) var(--ease); }
+.facts .inline-link:hover { text-decoration-color: currentColor; }
+.facts + p { margin-top: var(--s3); }
 /* Pulled left so the icons line up with the text above, not their hit areas. */
 .detail-actions { display: flex; flex-direction: column; align-items: flex-start; margin: var(--s4) 0 0 calc(var(--s3) * -1); }
 .detail-status { min-height: 1.5em; }
