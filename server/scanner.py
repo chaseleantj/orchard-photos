@@ -49,8 +49,11 @@ SEEK_FRAMES = 90
 # Anything larger is refused as a possible decompression bomb, by refuse_oversized.
 Image.MAX_IMAGE_PIXELS = 300_000_000
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
-# How many files read are committed together. As many files in a row that could not be reached stop the scan.
-BATCH = 48
+# How often files read are committed, so the grid fills in as the scan goes. The first are committed as soon as they
+# are read, so it shows something at once.
+COMMIT_SECONDS = 1.0
+# How many files in a row that could not be reached stop the scan.
+UNREACHED_RUN = 48
 BLOCKED = 'Blocked by macOS'
 # How often the count of files found so far is reported while a folder is listed.
 FOUND_EVERY = 500
@@ -407,8 +410,8 @@ class Scanner:
         missed = run = 0
         # A network drive that stops answering can still be listed, so a run of files that can't be reached stops the
         # scan too. One file alone may just be damaged, and is left to the next scan.
-        stop_after = min(BATCH, len(changed))
-        queue, reading, read = iter(changed), {}, []
+        stop_after = min(UNREACHED_RUN, len(changed))
+        queue, reading, read, last_commit = iter(changed), {}, [], 0.0
         with ThreadPoolExecutor(WORKERS) as pool:
             try:
                 while True:
@@ -432,9 +435,9 @@ class Scanner:
                         run, missed = run + 1, missed + 1
                         if run >= stop_after > 1:
                             raise FolderUnavailable(f'{self.folder} stopped answering partway through the scan. Reconnect it, then rescan to carry on.')
-                    if len(read) >= BATCH or (read and not reading):
+                    if read and (not reading or time.monotonic() - last_commit >= COMMIT_SECONDS):
                         self._commit(read)
-                        read = []
+                        read, last_commit = [], time.monotonic()
                         if committed:
                             committed()
                         if progress:

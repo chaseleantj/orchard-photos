@@ -20,7 +20,7 @@ The scanner walks the whole folder and finds every image and video file. Pillow 
 2. Reads the width, height, camera and date taken from EXIF, or for a video, its length and the tags its container holds.
 3. Draws a 720 px WebP thumbnail, of a video's first frame.
 
-New and changed files are read newest first, by the date each file was last changed, so the top of the grid, which is in date order, fills in first. Several files are read at once, and each worker takes the next file as soon as it's free, so a long video doesn't hold up the others.
+New and changed files are read newest first, by the date each file was last changed, so the top of the grid, which is in date order, fills in first. Several files are read at once, and each worker takes the next file as soon as it's free, so a long video doesn't hold up the others. The first file read goes into the index at once, so the grid shows something within a moment of opening a folder, and the rest go in once a second.
 
 Videos are decoded with PyAV, which brings its own FFmpeg. For visual search, the scanner also keeps three small frames of each video, from a quarter, half and three quarters of the way through, and search sees the video as the average of their vectors. The server answers byte ranges, which is how the viewer streams and seeks a video.
 

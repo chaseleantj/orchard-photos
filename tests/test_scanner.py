@@ -184,14 +184,14 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(set(self.files()), {'red.png', 'blue.png'})
         self.assertEqual(self.scanner.scan()['changed'], 1)
 
-    def test_a_batch_that_could_not_be_reached_stops_the_scan_and_the_next_carries_on(self):
+    def test_a_run_of_files_that_could_not_be_reached_stops_the_scan_and_the_next_carries_on(self):
         for color in ('red', 'green', 'blue', 'white', 'black'):
             picture(self.root / f'{color}.png', color)
         dropped = OSError(errno.ETIMEDOUT, 'Operation timed out')
-        # Batches of two or four fill up, and one of five or six holds the whole folder, as the last batch of a scan
-        # often holds fewer than it could. A batch of one file is left to the next scan, since that file may be damaged.
+        # Runs of two or four are reached, and so is one longer than the folder, which all of it then makes. One file
+        # alone never stops the scan, since that file may just be damaged.
         for size, stopped in ((2, True), (4, True), (5, True), (6, True), (1, False)):
-            with self.subTest(batch=size), patch('server.scanner.BATCH', size), patch('pathlib.Path.open', side_effect=dropped):
+            with self.subTest(run=size), patch('server.scanner.UNREACHED_RUN', size), patch('pathlib.Path.open', side_effect=dropped):
                 if stopped:
                     with self.assertRaisesRegex(FolderUnavailable, 'stopped answering'):
                         self.scanner.scan()
@@ -251,10 +251,29 @@ class ScannerTests(unittest.TestCase):
         for age, name in enumerate(('newest.png', 'middle.png', 'oldest.png')):
             moment = 1_700_000_000_000_000_000 - age * 86_400_000_000_000
             os.utime(picture(self.root / name, (age, 0, 0)), ns=(moment, moment))
-        read = []
-        with patch('server.scanner.WORKERS', 1), patch('server.scanner.BATCH', 1):
-            self.scanner.scan(committed=lambda: read.extend(path for path in self.files() if path not in read))
+        read, examine = [], self.scanner._examine
+        with patch('server.scanner.WORKERS', 1), patch.object(self.scanner, '_examine', side_effect=lambda entry: (read.append(entry[0]), examine(entry))[1]):
+            self.scanner.scan()
         self.assertEqual(read, ['newest.png', 'middle.png', 'oldest.png'])
+
+    def test_the_first_file_read_is_committed_at_once_and_the_rest_as_time_passes(self):
+        for color in ('red', 'green', 'blue'):
+            picture(self.root / f'{color}.png', color)
+        sizes, examine, first_committed = [], self.scanner._examine, threading.Event()
+        def after_the_first(entry):
+            if entry[0] != 'red.png':
+                first_committed.wait(5)
+            return examine(entry)
+        def committed():
+            sizes.append(len(self.files()))
+            first_committed.set()
+        for age, color in enumerate(('red', 'green', 'blue')):
+            moment = 1_700_000_000_000_000_000 - age * 86_400_000_000_000
+            os.utime(self.root / f'{color}.png', ns=(moment, moment))
+        with patch('server.scanner.WORKERS', 1), patch('server.scanner.COMMIT_SECONDS', 60), \
+                patch.object(self.scanner, '_examine', side_effect=after_the_first):
+            self.scanner.scan(committed=committed)
+        self.assertEqual(sizes, [1, 3])
 
     def test_a_slow_file_does_not_hold_up_the_files_after_it(self):
         for age, name in enumerate(('slow.png', 'quick.png', 'quicker.png')):
@@ -268,7 +287,7 @@ class ScannerTests(unittest.TestCase):
         def committed():
             if {'quick.png', 'quicker.png'} <= set(self.files()):
                 others_committed.set()
-        with patch.object(self.scanner, '_examine', side_effect=slow), patch('server.scanner.BATCH', 1):
+        with patch.object(self.scanner, '_examine', side_effect=slow), patch('server.scanner.COMMIT_SECONDS', 0):
             self.scanner.scan(committed=committed)
         self.assertTrue(others_committed.is_set())
         self.assertEqual(set(self.files()), {'slow.png', 'quick.png', 'quicker.png'})
