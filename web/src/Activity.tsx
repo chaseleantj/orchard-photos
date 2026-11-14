@@ -30,8 +30,8 @@ const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}
 export function waitingOn(library: LibraryStatus) {
   const work = searchWork(library.search);
   if (work) return workLabel(work);
-  if (library.scan.state === 'scanning') return 'Ready once your images are read';
-  return preparing(library.search) ? 'Preparing visual search' : 'Ready once this folder has images';
+  if (library.scan.state === 'scanning') return 'Ready once your images are read.';
+  return preparing(library.search) ? 'Preparing visual search' : 'Ready once this folder has images.';
 }
 
 /** Work whose amount done is known, with its bar at the estimate that moves on every second. */
