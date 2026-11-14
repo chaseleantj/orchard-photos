@@ -123,7 +123,7 @@ export function LibraryPanel({ status, condition, shown, narrowed, scanProgress,
       <p className="error-copy" role="alert">{search.error}</p>
       <button className="text-button secondary" onClick={onSetUp}>Try again</button>
     </> : work ? <>
-      <p>{work.label}{work.detail && <span className="numbers"> · {work.detail}</span>}</p>
+      <p>{work.label}{work.detail && <span className="numbers">: {work.detail}</span>}</p>
       <Progress value={work.value} label={work.label} steady />
       {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
       {search.state === 'indexing' && (!!searchProgress.left || !!search.indexed) && <p>{[searchProgress.left && `${searchProgress.left}.`, search.indexed && 'Prepared images can be searched already.'].filter(Boolean).join(' ')}</p>}

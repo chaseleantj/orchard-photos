@@ -228,7 +228,7 @@ test('while the model is here and a scan reads, the page waits instead of offeri
   });
   await page.goto('/');
   const line = page.locator('.activity');
-  await expect(line.getByRole('button', { name: 'Reading images · 1,200 of 7,872' })).toBeVisible();
+  await expect(line.getByRole('button', { name: 'Reading images: 1,200 of 7,872' })).toBeVisible();
   await expect(line.getByRole('progressbar')).toHaveCount(0);
   await page.getByRole('button', { name: 'Search options' }).click();
   const menu = page.getByRole('dialog', { name: 'Search options' });

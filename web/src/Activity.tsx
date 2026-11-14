@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LoaderCircle } from 'lucide-react';
 import type { Estimate } from './Progress';
 import type { LibraryStatus, SearchCondition, Scan, SearchStatus } from './types';
 import { SET_UP, megabytes, preparing } from './types';
@@ -24,7 +25,8 @@ export function searchWork(search: SearchStatus): Work | null {
   return null;
 }
 
-const workLabel = (work: Work) => work.detail ? `${work.label} · ${work.detail}` : work.label;
+/** A job and how far it has got, as one phrase: "Reading images: 1,200 of 7,872". */
+export const workLabel = (work: Work) => work.detail ? `${work.label}: ${work.detail}` : work.label;
 
 /** What visual search is waiting on while it is starting, in the status line's words. */
 export function waitingOn(library: LibraryStatus) {
@@ -37,7 +39,8 @@ export function waitingOn(library: LibraryStatus) {
 /** Work whose amount done is known, with its bar at the estimate that moves on every second. */
 export const estimated = (work: Work | null, progress: Estimate) => work && work.value !== null ? { ...work, value: progress.value ?? work.value } : work;
 
-/** Background work, in words, in the line under the search bar. Each job opens Info, where the bars and time left are.
+/** Background work in the line under the search bar: a spinner, then the job and how far it has got. Each job opens
+ *  Info, where the bars and time left are.
  *  Until visual search is set up, the line offers it, and the download's progress then takes its place. A first scan
  *  shows its own progress in the grid, so `gathering` leaves it out here; `hideError` drops a failure already seen. */
 export function Activity({ library, condition, size, gathering, hideError, onOpen, onSetUp }: { library: LibraryStatus; condition: SearchCondition; size: number; gathering: boolean; hideError: boolean; onOpen: () => void; onSetUp: () => void }) {
@@ -58,7 +61,7 @@ export function Activity({ library, condition, size, gathering, hideError, onOpe
     <span className="sr-only" aria-live="polite">{ready ? READY : jobs.map(job => job.label).join(', ')}</span>
     {/* A narrow window keeps the numbers and drops the words around them. */}
     {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
-      <span>{job.detail ? <><span className="wide-only">{job.label} · </span><span className="numbers">{job.detail}</span></> : job.label}</span>
+      {!job.error && <LoaderCircle className="spinner" />}<span>{job.detail ? <><span className="wide-only">{job.label}: </span><span className="numbers">{job.detail}</span></> : job.label}</span>
     </button>)}
     {condition === 'off' && <button className="activity-item" title={`Find images by describing them. Downloads a ${megabytes(size)} MB model once, which runs on this computer.`} onClick={onSetUp}>
       <span>{SET_UP}<span className="wide-only"> · {megabytes(size)} MB, once</span></span>

@@ -4,7 +4,7 @@ import { MapEngine, PER_SHEET } from './mapEngine';
 import type { MapCallbacks, MapCamera, MapPoint } from './mapEngine';
 import { APP_NAME, SET_UP, filterParams, megabytes, plural, preparing, request, storageKey } from './types';
 import { type Estimate, Progress } from './Progress';
-import { estimated, searchWork } from './Activity';
+import { estimated, searchWork, workLabel } from './Activity';
 import type { Filters, Model, SearchCondition, SearchStatus } from './types';
 
 interface Working { state: string; stage?: string; error?: string }
@@ -153,7 +153,7 @@ export default function Embedding({ noun, root, filters, highlight, search, cond
     {condition === 'failed' && <div className="empty map-message" role="alert"><h1>{work?.label}</h1><p>{search.error}</p><button className="text-button secondary" onClick={onSetUp}>Try again</button></div>}
     {condition === 'off' && <div className="empty map-message"><h1>Your folder, laid out by look</h1><p>Similar images gather together here. Setting up visual search downloads a {megabytes(model.size)} MB model once, which runs on this computer.</p><button className="text-button primary" onClick={onSetUp}>{SET_UP}</button></div>}
     {holding && <div className="empty map-message" role="status"><h1>Preparing visual search</h1>
-      <p>{search.state === 'downloading' ? `${work!.label} · ${work!.detail}.` : search.state === 'loading' ? `${work!.label}.` : search.state === 'waiting' ? 'The map opens once your images are read and prepared.' : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${plural(search.total, noun)} ready. The map opens when they all are.`}{progress.left && ` ${progress.left}.`}</p>
+      <p>{search.state === 'downloading' || search.state === 'loading' ? `${workLabel(work!)}.` : search.state === 'waiting' ? 'The map opens once your images are read and prepared.' : !search.total ? 'Looking for images in the folder.' : `${search.indexed.toLocaleString()} of ${plural(search.total, noun)} ready. The map opens when they all are.`}{progress.left && ` ${progress.left}.`}</p>
       <div className="map-message-progress"><Progress value={work?.value ?? null} label="Preparing visual search" steady /></div></div>}
     {phase === 'error' && <div className="empty map-message" role="alert"><h1>The map didn’t load</h1><p>{error}</p><button className="text-button secondary" onClick={() => setRetry(r => r + 1)}>Retry</button></div>}
     {empty && <div className="empty map-message"><h1>No images here</h1><p>{filtered ? 'Widen the date range, or choose another folder or file type.' : 'This folder has no images yet.'}</p>{(filtered || searching) && <button className="text-button secondary" onClick={onReset}>Clear search and filters</button>}</div>}
