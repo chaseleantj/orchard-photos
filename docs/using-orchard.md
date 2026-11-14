@@ -50,7 +50,7 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 ## Viewing an image
 
-Click an image to open it. Beside the image, the viewer lists when it was taken, its folder, its dimensions and its size, under the file name. Click the folder to show only that folder.
+Click an image to open it. Beside the image, the viewer lists when it was taken, its folder, its dimensions and its size, under the file name.
 
 The viewer's buttons are labelled:
 
@@ -59,7 +59,7 @@ The viewer's buttons are labelled:
 - **Download original** saves the file. In the window, this asks where to save it.
 - **Show in Finder**, or **Show in folder** on Windows and Linux, opens the folder that holds it.
 
-Click its folder to show only images from that folder.
+Click its folder to show only images from that folder. The folder then shows under the search bar, after the name of the folder you opened. Click it there to see every folder again.
 
 Click the image to zoom in where you clicked, and click again to zoom out. While zoomed, drag or scroll with two fingers to move around. Pinch, or press Cmd and plus or minus on a Mac, or Ctrl elsewhere, to zoom around the pointer, and Cmd+0 or Ctrl+0 to fit the image again.
 
@@ -82,6 +82,8 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
 Filters also apply to search and the map.
+
+Each filter that is on shows after the folder's name, under the search bar. Click one to take it off.
 
 ## Searching
 

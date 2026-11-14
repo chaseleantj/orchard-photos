@@ -228,8 +228,15 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--inset) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
 .view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }
 .path { color: var(--ink); overflow-wrap: anywhere; }
-.folder-button { flex-shrink: 1; min-width: 0; margin: 0 calc(var(--inset) - var(--s2)) 0 var(--s1); padding: 0 var(--s2); gap: var(--s2); color: inherit; }
-.folder-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-button, .filter-token { flex-shrink: 1; min-width: 0; padding: 0 var(--s2); gap: var(--s2); color: inherit; }
+.folder-button span, .filter-token span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-button { margin-left: var(--s1); }
+/* Whichever button ends the line, the folder or the last filter, ends where the header's icons do. */
+.showing > .folder-button:last-child, .filter:last-child > .filter-token { margin-right: calc(var(--inset) - var(--s2)); }
+/* A filter that is on is named after the folder, on the button that takes it off, and fades in as it is applied. Its
+   cross sits closer to its own name than to the next filter's. */
+.showing > .filter { display: flex; align-items: center; min-width: 0; overflow: visible; animation: appear var(--motion-slow) var(--ease); }
+.filter-token { gap: var(--s1); }
 .numbers { font-variant-numeric: tabular-nums; }
 .near-duplicates { margin-top: var(--s4); }
 .near-duplicates h2 { margin: 0 0 var(--s3); font-size: inherit; font-weight: 400; color: var(--muted); }
@@ -294,6 +301,11 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  /* One job at a time on a phone, as its numbers, which the count beside it gives way to. */
  .activity { flex-shrink: 0; }
  .activity-item:not(:first-of-type), .activity-item .wide-only { display: none; }
+ /* Filters wrap under the count on a phone, rather than every name being cut short. Each line ends where the last
+    does, and the job beside them stays level with the count. */
+ .showing:has(.filter) { flex-wrap: wrap; justify-content: flex-end; }
+ .showing:has(.filter) .folder-button { margin-right: calc(var(--inset) - var(--s2)); }
+ .library-meta:has(.filter) { align-items: flex-start; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */
  .timeline { display: none; }

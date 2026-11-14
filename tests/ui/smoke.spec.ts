@@ -112,7 +112,9 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await filter(page, 'Folder', 'trips');
     await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
     await expect(pictures).toHaveCount(FIXTURE.trips);
-    await filter(page, 'Folder', '');
+    // A filter that is on is a button in the line, which takes it off again.
+    await page.getByRole('button', { name: 'trips. Show all folders' }).click();
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
     await filter(page, 'File type', 'image/bmp');
     await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
     await filter(page, 'File type', '');
