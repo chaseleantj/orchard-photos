@@ -16,6 +16,8 @@
   --inset: calc((var(--control) - var(--icon)) / 2);
   color: var(--ink); background: var(--bg); color-scheme: light;
 }
+/* Switching between light and dark cross-fades the whole page. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--motion-slow); animation-timing-function: var(--ease); }
 :root[data-theme='dark'] { --bg: #171816; --surface: #21221f; --soft: #292a26; --ink: #ebebe5; --muted: #a6a89e; --line: #44453e; --focus: #b1bea5; --danger: #ef9c88; --shadow: 0 8px 40px #00000040; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -278,4 +280,4 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  .image-stage { flex: 0 0 52dvh; margin: 0 var(--page); }
  .image-details { overflow: visible; padding: var(--s6) var(--page); }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
