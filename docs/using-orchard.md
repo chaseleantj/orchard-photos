@@ -48,6 +48,14 @@ The column of years on the right is a timeline of the whole folder, where each y
 | Page Up / Page Down | Move one year |
 | Home / End | Go to the newest or oldest image |
 
+## Folders
+
+The sidebar on the left lists the folder's subfolders, each with how many tiles it shows, which counts near-duplicates once, as the grid does. Click a folder to show only its images, including those in the folders inside it, and click its arrow to see the folders inside without showing it. **All images**, at the top, shows every folder again. The folder shown is also named under the search bar, after the name of the folder you opened, where clicking it shows every folder too.
+
+The sidebar applies to search and the map as well. The button at the left of the header hides and shows it, and Orchard remembers which. In a narrow window, it opens over the grid instead, and closes once you choose a folder.
+
+The sidebar is one stop for the Tab key. Once a folder has focus, the up and down arrow keys move between folders, the right arrow opens a folder or moves into it, the left arrow closes it or moves to the folder it's in, and Enter or Space shows it.
+
 ## Viewing an image
 
 Click an image to open it. Beside the image, the viewer lists when it was taken, its folder, its dimensions and its size, under the file name.
@@ -59,7 +67,7 @@ The viewer's buttons are labelled:
 - **Download original** saves the file. In the window, this asks where to save it.
 - **Show in Finder**, or **Show in folder** on Windows and Linux, opens the folder that holds it.
 
-Click its folder to show only images from that folder. The folder then shows under the search bar, after the name of the folder you opened. Click it there to see every folder again.
+Click its folder to show only images from that folder, as choosing it in the sidebar does.
 
 Click the image to zoom in where you clicked, and click again to zoom out. While zoomed, drag or scroll with two fingers to move around. Pinch, or press Cmd and plus or minus on a Mac, or Ctrl elsewhere, to zoom around the pointer, and Cmd+0 or Ctrl+0 to fit the image again.
 
@@ -77,7 +85,6 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 
 **Filter** narrows the grid by:
 
-- **Subfolder**, including the folders inside it.
 - **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 

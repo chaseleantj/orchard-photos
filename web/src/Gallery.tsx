@@ -34,6 +34,14 @@ function neighbour(positions: Position[], from: number, key: string) {
   return best;
 }
 
+/** The index of the first tile whose row reaches below `y`, in gallery coordinates. Rows only move down the list, so
+ *  it is found by halving. */
+function firstReaching(positions: Position[], y: number) {
+  let low = 0, high = positions.length - 1;
+  while (low < high) { const middle = (low + high) >> 1; if (positions[middle].top + positions[middle].height < y) low = middle + 1; else high = middle; }
+  return low;
+}
+
 /** Where things are in the grid, for the timeline. Offsets are in page coordinates. */
 export interface GalleryHandle {
   /** The index of the first image whose row reaches below `y`. */
@@ -53,6 +61,9 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
   // Only the last tile pointed at keeps its image loaded.
   const [pointed] = useState(imagesAhead);
   const prepare = useCallback((item: Picture) => pointed.keep([aheadUrl(item)]), [pointed]);
+  // The first row in view, and how far its top sits above the window's, at the width it was laid out for. When the
+  // width changes, as when the folders sidebar opens or the window is resized, that row stays where it was.
+  const anchor = useRef<{ index: number; offset: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const element = container.current!;
     const observer = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
@@ -64,6 +75,9 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
     const measure = () => {
       frame = 0;
       const top = -container.current!.getBoundingClientRect().top;
+      const { positions, width } = layout.current;
+      const index = firstReaching(positions, top);
+      anchor.current = top > 0 && positions[index] ? { index, offset: positions[index].top - top, width } : null;
       const start = Math.floor((top - BUFFER) / STEP) * STEP;
       const end = Math.ceil((top + innerHeight + BUFFER) / STEP) * STEP;
       setBand(old => old[0] === start && old[1] === end ? old : [start, end]);
@@ -118,16 +132,18 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
     flush(true);
     return { positions: positions as Position[], headings, height: Math.max(0, top - gap) };
   }, [items, sections, width, gap, target]);
-  const layout = useRef({ positions, headings });
-  layout.current = { positions, headings };
+  const layout = useRef({ positions, headings, width });
+  layout.current = { positions, headings, width };
+  useLayoutEffect(() => {
+    const held = anchor.current;
+    if (!held || held.width === width || !positions[held.index]) return;
+    held.width = width;
+    scrollTo({ top: container.current!.getBoundingClientRect().top + scrollY + positions[held.index].top - held.offset });
+  }, [positions, width]);
   useImperativeHandle(ref, () => ({
     indexAt: y => {
       const { positions } = layout.current;
-      const local = y - (container.current!.getBoundingClientRect().top + scrollY);
-      // Rows only move down the list, so the first row reaching past `local` is found by halving.
-      let low = 0, high = positions.length - 1;
-      while (low < high) { const middle = (low + high) >> 1; if (positions[middle].top + positions[middle].height < local) low = middle + 1; else high = middle; }
-      return Math.max(0, low);
+      return Math.max(0, firstReaching(positions, y - (container.current!.getBoundingClientRect().top + scrollY)));
     },
     offsetOf: index => {
       const { positions, headings } = layout.current;

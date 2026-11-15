@@ -289,19 +289,22 @@ class Library:
         return {'months': months, 'total': sum(month['count'] for month in months)}
 
     def facets(self):
-        """The subfolders and file types present, each with how many distinct images it holds. Video formats count as one type."""
+        """The folder, its subfolders and the file types present, each with how many tiles the grid shows for it:
+        distinct images, with near-duplicates stacked as one. The folder itself is the path ''. Video formats count as
+        one type."""
         with connect(self.directory, rows=True) as db:
-            pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
+            pairs = db.execute('''SELECT DISTINCT f.folder, coalesce(g.group_id, f.image_id) FROM files f
+                                  LEFT JOIN image_groups g ON g.image_id=f.image_id WHERE f.image_id IS NOT NULL''').fetchall()
             types = [dict(row) for row in db.execute(
-                """SELECT CASE WHEN mime LIKE ? THEN ? ELSE mime END AS mime, count(*) AS count
-                   FROM images GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
+                """SELECT CASE WHEN i.mime LIKE ? THEN ? ELSE i.mime END AS mime, count(DISTINCT coalesce(g.group_id, i.id)) AS count
+                   FROM images i LEFT JOIN image_groups g ON g.image_id=i.id GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
         folders: dict[str, set] = {}
-        for folder, image_id in pairs:
-            # A folder counts the images in its subfolders too.
+        for folder, tile in pairs:
+            # A folder counts the tiles in its subfolders too.
             parts = folder.split('/') if folder else []
-            for depth in range(1, len(parts) + 1):
-                folders.setdefault('/'.join(parts[:depth]), set()).add(image_id)
-        return {'folders': [{'path': path, 'count': len(ids)} for path, ids in sorted(folders.items(), key=lambda item: item[0].lower())],
+            for depth in range(len(parts) + 1):
+                folders.setdefault('/'.join(parts[:depth]), set()).add(tile)
+        return {'folders': [{'path': path, 'count': len(tiles)} for path, tiles in sorted(folders.items(), key=lambda item: item[0].lower())],
                 'types': types}
 
     def details(self, image_id):

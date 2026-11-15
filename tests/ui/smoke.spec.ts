@@ -108,13 +108,39 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
-  await test.step('filters narrow the grid by folder, type and date', async () => {
-    await filter(page, 'Folder', 'trips');
+  await test.step('the folders sidebar shows one folder, by pointer or keyboard, and collapses', async () => {
+    const tree = page.getByRole('tree', { name: 'Folders' });
+    const everything = tree.getByRole('treeitem', { name: `All images ${FIXTURE.images}` });
+    const trips = tree.getByRole('treeitem', { name: `trips ${FIXTURE.trips}` });
+    await expect(everything).toHaveAttribute('aria-selected', 'true');
+    await trips.click();
     await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
     await expect(pictures).toHaveCount(FIXTURE.trips);
+    await expect(trips).toHaveAttribute('aria-selected', 'true');
     // A filter that is on is a button in the line, which takes it off again.
     await page.getByRole('button', { name: 'trips. Show all folders' }).click();
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+    await expect(everything).toHaveAttribute('aria-selected', 'true');
+    // The tree is one tab stop; the arrow keys move through it and Enter shows a folder.
+    await everything.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(trips).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+    // Collapsed, it stays collapsed after a reload, and the folder is still said in the line.
+    await page.getByRole('button', { name: 'Hide folders' }).click();
+    await expect(tree).toBeHidden();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Show folders' })).toBeVisible();
+    await expect(tree).toBeHidden();
+    await page.getByRole('button', { name: 'Show folders' }).click();
+    await expect(everything).toBeVisible();
+  });
+
+  await test.step('filters narrow the grid by type and date', async () => {
     await filter(page, 'File type', 'image/bmp');
     await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
     await filter(page, 'File type', '');

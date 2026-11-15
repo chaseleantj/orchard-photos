@@ -53,22 +53,12 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
   const [error, setError] = useState('');
   useEffect(() => { request<Facets>('/api/facets').then(setFacets, e => setError((e as Error).message)); }, []);
   const invalid = draft.range === 'custom' && !!draft.from && !!draft.to && draft.from > draft.to;
-  const folders = facets?.folders ?? [];
   const types = facets?.types ?? [];
   const loading = !facets && !error;
   return <Panel title="Filters" anchor={anchor} onClose={onClose}>
-    <fieldset className="field"><legend>Folder</legend>
-      <Select label="Folder" value={draft.folder} disabled={loading} onChange={folder => setDraft({ ...draft, folder })}>
-        <option value="">{loading ? 'Loading folders…' : 'All folders'}</option>
-        {/* A remembered choice that no longer exists stays listed, so the panel never misstates what is applied. */}
-        {draft.folder && facets && !folders.some(f => f.path === draft.folder) && <option value={draft.folder}>{draft.folder} · no images</option>}
-        {folders.map(f => <option key={f.path} value={f.path}>{f.path} · {f.count.toLocaleString()}</option>)}
-      </Select>
-      {facets && !folders.length && <p className="field-note">This folder has no subfolders with images.</p>}
-    </fieldset>
     <fieldset className="field"><legend>File type</legend>
       <Select label="File type" value={draft.type} disabled={loading} onChange={type => setDraft({ ...draft, type })}>
-        <option value="">All types</option>
+        <option value="">{loading ? 'Loading types…' : 'All types'}</option>
         {draft.type && facets && !types.some(t => t.mime === draft.type) && <option value={draft.type}>{typeLabel(draft.type)} · no images</option>}
         {types.map(t => <option key={t.mime} value={t.mime}>{typeLabel(t.mime)} · {t.count.toLocaleString()}</option>)}
       </Select>
@@ -80,7 +70,7 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
       <p className="field-note">Photos are dated when they were taken. Images without that record use the date the file was last changed.</p>
     </fieldset>
     {error && <p className="error-copy" role="alert">{error}</p>}
-    <div className="panel-footer"><button className="text-button secondary" onClick={() => setDraft(defaults)}>Reset</button><button className="text-button primary" disabled={invalid} onClick={() => { onApply(draft); onClose(); }}>Apply</button></div>
+    <div className="panel-footer"><button className="text-button secondary" onClick={() => setDraft({ ...defaults, folder: draft.folder })}>Reset</button><button className="text-button primary" disabled={invalid} onClick={() => { onApply(draft); onClose(); }}>Apply</button></div>
   </Panel>;
 }
 
