@@ -38,7 +38,7 @@ On Linux or an Intel Mac, see [Running from source](docs/running-from-source.md)
 
 ## Privacy
 
-Orchard only goes online to download the search model, and to check for updates if you turn that on in **Info**. Your photos never leave your computer, and websites you visit can't reach them.
+Orchard only goes online to download the search model, and to check for updates if you turn that on under the version, at the foot of the sidebar. Your photos never leave your computer, and websites you visit can't reach them.
 
 ## More help
 

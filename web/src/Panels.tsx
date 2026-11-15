@@ -1,17 +1,17 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowUpRight, Check, ChevronDown, Copy, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
 import type { Facets, Filters, LibraryStatus, Model, Range, SearchCondition, SearchMode, Status, Updates } from './types';
-import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, typeLabel } from './types';
-import { type Estimate, Progress } from './Progress';
-import { estimated, searchWork, waitingOn } from './Activity';
+import { APP_NAME, RANGES, SET_UP, defaults, megabytes, post, request, typeLabel } from './types';
+import { waitingOn } from './Activity';
 
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
 const EDGE = 16;
-// How long Info says the diagnostics were copied.
+// How long the version's menu says the diagnostics were copied.
 const COPIED_FOR = 4000;
 
-/** A popover opened from `anchor`: under it, lined up with its right edge, or with its left edge and width for `menu`. */
+/** A popover opened from `anchor`: under it, or over it where there is more room above, lined up with its right edge,
+ *  or with its left edge and width for `menu`. */
 function Popover({ label, anchor, menu, className, onClose, children }: { label: string; anchor: HTMLElement | null; menu?: boolean; className: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -25,7 +25,10 @@ function Popover({ label, anchor, menu, className, onClose, children }: { label:
       if (menu) node.style.width = `${r.width}px`;
       const width = node.offsetWidth;
       const left = Math.max(EDGE, Math.min(innerWidth - width - EDGE, menu ? r.left : r.right - width));
-      Object.assign(node.style, { top: `${r.bottom + OFFSET}px`, left: `${left}px`, right: 'auto', maxHeight: `${innerHeight - r.bottom - OFFSET - EDGE}px` });
+      const below = innerHeight - r.bottom - OFFSET - EDGE, above = r.top - OFFSET - EDGE;
+      const up = node.scrollHeight > below && above > below;
+      node.toggleAttribute('data-up', up);
+      Object.assign(node.style, { top: `${up ? r.top - OFFSET - Math.min(node.scrollHeight, above) : r.bottom + OFFSET}px`, left: `${left}px`, right: 'auto', maxHeight: `${up ? above : below}px` });
     };
     place();
     addEventListener('resize', place);
@@ -74,64 +77,15 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
   </Panel>;
 }
 
-/** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known.
- *  `scanProgress` and `searchProgress` estimate how far reading and visual search are, and the time they have left. */
-export function LibraryPanel({ status, condition, shown, narrowed, scanProgress, searchProgress, anchor, onClose, onSetUp }: { status: Status; condition: SearchCondition; shown: number | null; narrowed: boolean; scanProgress: Estimate; searchProgress: Estimate; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
-  const library = status.library!;
-  const { counts, scan, search } = library;
-  const noun = countNoun(library);
-  const scanning = scan.state === 'scanning';
-  const unprepared = plural(Math.max(0, counts.images - search.indexed), noun);
-  const work = estimated(searchWork(search), searchProgress);
-  const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanProgress.left ? `. ${scanProgress.left}` : ''}` : 'Looking for images…';
-  // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
-  const ledger = [
-    { label: 'Images and videos', value: counts.files + counts.unreadable, shown: true },
-    { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
-    { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
-    { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
-  ].filter(row => row.shown);
-  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'Total shown';
-  return <Panel title="Info" anchor={anchor} onClose={onClose}>
-    <dl className="counts">
-      {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
-      <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
-    </dl>
-    {shown !== null && <p>{plural(shown, noun)} shown with your filters.</p>}
-    {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud, then reload with {status.platform === 'darwin' ? '⌘R' : 'Ctrl+R'}.</p>}
-    {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
-    {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
-    {!!library.unreached && <p>{plural(library.unreached, 'file')} could not be reached. Each scan tries {library.unreached === 1 ? 'it' : 'them'} again.</p>}
-    {scanning && <Progress value={scanProgress.value} label="Reading images" steady />}
-    {scanning && <p>{scanLabel}</p>}
-    {scan.error && <p className="error-copy">{scan.error}</p>}
-    <hr className="rule" /><h3>Visual search</h3>
-    {condition === 'off' ? <>
-      <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>
-      <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
-    </> : condition === 'failed' ? <>
-      <p className="error-copy" role="alert">{search.error}</p>
-      <button className="text-button secondary" onClick={onSetUp}>Try again</button>
-    </> : work ? <>
-      <p>{work.label}{work.detail && <span className="numbers">: {work.detail}</span>}</p>
-      <Progress value={work.value} label={work.label} steady />
-      {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
-      {search.state === 'indexing' && (!!searchProgress.left || !!search.indexed) && <p>{[searchProgress.left && `${searchProgress.left}.`, search.indexed && 'Prepared images can be searched already.'].filter(Boolean).join(' ')}</p>}
-    </> : search.state === 'waiting' ? <p>{unprepared} to prepare{scanning ? ' once reading finishes' : ''}.{search.indexed ? ' Prepared images can be searched already.' : ''}</p>
-    : search.state === 'ready' ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
-    : search.state === 'idle' && <p>Visual search is set up. Images added to this folder are prepared automatically.</p>}
-    {search.error && condition !== 'failed' && <p className="error-copy">{search.error}</p>}
-    <hr className="rule" /><h3>{APP_NAME} {status.version}</h3>
-    <About library={library} />
-  </Panel>;
-}
-
-/** The update check and the link that copies diagnostics, under the version in Info. */
-function About({ library }: { library: LibraryStatus }) {
+/** The version, at the foot of the sidebar, which opens the opt-in update check, the newer release it found, and the
+ *  diagnostics a bug report asks for. */
+export function AboutMenu({ version, library }: { version: string; library: LibraryStatus }) {
+  const [open, setOpen] = useState(false);
   const [updates, setUpdates] = useState<Updates | null>(null);
   const [report, setReport] = useState('');
   const [copied, setCopied] = useState<'copied' | 'select' | null>(null);
   const [error, setError] = useState('');
+  const button = useRef<HTMLButtonElement>(null);
   const reportArea = useRef<HTMLTextAreaElement>(null);
   // An update check that fails says nothing; the next day's check tries again.
   useEffect(() => { request<Updates>('/api/updates').then(setUpdates, () => {}); }, []);
@@ -144,14 +98,17 @@ function About({ library }: { library: LibraryStatus }) {
     setError(''); setUpdates(old => old && { ...old, enabled });
     try { setUpdates(await post<Updates>('/api/updates', { enabled })); } catch (e) { setUpdates(old => old && { ...old, enabled: !enabled }); setError((e as Error).message); }
   };
-  const copy = async (button: HTMLElement) => setCopied(await copyText(report, button) ? 'copied' : 'select');
+  const copy = async (target: HTMLElement) => setCopied(await copyText(report, target) ? 'copied' : 'select');
+  const close = () => { setOpen(false); setCopied(null); setError(''); };
   return <>
-    {updates?.update && <div className="panel-action"><p>Version {updates.update.version} is available.</p><a className="text-button secondary" href={updates.update.url} target="_blank" rel="noreferrer">See the release</a></div>}
-    <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub</span></label>
-    <p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.'
-      : <>Click <button className="inline-link" disabled={!report} onClick={e => void copy(e.currentTarget)}>here</button> to copy diagnostics for bug reports.</>}</p>
-    {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
-    {error && <p className="error-copy" role="alert">{error}</p>}
+    <button ref={button} className="text-button about" aria-haspopup="dialog" aria-expanded={open} title={updates?.update ? `Version ${updates.update.version} is available` : undefined} onClick={() => setOpen(true)}>{APP_NAME} {version}</button>
+    {open && <Popover label={`${APP_NAME} ${version}`} anchor={button.current} className="panel menu" onClose={close}>
+      {updates?.update && <a className="text-button menu-item" href={updates.update.url} target="_blank" rel="noreferrer"><ArrowUpRight />Get version {updates.update.version}</a>}
+      <button className="text-button menu-item" aria-pressed={!!updates?.enabled} disabled={!updates} onClick={() => void turn(!updates?.enabled)}><Check />Check for updates</button>
+      <button className="text-button menu-item" disabled={!report} onClick={e => void copy(e.currentTarget)}>{copied === 'copied' ? <><Check />Diagnostics copied</> : <><Copy />Copy diagnostics</>}</button>
+      {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
+      {error && <p className="menu-note error-copy" role="alert">{error}</p>}
+    </Popover>}
   </>;
 }
 

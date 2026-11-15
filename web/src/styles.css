@@ -13,8 +13,11 @@
   --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --empty-height: 55vh; --icon: 18px;
   /* The sticky header's height: its padding around the search bar. */
   --header: calc(var(--s4) + var(--search-height) + var(--s2));
-  /* The folders sidebar fits a folder two levels down with a long name and its count. */
-  --sidebar-width: 272px;
+  /* The sidebar fits a folder two levels down with a long name and its count. Collapsed, it is a rail of icon buttons
+     whose icons sit on the page's margin, under the wordmark. Its rows end a step short of its edge, where its list's
+     scrollbar runs. */
+  --sidebar-width: 272px; --rail: calc(var(--page) - var(--inset) + var(--control));
+  --side-row: calc(var(--sidebar-width) - var(--page) + var(--inset) - var(--s2));
   /* How far an icon sits inside its button. Text and the timeline's years at the right end there too, so the right
      edge lines up down the page. */
   --inset: calc((var(--control) - var(--icon)) / 2);
@@ -34,6 +37,13 @@ button, a { transition: background var(--motion) var(--ease), color var(--motion
 button:active:not(:disabled) { opacity: .7; }
 a { color: inherit; text-decoration: none; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: var(--s1); }
+/* Scrollbars are thin lines in the page's own inks, on no track. WebKit and Blink draw these; others take the standard
+   properties. */
+::-webkit-scrollbar { width: var(--s2); height: var(--s2); }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line) padding-box; border: 2px solid transparent; border-radius: var(--pill); }
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; } }
 svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0; }
 /* Every button shares one shape. Quiet ones sit in toolbars and menus, where their place says they are controls;
    anywhere else an action is primary (filled) or secondary (outlined), so it never reads as a label. */
@@ -47,11 +57,10 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .secondary:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--muted); background: none; }
 .muted { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-/* The header spans the window. Under it, the folders sidebar, when open, has the left column, and the status line and
-   the grid or map the right. Opening and closing the sidebar slides the column open or shut, and the grid and map
-   reflow into it as it goes. */
-.app { display: grid; grid-template-columns: 0px minmax(0, 1fr); grid-template-rows: auto auto 1fr; transition: grid-template-columns var(--motion-slow) var(--ease); }
-.app[data-folders] { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+/* The header spans the window. Under it, the sidebar has the left column, and the status line and the grid or map the
+   right. App slides the column open or shut, and the grid moves into the space in the same motion. */
+.app { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); grid-template-rows: auto auto 1fr; }
+.app[data-sidebar] { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .library-meta, main { grid-column: 2; }
 main { grid-row: 3; }
 .header { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
@@ -59,12 +68,7 @@ main { grid-row: 3; }
    At the foot of the window it keeps a step too.
    It is the tile's margin rather than the page's padding, which would also scroll the page under the search bar on every keystroke. */
 .picture { scroll-margin-top: calc(var(--header) + var(--s2)); scroll-margin-bottom: var(--s4); }
-/* The sidebar's button leads the header, its icon on the page's margin, over the sidebar's arrows. It is marked only
-   while it is hovered, since the sidebar beside it already shows whether it is open. */
-.header-start { justify-self: start; display: flex; align-items: center; gap: var(--s2); }
-.folders-button { margin-left: calc(var(--inset) * -1); }
-.folders-button[aria-expanded='true']:not(:hover) { background: none; }
-.wordmark { padding: 0; min-height: var(--s10); display: flex; align-items: center; }
+.wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
 .compact-mark { display: none; width: 30px; height: 30px; }
@@ -91,18 +95,33 @@ main { grid-row: 3; }
    or open. On the bar's drop state, which is the disc's colour, the disc takes the bar's usual colour instead. */
 .search [aria-haspopup]:hover, .search [aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--line); }
 .search[data-drop='over'] .icon-button { background: var(--soft); }
-.library-meta { grid-row: 2; display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); }
-/* The folders sidebar stays in view under the header while the grid scrolls, and scrolls its own list. Its rows are
-   menu rows: ink names, muted counts that end where the row does, and the soft ground on hover and on the folder shown.
-   Their text starts on the page's margin, under the header's first icon, so the ground reaches past it to the left.
-   The list keeps its width while the column slides shut, so names never rewrap. */
-.sidebar { grid-column: 1; grid-row: 2 / 4; position: sticky; top: var(--header); align-self: start; height: calc(100dvh - var(--header)); padding-bottom: var(--s6); overflow: hidden auto; overscroll-behavior: contain; }
-/* Once the column has slid shut, the list is hidden rather than only clipped. */
-.app:not([data-folders]) .sidebar { visibility: hidden; transition: visibility 0s var(--motion-slow); }
-.folders { width: var(--sidebar-width); padding-left: calc(var(--page) - var(--s3)); }
+.library-meta { grid-row: 2; min-height: calc(var(--control) + var(--s4)); display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); }
+/* The sidebar stays in view under the header while the grid scrolls: the views, the open folder, its folders, which
+   scroll on their own, and at its foot the button that collapses it and the version. Its rows are menu rows: an icon
+   or arrow on the page's margin, ink names, muted counts that end where the row does, and the soft ground on hover and
+   on what is shown. Collapsed to a rail, only the icons stay; the rest fades as the column slides shut over it, and
+   keeps its width meanwhile, so names never rewrap. */
+.sidebar { grid-column: 1; grid-row: 2 / 4; position: sticky; top: var(--header); align-self: start; height: calc(100dvh - var(--header)); display: flex; flex-direction: column; gap: var(--s1); padding-left: calc(var(--page) - var(--inset)); overflow: hidden; }
+.side-group { display: flex; flex-direction: column; gap: var(--s1); }
+.side-item { width: var(--side-row); justify-content: flex-start; padding: 0 var(--inset); gap: var(--s2); transition: background var(--motion) var(--ease), width var(--motion-slow) var(--ease); }
+.side-folder { margin-top: var(--s4); }
+.side-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar[data-collapsed] .side-item { width: var(--control); }
+.side-label, .folders, .side-about { transition: opacity var(--motion) var(--ease), border-color var(--motion) var(--ease); }
+.sidebar[data-collapsed] :is(.side-label, .folders, .side-about) { opacity: 0; visibility: hidden; transition: opacity var(--motion) var(--ease), visibility 0s var(--motion); }
+.folders { flex: 1; min-height: 0; width: calc(var(--side-row) + var(--s2)); overflow: hidden auto; scrollbar-gutter: stable; overscroll-behavior: contain; border-top: 1px solid transparent; }
+/* Once the list has scrolled under the folder's name, an edge divides them, as a panel's header gains one. */
+.folders[data-scrolled] { border-color: var(--line); }
+/* The list's scrollbar shows while the pointer is over the list. */
+.folders::-webkit-scrollbar-thumb { background-color: transparent; }
+.folders:hover::-webkit-scrollbar-thumb { background-color: var(--line); }
+.side-foot { display: flex; align-items: center; justify-content: space-between; width: var(--side-row); padding: var(--s2) 0 var(--s6); }
+.about { color: var(--muted); }
+/* The sidebar itself shows that it is open, so its button is marked only while hovered. */
+.side-toggle[aria-expanded='true']:not(:hover) { background: none; }
 /* Each level indents by an arrow and its gap, so a folder's arrow sits under the name of the folder it is in. An open
    folder's row takes no ground for being open, only for being shown. */
-.folder { height: var(--control); padding: 0 var(--s3) 0 calc(var(--s3) + var(--level) * (var(--icon) + var(--s2))); border-radius: var(--control-radius); display: flex; align-items: center; gap: var(--s2); cursor: pointer; transition: background var(--motion) var(--ease); }
+.folder { height: var(--control); padding: 0 var(--s3) 0 calc(var(--inset) + var(--level) * (var(--icon) + var(--s2))); border-radius: var(--control-radius); display: flex; align-items: center; gap: var(--s2); cursor: pointer; transition: background var(--motion) var(--ease); }
 .folders .folder { background: none; }
 .folders .folder:hover, .folders .folder[aria-selected='true'] { background: var(--soft); }
 /* Rings are drawn inside the rows, since the list's edge would clip one outside them. */
@@ -112,10 +131,10 @@ main { grid-row: 3; }
 .folder[aria-expanded='true'] .folder-toggle svg { transform: rotate(90deg); }
 .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count { color: var(--muted); font-variant-numeric: tabular-nums; }
-/* A note under the list starts where the names do. */
-.folders-note { width: var(--sidebar-width); margin: var(--s2) 0 0; padding: 0 var(--s3) 0 calc(var(--page) + var(--icon) + var(--s2)); color: var(--muted); }
-/* The count reads into the folder's name, which is the button that changes it, at the right of the row. */
-.library-meta .showing { display: flex; align-items: center; min-width: 0; margin-left: auto; white-space: nowrap; color: var(--muted); }
+.folders-note { margin: var(--s2) 0 0; padding-left: calc(var(--inset) + var(--icon) + var(--s2)); }
+/* The count, and any filters the Filters panel has on, at the right of the row. Text ends where the header's last icon
+   does, and so does the last filter's cross. */
+.library-meta .showing { display: flex; align-items: center; min-width: 0; margin-left: auto; margin-right: var(--inset); white-space: nowrap; color: var(--muted); }
 .showing > span { overflow: hidden; text-overflow: ellipsis; }
 .library-meta p { margin: 0; }
 /* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
@@ -124,7 +143,7 @@ main { grid-row: 3; }
    fades in as it starts. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
 .activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; animation: appear var(--motion-slow) var(--ease); }
-.activity-item:hover { background: var(--soft); color: var(--ink); }
+button.activity-item:hover { background: var(--soft); color: var(--ink); }
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
 .spinner { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -170,6 +189,10 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* A panel eases down out of the control that opened it. */
 .panel[open] { display: flex; flex-direction: column; animation: panel-in var(--motion) var(--ease); }
 @keyframes panel-in { from { opacity: 0; transform: translateY(calc(var(--s2) * -1)); } }
+/* One that opens over its control eases up out of it instead. */
+.panel[open][data-up] { animation-name: panel-up; }
+@keyframes panel-up { from { opacity: 0; transform: translateY(var(--s2)); } }
+@keyframes drawer-in { from { opacity: 0; transform: translateX(calc(var(--s4) * -1)); } }
 .panel:focus { outline: none; }
 .panel::backdrop { background: transparent; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s3) var(--s2) var(--s6); border-bottom: 1px solid transparent; transition: border-color var(--motion) var(--ease); }
@@ -208,16 +231,11 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* A link inside a sentence, for an action the sentence names. */
 .inline-link { padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .inline-link:hover:not(:disabled) { color: var(--ink); }
-/* Named values, one to a row: what each is, in muted, then the value. Info's ledger and the viewer's facts share these
-   rows, whose padding sets lines of one value closer together than two rows are. */
-.counts, .facts { display: grid; }
-.counts dt, .counts dd, .facts dt, .facts dd { margin: 0; padding: var(--s1) 0; }
-.counts dt, .facts dt { color: var(--muted); }
-/* A ledger: each row taken from the one above, ending at what the grid shows. */
-.counts { grid-template-columns: 1fr auto; margin: var(--s4) 0; }
-.counts dd { text-align: right; font-variant-numeric: tabular-nums; }
-.counts .total { border-top: 1px solid var(--line); margin-top: var(--s1); padding-top: var(--s2); color: var(--ink); }
-.rule { border: 0; border-top: 1px solid var(--line); margin: var(--s6) 0; }
+/* Named values, one to a row: what each is, in muted, then the value, as the viewer lists a file's facts. The padding
+   sets lines of one value closer together than two rows are. */
+.facts { display: grid; }
+.facts dt, .facts dd { margin: 0; padding: var(--s1) 0; }
+.facts dt { color: var(--muted); }
 .viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; padding: 0; border: none; margin: 0; background: var(--bg); color: var(--ink); }
 .viewer::backdrop { background: var(--bg); }
 /* The viewer fades in over the grid while its image settles to size. */
@@ -252,7 +270,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .image-details { padding: 0 var(--page) var(--s8) var(--s8); overflow: auto; color: var(--muted); }
 .image-details h1 { margin: 0; font: inherit; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .image-details p { margin: 0; }
-/* The facts about a file: what each is, then the fact, in Info's rows. The folder is a link that shows only that folder. */
+/* The facts about a file: what each is, then the fact. The folder is a link that shows only that folder. */
 .facts { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); margin: var(--s4) 0 0; }
 .facts dd { color: var(--ink); overflow-wrap: anywhere; }
 .facts .inline-link { text-align: left; text-decoration-color: var(--muted); transition: text-decoration-color var(--motion) var(--ease); }
@@ -264,14 +282,11 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 /* Filters that are on mark their button with a dot. */
 .filter-on { position: relative; }
 .filter-on::after { content: ''; position: absolute; top: var(--s2); left: calc(var(--inset) + var(--icon) - 3px); width: 6px; height: 6px; border-radius: var(--pill); background: var(--ink); }
-.view-switch { display: flex; gap: var(--s1); margin-right: var(--s1); }
 .path { color: var(--ink); overflow-wrap: anywhere; }
-.folder-button, .filter-token { flex-shrink: 1; min-width: 0; padding: 0 var(--s2); gap: var(--s2); color: inherit; }
-.folder-button span, .filter-token span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder-button { margin-left: var(--s1); }
-/* Whichever button ends the line, the folder or the last filter, ends where the header's icons do. */
-.showing > .folder-button:last-child, .filter:last-child > .filter-token { margin-right: calc(var(--inset) - var(--s2)); }
-/* A filter that is on is named after the folder, on the button that takes it off, and fades in as it is applied. Its
+.filter-token { flex-shrink: 1; min-width: 0; padding: 0 var(--s2); color: inherit; }
+.filter-token span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter:last-child > .filter-token { margin-right: calc(var(--s2) * -1); }
+/* A filter that is on is named on the button that takes it off, and fades in as it is applied. Its
    cross sits closer to its own name than to the next filter's. */
 .showing > .filter { display: flex; align-items: center; min-width: 0; overflow: visible; animation: appear var(--motion-slow) var(--ease); }
 .filter-token { gap: var(--s1); }
@@ -324,21 +339,16 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .progress[data-indeterminate] span { width: 30%; animation: progress-slide 1.2s var(--ease) infinite; }
 .panel .progress { margin: var(--s3) 0; }
 @keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-@media (max-width: 1100px) { .header-actions .text-button span { display: none; } .header-actions .text-button { width: var(--control); padding: 0; } }
 @media (min-width: 1600px) { :root { --page: 48px; } }
 @media (max-width: 720px) {
- :root { --page: 16px; --gap: 4px; --panel-width: min(360px, calc(100vw - 32px)); }
+ /* The header's two rows: the controls and the search bar, with the gap and padding between them. */
+ :root { --page: 16px; --gap: 4px; --panel-width: min(360px, calc(100vw - 32px)); --header: calc(var(--s4) + var(--control) + var(--s3) + var(--search-height) + var(--s2)); }
  .header { grid-template-columns: 1fr auto; gap: var(--s3); padding-top: var(--s4); }
  .search { grid-row: 2; grid-column: 1/-1; }
  /* The header's two rows, the controls and the search bar, the gap and padding between them, then a step. */
- .picture { scroll-margin-top: calc(var(--s4) + var(--control) + var(--search-height) + var(--s3) + var(--s2) * 2); }
- .view-switch { margin-right: 0; }
- /* In a narrow window the sidebar opens over the grid, from the left edge, as a surface of its own. */
- .app[data-folders] { grid-template-columns: 0px minmax(0, 1fr); }
- .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 6; height: auto; width: min(var(--sidebar-width), calc(100vw - var(--s12))); padding-top: var(--s4); background: var(--surface); box-shadow: var(--shadow); transition: transform var(--motion-slow) var(--ease); }
- .app:not([data-folders]) .sidebar { transform: translateX(-100%); transition: transform var(--motion-slow) var(--ease), visibility 0s var(--motion-slow); }
- .folders { width: auto; padding-right: var(--s2); }
- .folders-note { width: auto; }
+ /* In a narrow window the rail stays, and the sidebar opens over the grid from the left edge, as a surface of its own. */
+ .app[data-sidebar] { grid-template-columns: var(--rail) minmax(0, 1fr); }
+ .sidebar:not([data-collapsed]) { position: fixed; inset: 0 auto 0 0; z-index: 6; height: auto; padding-top: var(--s4); background: var(--surface); box-shadow: var(--shadow); animation: drawer-in var(--motion) var(--ease); }
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }
@@ -348,7 +358,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  /* Filters wrap under the count on a phone, rather than every name being cut short. Each line ends where the last
     does, and the job beside them stays level with the count. */
  .showing:has(.filter) { flex-wrap: wrap; justify-content: flex-end; }
- .showing:has(.filter) .folder-button { margin-right: calc(var(--inset) - var(--s2)); }
  .library-meta:has(.filter) { align-items: flex-start; }
  .skeleton { grid-template-columns: repeat(2,1fr); }
  /* A phone's own fast scrolling does this job; the gutter is worth more to the images. */

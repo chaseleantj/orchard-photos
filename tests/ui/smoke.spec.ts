@@ -15,8 +15,8 @@ async function filter(page: Page, label: string, value: string) {
 
 test('opens a folder and browses, filters, maps and searches it', async ({ page }) => {
   const meta = page.locator('.library-meta p');
-  // The count reads into the folder button: "Showing 12 images in photos", then any filters.
-  const showing = (count: string, scope = '') => `Showing ${count} in photos${scope}`;
+  // The count, "Showing 12 images", then any filters from the Filters panel. The folder shown is marked in the sidebar.
+  const showing = (count: string, scope = '') => `Showing ${count}${scope}`;
   const pictures = page.getByRole('button', { name: /^Open / });
 
   await test.step('welcome screen', async () => {
@@ -114,11 +114,11 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     const trips = tree.getByRole('treeitem', { name: `trips ${FIXTURE.trips}` });
     await expect(everything).toHaveAttribute('aria-selected', 'true');
     await trips.click();
-    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image')));
     await expect(pictures).toHaveCount(FIXTURE.trips);
     await expect(trips).toHaveAttribute('aria-selected', 'true');
-    // A filter that is on is a button in the line, which takes it off again.
-    await page.getByRole('button', { name: 'trips. Show all folders' }).click();
+    // All images, at the top, shows every folder again.
+    await everything.click();
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
     await expect(everything).toHaveAttribute('aria-selected', 'true');
     // The tree is one tab stop; the arrow keys move through it and Enter shows a folder.
@@ -126,17 +126,20 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await page.keyboard.press('ArrowDown');
     await expect(trips).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image')));
     await page.keyboard.press('ArrowUp');
     await page.keyboard.press('Enter');
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
-    // Collapsed, it stays collapsed after a reload, and the folder is still said in the line.
-    await page.getByRole('button', { name: 'Hide folders' }).click();
+    // Collapsed to a rail, it keeps the views and stays collapsed after a reload.
+    await page.getByRole('button', { name: 'Hide sidebar' }).click();
     await expect(tree).toBeHidden();
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Grid', exact: true }).click();
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Show folders' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
     await expect(tree).toBeHidden();
-    await page.getByRole('button', { name: 'Show folders' }).click();
+    await page.getByRole('button', { name: 'Show sidebar' }).click();
     await expect(everything).toBeVisible();
   });
 
@@ -255,7 +258,7 @@ test('while the model is here and a scan reads, the page waits instead of offeri
   });
   await page.goto('/');
   const line = page.locator('.activity');
-  await expect(line.getByRole('button', { name: 'Reading images: 1,200 of 7,872' })).toBeVisible();
+  await expect(line.getByRole('status', { name: 'Reading images: 1,200 of 7,872' })).toBeVisible();
   await expect(line.getByRole('progressbar')).toHaveCount(0);
   await page.getByRole('button', { name: 'Search options' }).click();
   const menu = page.getByRole('dialog', { name: 'Search options' });
@@ -278,10 +281,10 @@ test('how many images a search covers is said once, by the status line while the
   const row = page.locator('.library-meta');
   await page.getByRole('textbox', { name: 'Search images' }).fill('a red square');
   await page.keyboard.press('Enter');
-  await expect(row.getByRole('button', { name: 'Preparing visual search: 1,542 of 7,504' })).toBeVisible();
+  await expect(row.getByRole('status', { name: 'Preparing visual search: 1,542 of 7,504' })).toBeVisible();
   await expect(row.locator('.showing')).not.toContainText('prepared');
   search = { ...search, state: 'waiting' };
   scan = { state: 'scanning', found: 7872, done: 7600, changed: 7872 };
-  await expect(row.getByRole('button', { name: 'Reading images: 7,600 of 7,872' })).toBeVisible();
+  await expect(row.getByRole('status', { name: 'Reading images: 7,600 of 7,872' })).toBeVisible();
   await expect(row.locator('.showing')).toContainText('1,542 of 7,504 prepared');
 });

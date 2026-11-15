@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
-import type { Facets } from './types';
+import { ChartScatter, ChevronRight, FolderOpen, LayoutGrid, PanelLeft } from 'lucide-react';
+import { AboutMenu } from './Panels';
+import type { Facets, LibraryStatus, View } from './types';
 import { fileName, folderOf, request } from './types';
 
 interface Folder { path: string; count: number; children: Folder[] }
@@ -16,10 +17,36 @@ function tree(folders: Facets['folders']) {
 }
 const ancestors = (path: string) => { const above: string[] = []; for (let at = folderOf(path); at; at = folderOf(at)) above.push(at); return above; };
 
-/** The folders sidebar: every image at the top, then the subfolders as a tree, each with how many tiles the grid shows
- *  for it. `folder` is the folder filter, which this only reads and sets through `onChoose`. `revision` refetches the
- *  counts when a scan changes them. `shown` hides it from focus and assistive technology while it is collapsed. */
-export default function Folders({ root, revision, folder, noun, shown, onChoose }: { root: string; revision: number; folder: string; noun: string; shown: boolean; onChoose: (folder: string) => void }) {
+interface SidebarProps {
+  view: View; folder: string; root: string; revision: number; noun: string; library: LibraryStatus; version: string;
+  /** The open folder, whose button opens the folder panel, `choosing` while it is open. */
+  opened: { name: string; path: string }; choosing: boolean; chooser: React.Ref<HTMLButtonElement>;
+  expanded: boolean; toggle: React.Ref<HTMLButtonElement>;
+  onView: (view: View) => void; onFolder: (folder: string) => void; onChooser: () => void; onToggle: () => void;
+}
+
+/** The sidebar: the two views, the open folder, and its folders as a tree, with the button that collapses it to a rail
+ *  of the views and the folder at its foot, beside the version. */
+export default function Sidebar({ view, folder, root, revision, noun, library, version, opened, choosing, chooser, expanded, toggle, onView, onFolder, onChooser, onToggle }: SidebarProps) {
+  const item = (label: string, icon: React.ReactNode) => <>{icon}<span className="side-label">{label}</span></>;
+  return <nav id="sidebar" className="sidebar" aria-label="Sidebar" data-collapsed={!expanded || undefined}>
+    <div className="side-group" role="group" aria-label="View">
+      <button className="text-button side-item" aria-pressed={view === 'grid'} aria-label="Grid" title="Grid" onClick={() => onView('grid')}>{item('Grid', <LayoutGrid />)}</button>
+      <button className="text-button side-item" aria-pressed={view === 'map'} aria-label="Map" title="Map by appearance" onClick={() => onView('map')}>{item('Map', <ChartScatter />)}</button>
+    </div>
+    <button ref={chooser} className="text-button side-item side-folder" aria-label={opened.name} title={`${opened.path}. Choose another folder`} aria-expanded={choosing} onClick={onChooser}>{item(opened.name, <FolderOpen />)}</button>
+    <Folders root={root} revision={revision} folder={folder} noun={noun} shown={expanded} onChoose={onFolder} />
+    <div className="side-foot">
+      <button ref={toggle} className="icon-button side-toggle" aria-label={expanded ? 'Hide sidebar' : 'Show sidebar'} title={expanded ? 'Hide sidebar' : 'Show sidebar'} aria-expanded={expanded} onClick={onToggle}><PanelLeft /></button>
+      <div className="side-about" inert={!expanded}><AboutMenu version={version} library={library} /></div>
+    </div>
+  </nav>;
+}
+
+/** Every image at the top, then the subfolders as a tree, each with how many tiles the grid shows for it. `folder` is
+ *  the folder filter, which this only reads and sets through `onChoose`. `revision` refetches the counts when a scan
+ *  changes them. `shown` hides it from focus and assistive technology while the sidebar is a rail. */
+function Folders({ root, revision, folder, noun, shown, onChoose }: { root: string; revision: number; folder: string; noun: string; shown: boolean; onChoose: (folder: string) => void }) {
   const [facets, setFacets] = useState<{ root: string; folders: Facets['folders'] } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -78,8 +105,9 @@ export default function Folders({ root, revision, folder, noun, shown, onChoose 
     setCurrent(rows[to].folder.path);
     element(to)?.focus();
   };
-  return <nav id="folders" className="sidebar" aria-label="Folders" inert={!shown}>
-    {top && <div ref={list} className="folders" role="tree" aria-label="Folders" onKeyDown={move}>
+  const [scrolled, setScrolled] = useState(false);
+  return <div className="folders" inert={!shown} data-scrolled={scrolled || undefined} onScroll={e => setScrolled(e.currentTarget.scrollTop > 0)}>
+    {top && <div ref={list} role="tree" aria-label="Folders" onKeyDown={move}>
       {rows.map(({ folder: node, level }) => {
         const name = node.path ? fileName(node.path) : `All ${noun}s`;
         return <div key={node.path || '/'} role="treeitem" className="folder" aria-level={level} aria-selected={node.path === folder} aria-expanded={node.children.length ? open.has(node.path) : undefined} tabIndex={node.path === stop ? 0 : -1}
@@ -91,7 +119,6 @@ export default function Folders({ root, revision, folder, noun, shown, onChoose 
         </div>;
       })}
     </div>}
-    {top && !top.children.length && <p className="folders-note">This folder has no subfolders with {noun}s.</p>}
     {error && <p className="folders-note error-copy" role="alert">{error}</p>}
-  </nav>;
+  </div>;
 }

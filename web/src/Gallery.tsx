@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Layers, Play } from 'lucide-react';
 import type { Picture } from './types';
-import { dragImage, durationLabel, fileName, imageUrl, isVideo, monthLabel, plural } from './types';
+import { dragImage, durationLabel, fileName, imageUrl, isVideo, monthLabel, plural, slowMotion } from './types';
 import { aheadUrl, imagesAhead } from './preload';
 
 const BUFFER = 1200;
@@ -48,12 +49,20 @@ export interface GalleryHandle {
   indexAt: (y: number) => number;
   /** Where the image's row starts, or its month's heading if it is the month's first image. */
   offsetOf: (index: number) => number;
+  /** Lays the grid out at once for the width it has just been given, while that width is still being animated toward
+   *  it, and moves each tile and heading from where it is to its new place in the same motion, until `settled`. */
+  glide: (settled: Promise<unknown>) => void;
 }
+const BOX = ['left', 'top', 'width', 'height'] as const;
 
 /** The images in justified rows, each at its own shape. With `sections`, for date order, each month starts under its own heading. */
 export default function Gallery({ items, sections, onOpen, ref }: { items: Picture[]; sections: boolean; onOpen: (index: number) => void; ref?: React.Ref<GalleryHandle> }) {
   const container = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const [measured, setMeasured] = useState(0);
+  // While the grid's width is animated, its layout holds the width it is heading for, so rows break once rather than
+  // on every frame, which would shuffle the images between rows as the width passes through each break.
+  const [pinned, setPinned] = useState<number | null>(null);
+  const width = pinned ?? measured;
   // Visible band in gallery coordinates, snapped to STEP so scrolling re-renders only when it crosses a step.
   const [band, setBand] = useState<[number, number]>([0, 0]);
   // The one tile Tab stops at; the arrow keys move it across the grid.
@@ -66,7 +75,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
   const anchor = useRef<{ index: number; offset: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const element = container.current!;
-    const observer = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
+    const observer = new ResizeObserver(entries => setMeasured(entries[0].contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -150,6 +159,30 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
       const heading = headings.find(h => h.first === index);
       return container.current!.getBoundingClientRect().top + scrollY + (heading ? heading.top : positions[Math.min(index, positions.length - 1)]?.top ?? 0);
     },
+    glide: settled => {
+      const motion = slowMotion();
+      const element = container.current!;
+      if (!motion) return;
+      // Where each drawn tile and heading is now, mid-motion included, and the scroll, which keeping the first row in
+      // view may change.
+      const moving = [...element.querySelectorAll<HTMLElement>('.picture, .month')];
+      const from = new Map(moving.map(node => { const style = getComputedStyle(node); return [node.dataset.key!, BOX.map(side => parseFloat(style[side]))]; }));
+      moving.forEach(node => node.getAnimations().forEach(animation => animation.cancel()));
+      const scroll = scrollY;
+      flushSync(() => setPinned(element.getBoundingClientRect().width));
+      const shift = scrollY - scroll;
+      for (const node of element.querySelectorAll<HTMLElement>('.picture, .month')) {
+        const start = from.get(node.dataset.key!);
+        if (!start) continue;
+        const style = getComputedStyle(node);
+        const end = BOX.map(side => parseFloat(style[side]));
+        start[1] += shift;
+        if (start.every((value, side) => Math.abs(value - end[side]) < .5)) continue;
+        node.animate([Object.fromEntries(BOX.map((side, at) => [side, `${start[at]}px`])), Object.fromEntries(BOX.map((side, at) => [side, `${end[at]}px`]))], motion);
+      }
+      // Settled, the width is measured afresh, since the observer may not have seen the animation's last frame yet.
+      void settled.then(() => { setMeasured(element.getBoundingClientRect().width); setPinned(null); });
+    },
   }), []);
   const drawn = (index: number) => width > 0 && !!positions[index] && positions[index].top + positions[index].height >= band[0] && positions[index].top <= band[1];
   const stop = Math.min(current, items.length - 1);
@@ -171,7 +204,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
     first?.focus({ preventScroll: true });
   };
   return <div className="gallery" ref={container} style={{ height }} aria-label="Images" tabIndex={drawn(stop) ? undefined : 0} onFocus={enter} onKeyDown={move}>
-    {width > 0 && headings.map(({ label, top }) => top + HEADING >= band[0] && top <= band[1] ? <h2 key={top} className="month" style={{ top }}>{label}</h2> : null)}
+    {width > 0 && headings.map(({ label, top }) => top + HEADING >= band[0] && top <= band[1] ? <h2 key={label} className="month" data-key={label} style={{ top }}>{label}</h2> : null)}
     {items.map((item, index) => drawn(index) ? <Tile key={item.id} item={item} index={index} style={positions[index]} stop={index === stop} onOpen={onOpen} onFocus={setCurrent} onPrepare={prepare} /> : null)}
   </div>;
 }
@@ -189,7 +222,7 @@ const Tile = memo(function Tile({ item, index, style, stop, onOpen, onFocus, onP
   const label = item.members > 1 ? `Open ${name} and ${plural(item.members - 1, 'near-duplicate')}` : `Open ${name}`;
   // Only a pointer that moves readies the image, so a tile drawn under a still one, as when the viewer closes onto new
   // results, loads nothing.
-  return <button className="picture" style={style} data-index={index} tabIndex={stop ? 0 : -1} onClick={() => onOpen(index)} onFocus={() => onFocus(index)} aria-label={label}
+  return <button className="picture" style={style} data-index={index} data-key={item.id} tabIndex={stop ? 0 : -1} onClick={() => onOpen(index)} onFocus={() => onFocus(index)} aria-label={label}
     onPointerMove={() => { resting.current ||= window.setTimeout(() => onPrepare(item), PREPARE_DELAY); }}
     onPointerLeave={() => { clearTimeout(resting.current); resting.current = 0; }}
     onPointerDown={() => onPrepare(item)}>

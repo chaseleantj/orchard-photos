@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Estimate } from './Progress';
 import type { LibraryStatus, SearchCondition, Scan, SearchStatus } from './types';
@@ -7,16 +6,12 @@ import { SET_UP, megabytes, preparing } from './types';
 /** One piece of background work: what it is, how far along in words, and how far as a fraction when known. */
 interface Work { key: string; label: string; detail: string; value: number | null; error?: boolean }
 
-// How long the tip that visual search is ready stays after setting up finishes.
-const DONE_FOR = 10000;
-const READY = 'Visual search is ready. Describe or drop an image above.';
-
 function scanWork(scan: Scan): Work | null {
   if (scan.state !== 'scanning' || !scan.changed) return null;
   return { key: 'scan', label: 'Reading images', detail: `${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}`, value: (scan.done ?? 0) / scan.changed };
 }
 
-/** Visual search's work, named the same in the status line, the search options, Info and the map. */
+/** Visual search's work, named the same in the status line, the search options and the map. */
 export function searchWork(search: SearchStatus): Work | null {
   if (search.state === 'downloading') return { key: 'download', label: 'Downloading visual search', detail: `${megabytes(search.received ?? 0)} of ${megabytes(search.size ?? 0)} MB`, value: search.size ? (search.received ?? 0) / search.size : null };
   if (search.state === 'loading') return { key: 'load', label: 'Starting visual search', detail: '', value: null };
@@ -44,33 +39,22 @@ export interface Below { scan: boolean; search: boolean; setUp: boolean }
 /** Work whose amount done is known, with its bar at the estimate that moves on every second. */
 export const estimated = (work: Work | null, progress: Estimate) => work && work.value !== null ? { ...work, value: progress.value ?? work.value } : work;
 
-/** Background work in the line under the search bar: a spinner, then the job and how far it has got. Each job opens
- *  Info, where the bars and time left are.
+/** Background work in the line under the search bar: a spinner, then the job and how far it has got. A failure to set
+ *  up visual search offers to try again.
  *  Until visual search is set up, the line offers it, and the download's progress then takes its place. Nothing the
- *  page says `below` is said here too; `hideError` drops a failure already seen. */
-export function Activity({ library, condition, size, below, hideError, onOpen, onSetUp }: { library: LibraryStatus; condition: SearchCondition; size: number; below: Below; hideError: boolean; onOpen: () => void; onSetUp: () => void }) {
+ *  page says `below` is said here too. */
+export function Activity({ library, condition, size, below, onSetUp }: { library: LibraryStatus; condition: SearchCondition; size: number; below: Below; onSetUp: () => void }) {
   const search = searchWork(library.search);
-  const jobs = [below.scan ? null : scanWork(library.scan), below.search || (search?.error && hideError) ? null : search].filter((job): job is Work => !!job);
-  // Setting up visual search ends with a word that it worked; routine preparing of new images ends quietly.
-  const [done, setDone] = useState(false);
-  const setup = useRef(false);
-  const { state } = library.search;
-  useEffect(() => {
-    if (condition === 'starting') setup.current = true;
-    if (state === 'ready' && setup.current) { setup.current = false; setDone(true); }
-  }, [condition, state]);
-  useEffect(() => { if (!done) return; const timer = setTimeout(() => setDone(false), DONE_FOR); return () => clearTimeout(timer); }, [done]);
-  const ready = done && !jobs.length;
+  const jobs = [below.scan ? null : scanWork(library.scan), below.search ? null : search].filter((job): job is Work => !!job);
   return <div className="activity">
     {/* Announces what is happening when that changes, not every tick of the numbers. */}
-    <span className="sr-only" aria-live="polite">{ready ? READY : jobs.map(job => job.label).join(', ')}</span>
+    <span className="sr-only" aria-live="polite">{jobs.map(job => job.label).join(', ')}</span>
     {/* A narrow window keeps the numbers and drops the words around them. */}
-    {jobs.map(job => <button key={job.key} className={job.error ? 'activity-item error-copy' : 'activity-item'} aria-label={workLabel(job)} title="Show in Info" onClick={onOpen}>
-      {!job.error && <LoaderCircle className="spinner" />}<span>{job.detail ? <><span className="wide-only">{job.label}: </span><span className="numbers">{job.detail}</span></> : job.label}</span>
-    </button>)}
-    {condition === 'off' && !below.setUp && <button className="activity-item" title={`Find images by describing them. Downloads a ${megabytes(size)} MB model once, which runs on this computer.`} onClick={onSetUp}>
+    {jobs.map(job => job.error
+      ? <button key={job.key} className="activity-item error-copy" title={library.search.error} onClick={onSetUp}><span>{job.label}<span className="wide-only"> · Try again</span></span></button>
+      : <span key={job.key} className="activity-item" role="status" aria-label={workLabel(job)}><LoaderCircle className="spinner" /><span>{job.detail ? <><span className="wide-only">{job.label}: </span><span className="numbers">{job.detail}</span></> : job.label}</span></span>)}
+    {condition === 'off' && !below.setUp && <button className="activity-item" onClick={onSetUp}>
       <span>{SET_UP}<span className="wide-only"> · {megabytes(size)} MB, once</span></span>
     </button>}
-    {ready && <button className="activity-item" title={READY} onClick={onOpen}><span>{READY}</span></button>}
   </div>;
 }

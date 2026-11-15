@@ -147,3 +147,13 @@ const IMAGE_MARK = 'library-image:';
 export function dragImage(id: string) { return (e: React.DragEvent) => { e.dataTransfer.setData(IMAGE_DRAG, IMAGE_MARK + id); e.dataTransfer.effectAllowed = 'copy'; }; }
 /** The id of an image dragged from the grid or viewer, or '' for anything else. */
 export function draggedImage(data: DataTransfer) { const value = data.getData(IMAGE_DRAG); return value.startsWith(IMAGE_MARK) ? value.slice(IMAGE_MARK.length) : ''; }
+
+/** The stylesheet's slower motion, --motion-slow and --ease, for motion played from code, or null when motion is
+ *  reduced. */
+export function slowMotion(): KeyframeAnimationOptions | null {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const style = getComputedStyle(document.documentElement);
+  // The built stylesheet may write 320ms as .32s.
+  const time = style.getPropertyValue('--motion-slow').trim();
+  return { duration: parseFloat(time) * (time.endsWith('ms') ? 1 : 1000), easing: style.getPropertyValue('--ease').trim() };
+}
