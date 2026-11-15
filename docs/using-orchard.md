@@ -50,11 +50,11 @@ The column of years on the right is a timeline of the whole folder, where each y
 
 ## The sidebar
 
-The sidebar on the left switches between **Grid** and **Map**, and under the name of the open folder lists its subfolders, each with how many tiles it shows, which counts near-duplicates once, as the grid does. Click a folder to show only its images, including those in the folders inside it, and click its arrow to see the folders inside without showing it. **All images**, at the top, shows every folder again. The folder applies to search and the map as well.
+The sidebar on the left switches between **Grid** and **Map**, and under the name of the open folder lists its subfolders, each with how many tiles it shows, which counts near-duplicates once, as the grid does. Click a folder to show only its images, including those in the folders inside it, and click it again to close it. Click its arrow to see the folders inside without showing it. **All images**, at the top, shows every folder again. The folder applies to search and the map as well.
 
-The button at the foot of the sidebar collapses it to a rail of icons for the two views and the open folder, and the same button brings it back. Orchard remembers which. In a narrow window, the sidebar opens over the grid instead, and closes once you choose a folder or view.
+The button at the top of the sidebar, or Cmd+B (Ctrl+B on Windows and Linux), collapses it to a rail of icons for the two views and the open folder, and brings it back. Orchard remembers which. In a narrow window, the sidebar opens over the grid instead, and closes once you choose a folder or view.
 
-The sidebar is one stop for the Tab key. Once a folder has focus, the up and down arrow keys move between folders, the right arrow opens a folder or moves into it, the left arrow closes it or moves to the folder it's in, and Enter or Space shows it.
+The sidebar is one stop for the Tab key. Once a folder has focus, the up and down arrow keys move between folders, the right arrow opens a folder or moves into it, the left arrow closes it or moves to the folder it's in, and Enter or Space shows it, or opens or closes the folder already shown.
 
 ## Viewing an image
 
@@ -88,7 +88,7 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 - **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
-Filters also apply to search and the map.
+Each choice takes effect at once. Filters also apply to search and the map.
 
 Each filter that is on shows after the count, under the search bar. Click one to take it off.
 

@@ -64,7 +64,8 @@ export function rangeLabel(filters: Filters) {
   if (filters.range !== 'custom') return RANGES.find(r => r.range === filters.range && r.days)?.label || '';
   return filters.from && filters.to ? `${dateLabel(filters.from)} – ${dateLabel(filters.to)}` : filters.from ? `From ${dateLabel(filters.from)}` : filters.to ? `Until ${dateLabel(filters.to)}` : '';
 }
-export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || filters.range !== 'all';
+// A custom range with no dates yet selects every date, so it is not a filter.
+export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || !!rangeLabel(filters);
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);

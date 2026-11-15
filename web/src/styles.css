@@ -13,6 +13,8 @@
   --page: 32px; --gap: 8px; --timeline: 72px; --search-width: 400px; --search-height: var(--s12); --search-inset: var(--s2); --panel-width: 360px; --empty-height: 55vh; --icon: 18px;
   /* The sticky header's height: its padding around the search bar. */
   --header: calc(var(--s4) + var(--search-height) + var(--s2));
+  /* The count's row under the header, where the grid and the sidebar begin below. */
+  --meta: calc(var(--control) + var(--s4));
   /* The sidebar fits a folder two levels down with a long name and its count. Collapsed, it is a rail of icon buttons
      whose icons sit on the page's margin, under the wordmark. Its rows end a step short of its edge, where its list's
      scrollbar runs. */
@@ -36,7 +38,8 @@ button:disabled { cursor: default; opacity: .45; }
 button, a { transition: background var(--motion) var(--ease), color var(--motion) var(--ease), opacity var(--motion) var(--ease); }
 button:active:not(:disabled) { opacity: .7; }
 a { color: inherit; text-decoration: none; }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: var(--s1); }
+/* No rings. Keyboard focus takes the ground hover does, so it shows where the keyboard is without outlining anything. */
+:focus, :focus-visible { outline: none; }
 /* Scrollbars are thin lines in the page's own inks, on no track. WebKit and Blink draw these; others take the standard
    properties. */
 ::-webkit-scrollbar { width: var(--s2); height: var(--s2); }
@@ -50,7 +53,7 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .icon-button, .text-button { height: var(--control); border-radius: var(--control-radius); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .icon-button { width: var(--control); }
 .text-button { padding: 0 var(--s3); gap: var(--s2); }
-.icon-button:hover:not(:disabled), .text-button:hover:not(:disabled), [aria-pressed='true'], [aria-expanded='true'] { background: var(--soft); }
+.icon-button:is(:hover, :focus-visible):not(:disabled), .text-button:is(:hover, :focus-visible):not(:disabled), [aria-pressed='true'], [aria-expanded='true'] { background: var(--soft); }
 .primary, .primary:hover:not(:disabled) { background: var(--ink); color: var(--bg); }
 .primary:hover:not(:disabled) { opacity: .85; }
 .secondary { box-shadow: inset 0 0 0 1px var(--line); }
@@ -64,11 +67,11 @@ svg { width: var(--icon); height: var(--icon); stroke-width: 1.5; flex-shrink: 0
 .library-meta, main { grid-column: 2; }
 main { grid-row: 3; }
 .header { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr minmax(220px, var(--search-width)) 1fr; align-items: center; gap: var(--s6); padding: var(--s4) var(--page) var(--s2); background: var(--bg); position: sticky; top: 0; z-index: 5; }
-/* Keyboard focus scrolls a tile clear of the sticky header, ring and all: the header's padding and search bar, then a step.
+/* Keyboard focus scrolls a tile clear of the sticky header: the header's padding and search bar, then a step.
    At the foot of the window it keeps a step too.
    It is the tile's margin rather than the page's padding, which would also scroll the page under the search bar on every keystroke. */
 .picture { scroll-margin-top: calc(var(--header) + var(--s2)); scroll-margin-bottom: var(--s4); }
-.wordmark { justify-self: start; padding: 0; min-height: var(--s10); display: flex; align-items: center; }
+.wordmark { padding: 0; min-height: var(--s10); display: flex; align-items: center; }
 .lockup { width: auto; height: 26px; }
 .lockup path, .welcome-mark path, .compact-mark path { fill: currentColor; }
 .compact-mark { display: none; width: 30px; height: 30px; }
@@ -83,8 +86,6 @@ main { grid-row: 3; }
 .carried { position: fixed; z-index: 10; width: var(--s16); height: var(--s16); object-fit: cover; border-radius: var(--radius); box-shadow: var(--shadow); transform: translate(-50%, -50%); pointer-events: none; animation: lift var(--motion) var(--ease); }
 @keyframes lift { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
 .search[data-drop='over'] { background: var(--surface); outline: 2px solid var(--focus); }
-/* While an image is carried over the window, the drop states replace the focus ring. */
-.search:not([data-drop]):has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .search > svg { color: var(--muted); margin-inline: calc((var(--search-button) - var(--icon)) / 2); }
 .search-reference { width: var(--search-button); height: var(--search-button); border-radius: var(--radius); object-fit: cover; flex-shrink: 0; }
 .search input { width: 100%; min-width: 0; background: none; border: none; outline: none; }
@@ -95,16 +96,21 @@ main { grid-row: 3; }
    or open. On the bar's drop state, which is the disc's colour, the disc takes the bar's usual colour instead. */
 .search [aria-haspopup]:hover, .search [aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--line); }
 .search[data-drop='over'] .icon-button { background: var(--soft); }
-.library-meta { grid-row: 2; min-height: calc(var(--control) + var(--s4)); display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); }
+.library-meta { grid-row: 2; min-height: var(--meta); display: flex; align-items: center; gap: var(--s4); padding: 0 var(--page) var(--s4); }
 /* The sidebar stays in view under the header while the grid scrolls: the views, the open folder, its folders, which
-   scroll on their own, and at its foot the button that collapses it and the version. Its rows are menu rows: an icon
+   scroll on their own, and the version at its foot. It starts level with the grid, under the count's row, and the
+   button that collapses it heads it. Its rows are menu rows: an icon
    or arrow on the page's margin, ink names, muted counts that end where the row does, and the soft ground on hover and
    on what is shown. Collapsed to a rail, only the icons stay; the rest fades as the column slides shut over it, and
-   keeps its width meanwhile, so names never rewrap. */
-.sidebar { grid-column: 1; grid-row: 2 / 4; position: sticky; top: var(--header); align-self: start; height: calc(100dvh - var(--header)); display: flex; flex-direction: column; gap: var(--s1); padding-left: calc(var(--page) - var(--inset)); overflow: hidden; }
+   keeps its width meanwhile, so names never rewrap. It is clipped rather than hidden, since a hidden overflow can still
+   be scrolled, and scrolling the chosen folder into view would shift the rail's icons off the page's margin. */
+.sidebar { grid-column: 1; grid-row: 2 / 4; position: sticky; top: var(--header); align-self: start; height: calc(100dvh - var(--header)); display: flex; flex-direction: column; gap: var(--s1); padding: var(--meta) 0 0 calc(var(--page) - var(--inset)); overflow: clip; }
 .side-group { display: flex; flex-direction: column; gap: var(--s1); }
 .side-item { width: var(--side-row); justify-content: flex-start; padding: 0 var(--inset); gap: var(--s2); transition: background var(--motion) var(--ease), width var(--motion-slow) var(--ease); }
-.side-folder { margin-top: var(--s4); }
+/* The open folder heads its tree, a step below the views. On the rail the step closes, so the four icons are spaced
+   evenly. */
+.side-folder { margin-top: var(--s4); transition: background var(--motion) var(--ease), width var(--motion-slow) var(--ease), margin var(--motion-slow) var(--ease); }
+.sidebar[data-collapsed] .side-folder { margin-top: 0; }
 .side-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar[data-collapsed] .side-item { width: var(--control); }
 .side-label, .folders, .side-about { transition: opacity var(--motion) var(--ease), border-color var(--motion) var(--ease); }
@@ -115,17 +121,16 @@ main { grid-row: 3; }
 /* The list's scrollbar shows while the pointer is over the list. */
 .folders::-webkit-scrollbar-thumb { background-color: transparent; }
 .folders:hover::-webkit-scrollbar-thumb { background-color: var(--line); }
-.side-foot { display: flex; align-items: center; justify-content: space-between; width: var(--side-row); padding: var(--s2) 0 var(--s6); }
-.about { color: var(--muted); }
+.side-foot { padding: var(--s2) 0 var(--s6); }
+/* The version's text starts on the icons' line. */
+.about { color: var(--muted); padding: 0 var(--inset); }
 /* The sidebar itself shows that it is open, so its button is marked only while hovered. */
-.side-toggle[aria-expanded='true']:not(:hover) { background: none; }
+.side-toggle[aria-expanded='true']:not(:hover, :focus-visible) { background: none; }
 /* Each level indents by an arrow and its gap, so a folder's arrow sits under the name of the folder it is in. An open
    folder's row takes no ground for being open, only for being shown. */
 .folder { height: var(--control); padding: 0 var(--s3) 0 calc(var(--inset) + var(--level) * (var(--icon) + var(--s2))); border-radius: var(--control-radius); display: flex; align-items: center; gap: var(--s2); cursor: pointer; transition: background var(--motion) var(--ease); }
 .folders .folder { background: none; }
-.folders .folder:hover, .folders .folder[aria-selected='true'] { background: var(--soft); }
-/* Rings are drawn inside the rows, since the list's edge would clip one outside them. */
-.folder:focus-visible { outline-offset: -2px; }
+.folders .folder:is(:hover, :focus-visible), .folders .folder[aria-selected='true'] { background: var(--soft); }
 .folder-toggle { width: var(--icon); height: var(--control); display: flex; align-items: center; flex-shrink: 0; color: var(--muted); }
 .folder-toggle svg { transition: transform var(--motion) var(--ease); }
 .folder[aria-expanded='true'] .folder-toggle svg { transform: rotate(90deg); }
@@ -137,27 +142,23 @@ main { grid-row: 3; }
 .library-meta .showing { display: flex; align-items: center; min-width: 0; margin-left: auto; margin-right: var(--inset); white-space: nowrap; color: var(--muted); }
 .showing > span { overflow: hidden; text-overflow: ellipsis; }
 .library-meta p { margin: 0; }
-/* Rings are drawn inside these controls, since the sticky header above would cover the top of one outside them. */
-.library-meta :focus-visible { outline-offset: -2px; }
 /* Background work sits beside the count it is changing: a spinner while it runs, then what it is doing. Each job
    fades in as it starts. */
 .activity { display: flex; gap: var(--s1); min-width: 0; margin-left: calc(var(--s2) * -1); }
 .activity-item { height: var(--control); min-width: 0; padding: 0 var(--s2); gap: var(--s2); border-radius: var(--control-radius); display: inline-flex; align-items: center; color: var(--muted); white-space: nowrap; animation: appear var(--motion-slow) var(--ease); }
-button.activity-item:hover { background: var(--soft); color: var(--ink); }
+button.activity-item:is(:hover, :focus-visible) { background: var(--soft); color: var(--ink); }
 .activity-item > span { overflow: hidden; text-overflow: ellipsis; }
 .spinner { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .gallery { margin: 0 var(--page); position: relative; }
-.gallery:focus { outline: none; }
 /* A month heading over each run of images; the grid restarts under it. */
 .month { position: absolute; left: 0; right: 0; margin: 0; font-size: inherit; font-weight: 400; }
 .picture { position: absolute; padding: 0; overflow: hidden; border-radius: var(--radius); background: var(--soft); display: block; }
 .picture img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
-.picture:hover img { opacity: .87; }
+.picture:is(:hover, :focus-visible) img { opacity: .87; }
 /* An image that had to load fades in over the tile's ground, rather than popping onto it. */
 .picture img.arrived { animation: appear var(--motion-slow) var(--ease); }
 @keyframes appear { from { opacity: 0; } }
-.picture:focus-visible { outline-offset: var(--s1); }
 .picture .missing { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); padding: var(--s4); }
 .picture .duration { left: var(--s2); }
 .picture .members { right: var(--s2); }
@@ -165,9 +166,6 @@ button.activity-item:hover { background: var(--soft); color: var(--ink); }
 /* The timeline: a column of years in the right gutter, beside a marker for where the grid is. */
 main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + var(--timeline)); }
 .timeline { position: fixed; right: calc(var(--page) + var(--inset)); bottom: var(--s6); width: var(--timeline); z-index: 4; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: var(--control-radius); }
-/* Keyboard focus rings the month being named, not the whole column. */
-.timeline:focus-visible { outline: none; }
-.timeline:focus-visible .timeline-chip { outline: 2px solid var(--focus); outline-offset: 2px; }
 .timeline-year { position: absolute; right: 0; line-height: var(--s6); transform: translateY(-50%); color: var(--muted); pointer-events: none; transition: color var(--motion) var(--ease); }
 .timeline-year[data-current] { color: var(--ink); }
 .timeline-marker, .timeline-hover { position: absolute; left: var(--s4); width: var(--s3); border-radius: var(--pill); pointer-events: none; }
@@ -193,7 +191,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .panel[open][data-up] { animation-name: panel-up; }
 @keyframes panel-up { from { opacity: 0; transform: translateY(var(--s2)); } }
 @keyframes drawer-in { from { opacity: 0; transform: translateX(calc(var(--s4) * -1)); } }
-.panel:focus { outline: none; }
 .panel::backdrop { background: transparent; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s3) var(--s2) var(--s6); border-bottom: 1px solid transparent; transition: border-color var(--motion) var(--ease); }
 .panel > header.scrolled { border-color: var(--line); }
@@ -203,34 +200,37 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .panel-body > :last-child { margin-bottom: 0; }
 .panel h3 { font-size: inherit; font-weight: 400; margin: 0 0 var(--s1); }
 .menu { padding: var(--s2); }
+/* The version's menu is as wide as its longest item. */
+.about-menu { width: max-content; }
 .menu-label { color: var(--muted); padding: var(--s2) var(--s3) var(--s1); }
 .menu-item { width: 100%; justify-content: flex-start; gap: var(--s3); text-align: left; }
-.menu-item[aria-pressed='true']:not(:hover) { background: none; }
+.menu-item[aria-pressed='true']:not(:hover, :focus-visible) { background: none; }
 .menu-item[aria-pressed='false'] svg { visibility: hidden; }
 .menu-note { color: var(--muted); padding: 0 var(--s3) var(--s2) calc(var(--s3) * 2 + var(--icon)); }
 .menu-rule { border: 0; border-top: 1px solid var(--line); margin: var(--s2) 0; }
 .field { margin: 0 0 var(--s6); padding: 0; border: none; }
 .field legend, .field > label { display: block; color: var(--muted); margin-bottom: var(--s2); padding: 0; }
 .date-inputs { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); }
-.date-inputs input, .select select { min-width: 0; width: 100%; height: var(--control); border: 1px solid var(--line); border-radius: var(--control-radius); background: transparent; padding: 0 var(--s3); }
-.select { position: relative; }
-.select select { appearance: none; padding-right: var(--s8); cursor: pointer; transition: border-color var(--motion) var(--ease); }
-.select select:hover:not(:disabled) { border-color: var(--muted); }
-.select select:disabled { cursor: default; color: var(--muted); }
-.select select option { background: var(--surface); color: var(--ink); }
-.select svg { position: absolute; right: var(--s3); top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.date-inputs input, .dropdown { min-width: 0; width: 100%; height: var(--control); border: 1px solid var(--line); border-radius: var(--control-radius); background: transparent; padding: 0 var(--s3); transition: border-color var(--motion) var(--ease); }
+.date-inputs input:is(:hover, :focus-visible), .dropdown:is(:hover, :focus-visible, [aria-expanded='true']):not(:disabled) { border-color: var(--muted); background: transparent; }
+/* A dropdown reads as a field: its choice, a muted count, and the arrow at the right. Its menu lists each choice the
+   same way, with a tick on the one chosen. */
+.dropdown { display: flex; align-items: center; gap: var(--s2); text-align: left; }
+.dropdown:disabled { color: var(--muted); }
+.dropdown > svg { margin-left: auto; color: var(--muted); }
+.dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown > .dropdown-value { flex: 0 1 auto; }
+.dropdown-menu { overflow-y: auto; }
 .date-inputs label { min-width: 0; flex: 1; }
 .date-inputs label span { display: block; color: var(--muted); margin-bottom: var(--s2); }
-.panel-footer { display: flex; justify-content: space-between; align-items: center; }
 .panel p, .panel li { color: var(--muted); }
 .panel p { margin: var(--s3) 0; }
 .error-copy, .panel .error-copy { color: var(--danger); }
-.panel .field-note { margin: var(--s2) 0 0; }
 .panel-action { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); margin-top: var(--s4); }
 .panel-action p { margin: 0; }
 /* A link inside a sentence, for an action the sentence names. */
 .inline-link { padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.inline-link:hover:not(:disabled) { color: var(--ink); }
+.inline-link:is(:hover, :focus-visible):not(:disabled) { color: var(--ink); }
 /* Named values, one to a row: what each is, in muted, then the value, as the viewer lists a file's facts. The padding
    sets lines of one value closer together than two rows are. */
 .facts { display: grid; }
@@ -250,7 +250,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 @keyframes go-home { to { transform: var(--home); opacity: 0; } }
 @keyframes clear { to { background-color: transparent; } }
 @keyframes vanish { to { opacity: 0; } }
-.viewer:focus { outline: none; }
 /* The details column is as wide as a panel, which fits every routine fact on one line, and gives way to the image in a
    smaller window. */
 .viewer-layout { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 30vw, var(--panel-width)); grid-template-rows: var(--s20) minmax(0,1fr); }
@@ -274,7 +273,7 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .facts { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); margin: var(--s4) 0 0; }
 .facts dd { color: var(--ink); overflow-wrap: anywhere; }
 .facts .inline-link { text-align: left; text-decoration-color: var(--muted); transition: text-decoration-color var(--motion) var(--ease); }
-.facts .inline-link:hover { text-decoration-color: currentColor; }
+.facts .inline-link:is(:hover, :focus-visible) { text-decoration-color: currentColor; }
 .facts + p { margin-top: var(--s3); }
 /* Pulled left so the icons line up with the text above, not their hit areas. */
 .detail-actions { display: flex; flex-direction: column; align-items: flex-start; margin: var(--s4) 0 0 calc(var(--s3) * -1); }
@@ -297,9 +296,8 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .near-duplicates button { display: block; width: 100%; aspect-ratio: 1; padding: 0; border-radius: var(--radius); overflow: hidden; background: var(--soft); }
 /* Drawn inside the thumbnail, since the scrolling list would clip an outline around it. */
 .near-duplicates button[aria-pressed='true'] { outline: 2px solid var(--ink); outline-offset: -2px; }
-.near-duplicates button:focus-visible { outline-offset: -2px; }
 .near-duplicates img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity var(--motion) var(--ease); }
-.near-duplicates button:hover img { opacity: .87; }
+.near-duplicates button:is(:hover, :focus-visible) img { opacity: .87; }
 .chooser { width: 100%; max-width: var(--search-width); display: flex; flex-direction: column; align-items: stretch; gap: var(--s4); text-align: left; }
 .welcome .chooser { margin-top: var(--s4); }
 .check { display: grid; grid-template-columns: auto 1fr; gap: var(--s3); align-items: start; margin-top: var(--s2); cursor: pointer; }
@@ -324,7 +322,6 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
 .map-view main { min-height: 0; display: flex; }
 .map-stage { position: relative; flex: 1; min-width: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 .map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; outline: none; mask-image: linear-gradient(to bottom, transparent, #000 var(--s4), #000 calc(100% - var(--s4)), transparent); }
-.map-canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: calc(var(--s1) * -1); border-radius: var(--control-radius); }
 .map-placeholder { position: absolute; inset: 0; pointer-events: none; }
 .map-placeholder span { position: absolute; width: var(--s6); height: var(--s6); margin: calc(var(--s3) * -1); border-radius: var(--radius); background: var(--soft); animation: map-pulse 1.4s ease-in-out infinite alternate; }
 @keyframes map-pulse { from { opacity: .3; } to { opacity: 1; } }
@@ -346,9 +343,10 @@ main[data-timeline] .gallery { margin-right: calc(var(--page) + var(--inset) + v
  .header { grid-template-columns: 1fr auto; gap: var(--s3); padding-top: var(--s4); }
  .search { grid-row: 2; grid-column: 1/-1; }
  /* The header's two rows, the controls and the search bar, the gap and padding between them, then a step. */
- /* In a narrow window the rail stays, and the sidebar opens over the grid from the left edge, as a surface of its own. */
+ /* In a narrow window the rail stays, and the sidebar opens over the grid from the left edge, under the header, with
+    its button where the rail's was. */
  .app[data-sidebar] { grid-template-columns: var(--rail) minmax(0, 1fr); }
- .sidebar:not([data-collapsed]) { position: fixed; inset: 0 auto 0 0; z-index: 6; height: auto; padding-top: var(--s4); background: var(--surface); box-shadow: var(--shadow); animation: drawer-in var(--motion) var(--ease); }
+ .sidebar:not([data-collapsed]) { position: fixed; inset: var(--header) auto 0 0; z-index: 6; height: auto; align-self: stretch; background: var(--surface); box-shadow: var(--shadow); animation: drawer-in var(--motion) var(--ease); }
  .map-controls { bottom: var(--s4); }
  .map-note { bottom: var(--s4); }
  .library-meta { padding-top: 0; padding-bottom: var(--s4); gap: var(--s2); }

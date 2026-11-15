@@ -25,21 +25,19 @@ interface SidebarProps {
   onView: (view: View) => void; onFolder: (folder: string) => void; onChooser: () => void; onToggle: () => void;
 }
 
-/** The sidebar: the two views, the open folder, and its folders as a tree, with the button that collapses it to a rail
- *  of the views and the folder at its foot, beside the version. */
+/** The sidebar: the button that collapses it, the two views, the open folder, and its folders as a tree, with the
+ *  version at its foot. Collapsed, it is a rail of the button, the views and the folder. */
 export default function Sidebar({ view, folder, root, revision, noun, library, version, opened, choosing, chooser, expanded, toggle, onView, onFolder, onChooser, onToggle }: SidebarProps) {
   const item = (label: string, icon: React.ReactNode) => <>{icon}<span className="side-label">{label}</span></>;
   return <nav id="sidebar" className="sidebar" aria-label="Sidebar" data-collapsed={!expanded || undefined}>
+    <button ref={toggle} className="icon-button side-toggle" aria-label={expanded ? 'Hide sidebar' : 'Show sidebar'} title={expanded ? 'Hide sidebar' : 'Show sidebar'} aria-keyshortcuts="Meta+B Control+B" aria-controls="sidebar" aria-expanded={expanded} onClick={onToggle}><PanelLeft /></button>
     <div className="side-group" role="group" aria-label="View">
       <button className="text-button side-item" aria-pressed={view === 'grid'} aria-label="Grid" title="Grid" onClick={() => onView('grid')}>{item('Grid', <LayoutGrid />)}</button>
       <button className="text-button side-item" aria-pressed={view === 'map'} aria-label="Map" title="Map by appearance" onClick={() => onView('map')}>{item('Map', <ChartScatter />)}</button>
     </div>
     <button ref={chooser} className="text-button side-item side-folder" aria-label={opened.name} title={`${opened.path}. Choose another folder`} aria-expanded={choosing} onClick={onChooser}>{item(opened.name, <FolderOpen />)}</button>
     <Folders root={root} revision={revision} folder={folder} noun={noun} shown={expanded} onChoose={onFolder} />
-    <div className="side-foot">
-      <button ref={toggle} className="icon-button side-toggle" aria-label={expanded ? 'Hide sidebar' : 'Show sidebar'} title={expanded ? 'Hide sidebar' : 'Show sidebar'} aria-expanded={expanded} onClick={onToggle}><PanelLeft /></button>
-      <div className="side-about" inert={!expanded}><AboutMenu version={version} library={library} /></div>
-    </div>
+    <div className="side-foot side-about" inert={!expanded}><AboutMenu version={version} library={library} /></div>
   </nav>;
 }
 
@@ -81,7 +79,14 @@ function Folders({ root, revision, folder, noun, shown, onChoose }: { root: stri
   const listed = !!top;
   useEffect(() => { element(rows.findIndex(row => row.folder.path === folder))?.scrollIntoView({ block: 'nearest' }); }, [folder, listed]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = (path: string, to = !open.has(path)) => setOpen(old => { const next = new Set(old); if (to) next.add(path); else next.delete(path); return next; });
-  const choose = (node: Folder) => { if (node.children.length) toggle(node.path, true); setCurrent(node.path); onChoose(node.path); };
+  // Choosing a folder shows it and opens it. Choosing the one already shown only opens or closes it, so the grid keeps
+  // its place and a drawer stays open.
+  const choose = (node: Folder) => {
+    setCurrent(node.path);
+    if (node.path === folder) { if (node.children.length) toggle(node.path); return; }
+    if (node.children.length) toggle(node.path, true);
+    onChoose(node.path);
+  };
   // Arrow keys move through the rows, and open or close a folder, or step to its first subfolder or the folder it is
   // in, as file trees do; Enter or Space shows the folder.
   const move = (e: React.KeyboardEvent) => {

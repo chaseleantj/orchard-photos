@@ -3,13 +3,17 @@ import { FIXTURE } from './server';
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
-async function filter(page: Page, label: string, value: string) {
+// Chooses a filter, which takes effect at once, then closes the panel. `choice` is how its menu names the option.
+async function filter(page: Page, label: string, choice: string | RegExp) {
   await page.getByRole('button', { name: /^Filters/ }).click();
   const panel = page.getByRole('dialog', { name: 'Filters' });
-  // The folder and type lists are disabled until their facets arrive.
-  await expect(panel.getByLabel(label)).toBeEnabled();
-  await panel.getByLabel(label).selectOption(value);
-  await panel.getByRole('button', { name: 'Apply' }).click();
+  // The type list is disabled until its facets arrive.
+  const field = panel.getByRole('button', { name: new RegExp(`^${label},`) });
+  await expect(field).toBeEnabled();
+  await field.click();
+  await page.getByRole('dialog', { name: label }).getByRole('button', { name: choice, exact: typeof choice === 'string' }).click();
+  await expect(page.getByRole('dialog', { name: label })).toBeHidden();
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 }
 
@@ -141,15 +145,20 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(tree).toBeHidden();
     await page.getByRole('button', { name: 'Show sidebar' }).click();
     await expect(everything).toBeVisible();
+    // Cmd or Ctrl and B does the same from the keyboard.
+    await page.keyboard.press('ControlOrMeta+B');
+    await expect(tree).toBeHidden();
+    await page.keyboard.press('ControlOrMeta+B');
+    await expect(everything).toBeVisible();
   });
 
   await test.step('filters narrow the grid by type and date', async () => {
-    await filter(page, 'File type', 'image/bmp');
+    await filter(page, 'File type', /^BMP/);
     await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
-    await filter(page, 'File type', '');
-    await filter(page, 'Date', 'year');
+    await filter(page, 'File type', 'All types');
+    await filter(page, 'Date', 'Past year');
     await expect(meta).toHaveText(showing(plural(FIXTURE.today, 'image'), ' · Past year'));
-    await filter(page, 'Date', 'all');
+    await filter(page, 'Date', 'All');
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 

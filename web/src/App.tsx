@@ -295,6 +295,18 @@ export default function App() {
     const animation = columns.current = app.animate({ gridTemplateColumns: [from, to] }, motion);
     animation.finished.then(settle, settle);
   };
+  // Cmd or Ctrl and B opens or closes the sidebar, as in editors. In a text field Ctrl and B keeps moving the cursor
+  // back, as it does across the Mac.
+  useEffect(() => {
+    if (!ready) return;
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'b' || (typing(e.target) && !e.metaKey)) return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    addEventListener('keydown', key);
+    return () => removeEventListener('keydown', key);
+  });
   const closeDrawer = () => { if (narrow && drawer) { flushSync(() => setDrawer(false)); sidebarButton.current?.focus(); } };
   const chooseFolder = (path: string) => { closeDrawer(); setFilters(f => ({ ...f, folder: path })); };
   const chooseView = (next: View) => { closeDrawer(); setView(next); };
