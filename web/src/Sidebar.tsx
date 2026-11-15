@@ -30,7 +30,7 @@ interface SidebarProps {
 export default function Sidebar({ view, folder, root, revision, noun, library, version, opened, choosing, chooser, expanded, toggle, onView, onFolder, onChooser, onToggle }: SidebarProps) {
   const item = (label: string, icon: React.ReactNode) => <>{icon}<span className="side-label">{label}</span></>;
   return <nav id="sidebar" className="sidebar" aria-label="Sidebar" data-collapsed={!expanded || undefined}>
-    <button ref={toggle} className="icon-button side-toggle" aria-label={expanded ? 'Hide sidebar' : 'Show sidebar'} title={expanded ? 'Hide sidebar' : 'Show sidebar'} aria-keyshortcuts="Meta+B Control+B" aria-controls="sidebar" aria-expanded={expanded} onClick={onToggle}><PanelLeft /></button>
+    <button ref={toggle} className="text-button side-item side-toggle" aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'} title={expanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-keyshortcuts="Meta+B Control+B" aria-controls="sidebar" aria-expanded={expanded} onClick={onToggle}>{item('Collapse sidebar', <PanelLeft />)}</button>
     <div className="side-group" role="group" aria-label="View">
       <button className="text-button side-item" aria-pressed={view === 'grid'} aria-label="Grid" title="Grid" onClick={() => onView('grid')}>{item('Grid', <LayoutGrid />)}</button>
       <button className="text-button side-item" aria-pressed={view === 'map'} aria-label="Map" title="Map by appearance" onClick={() => onView('map')}>{item('Map', <ChartScatter />)}</button>

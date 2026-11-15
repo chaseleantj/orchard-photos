@@ -75,6 +75,9 @@ export default function App() {
   const [similar, setSimilar] = useState('');
   const [upload, setUpload] = useState<File | null>(null);
   const [items, setItems] = useState<Picture[]>([]);
+  // Whether the images listed are in date order, so the grid heads each month. It changes with the list rather than
+  // with the search, since a cleared search still shows its matches, in their own order, until the dated list arrives.
+  const [dated, setDated] = useState(true);
   const [total, setTotal] = useState(0);
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -181,15 +184,16 @@ export default function App() {
 
   const fetchResults = useCallback(async (offset: number, signal?: AbortSignal, limit = PAGE_SIZE) => {
     const params = new URLSearchParams({ ...filterParams(filters), q: submitted, mode: queryMode, similar, offset: String(offset), limit: String(limit) });
-    if (upload) return request<Results>(`/api/search/image?${params}`, { method: 'POST', body: upload, headers: { 'Content-Type': upload.type || 'application/octet-stream' }, signal });
-    return request<Results>(`/api/images?${params}`, { signal });
+    const dated = !submitted && !similar && !upload;
+    if (upload) return { ...await request<Results>(`/api/search/image?${params}`, { method: 'POST', body: upload, headers: { 'Content-Type': upload.type || 'application/octet-stream' }, signal }), dated };
+    return { ...await request<Results>(`/api/images?${params}`, { signal }), dated };
   }, [filters, submitted, queryMode, similar, upload]);
   useEffect(() => {
     if (!ready) return;
     const controller = new AbortController();
     const id = ++requestId.current;
     paging.current = false; setLoading(true); setLoadingMore(false); setError(''); setSelected(null);
-    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; listed.current = id; setItems(data.items); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
+    fetchResults(0, controller.signal).then(data => { if (id !== requestId.current) return; listed.current = id; setItems(data.items); setDated(data.dated); setTotal(data.total); setMore(data.hasMore); }).catch(e => { if (e.name !== 'AbortError' && id === requestId.current) { setError(e.message); setItems([]); } }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => controller.abort();
   }, [fetchResults, revision, ready, root]);
   const loadMore = async () => {
@@ -416,7 +420,7 @@ export default function App() {
         : searching || filtered ? <div className="empty"><h1>No images here</h1><p>Try another search, or widen the folder, type or date filters.</p><button className="text-button secondary" onClick={reset}>Clear search and filters</button></div>
         : gathering ? <div className="empty"><h1>Gathering your images</h1><p>{scan?.changed ? `Reading ${scan.done?.toLocaleString()} of ${plural(scan.changed, 'file')}. Images appear as they are found.` : scan?.found ? `${plural(scan.found, 'file')} found so far.` : 'Looking through this folder and its subfolders.'}</p>{scanProgress.left && <p>{scanProgress.left}</p>}<div className="empty-progress"><Progress value={scanProgress.value} label="Reading images" steady /></div></div>
         : <div className="empty"><h1>No images or videos in this folder</h1><p>{APP_NAME} found nothing here it can read. Hidden folders are skipped.</p><button className="text-button secondary" onClick={() => setPanel('folder')}>Choose another folder</button></div>)
-      : <Gallery ref={galleryRef} items={items} sections={!searching} onOpen={setSelected} />}
+      : <Gallery ref={galleryRef} items={items} sections={dated} onOpen={setSelected} />}
       {timelineShown && <Timeline data={timeline.data} loaded={items.length} gallery={galleryRef} header={headerRef} onReach={reach} />}
       {more && !loading && <div className="load-more" ref={sentinel} aria-live="polite">{loadingMore ? 'Loading…' : ''}</div>}
       </>}

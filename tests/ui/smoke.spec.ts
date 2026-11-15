@@ -135,15 +135,15 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await page.keyboard.press('Enter');
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
     // Collapsed to a rail, it keeps the views and stays collapsed after a reload.
-    await page.getByRole('button', { name: 'Hide sidebar' }).click();
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
     await expect(tree).toBeHidden();
     await page.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Grid', exact: true }).click();
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
     await expect(tree).toBeHidden();
-    await page.getByRole('button', { name: 'Show sidebar' }).click();
+    await page.getByRole('button', { name: 'Expand sidebar' }).click();
     await expect(everything).toBeVisible();
     // Cmd or Ctrl and B does the same from the keyboard.
     await page.keyboard.press('ControlOrMeta+B');
