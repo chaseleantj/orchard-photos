@@ -43,6 +43,7 @@ export const SET_UP = 'Set up visual search';
 export interface Status { app: string; version: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[]; photos: string | null }
 /** The opt-in check for a newer release, and the release it found, if any. */
 export interface Updates { enabled: boolean; update: { version: string; url: string } | null }
+/** The folder, as the path '', its subfolders and its file types, each with how many tiles the grid shows for it. */
 export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }
@@ -63,7 +64,8 @@ export function rangeLabel(filters: Filters) {
   if (filters.range !== 'custom') return RANGES.find(r => r.range === filters.range && r.days)?.label || '';
   return filters.from && filters.to ? `${dateLabel(filters.from)} – ${dateLabel(filters.to)}` : filters.from ? `From ${dateLabel(filters.from)}` : filters.to ? `Until ${dateLabel(filters.to)}` : '';
 }
-export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || filters.range !== 'all';
+// A custom range with no dates yet selects every date, so it is not a filter.
+export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || !!rangeLabel(filters);
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -80,7 +82,8 @@ export const downloadUrl = (id: string, path: string) => `/api/images/${id}/orig
 /** Browser storage keys, namespaced by the app so two local apps never read each other's settings. */
 export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
-interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
+/** `sidebar` says whether the folders sidebar is open in a wide window. */
+interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string; sidebar: boolean }
 // Filters saved before videos shared one type name a single format, like video/quicktime.
 const savedType = (type: unknown) => typeof type !== 'string' ? '' : isVideo({ mime: type }) ? VIDEO_TYPE : type;
 export function readPreferences(): Preferences {
@@ -93,8 +96,8 @@ export function readPreferences(): Preferences {
     const custom = validDate(f.from) || validDate(f.to);
     const filters: Filters = { folder: text(f.folder), type: savedType(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
     if (filters.from && filters.to && filters.from > filters.to) { filters.from = ''; filters.to = ''; }
-    return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root) };
-  } catch { return { filters: defaults, theme, view: 'grid', root: '' }; }
+    return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root), sidebar: saved.sidebar !== false };
+  } catch { return { filters: defaults, theme, view: 'grid', root: '', sidebar: true }; }
 }
 export function savePreferences(preferences: Preferences) {
   try { localStorage.setItem(STORAGE, JSON.stringify(preferences)); } catch { /* Browsing remains available without storage. */ }
@@ -145,3 +148,13 @@ const IMAGE_MARK = 'library-image:';
 export function dragImage(id: string) { return (e: React.DragEvent) => { e.dataTransfer.setData(IMAGE_DRAG, IMAGE_MARK + id); e.dataTransfer.effectAllowed = 'copy'; }; }
 /** The id of an image dragged from the grid or viewer, or '' for anything else. */
 export function draggedImage(data: DataTransfer) { const value = data.getData(IMAGE_DRAG); return value.startsWith(IMAGE_MARK) ? value.slice(IMAGE_MARK.length) : ''; }
+
+/** The stylesheet's slower motion, --motion-slow and --ease, for motion played from code, or null when motion is
+ *  reduced. */
+export function slowMotion(): KeyframeAnimationOptions | null {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const style = getComputedStyle(document.documentElement);
+  // The built stylesheet may write 320ms as .32s.
+  const time = style.getPropertyValue('--motion-slow').trim();
+  return { duration: parseFloat(time) * (time.endsWith('ms') ? 1 : 1000), easing: style.getPropertyValue('--ease').trim() };
+}

@@ -184,8 +184,19 @@ class LibraryTests(unittest.TestCase):
         self.image(2, 'a/b/c/two.jpg', mime='image/png')
         self.image(3, 'top.jpg')
         facets = self.library.facets()
-        self.assertEqual(facets['folders'], [{'path': 'a', 'count': 2}, {'path': 'a/b', 'count': 2}, {'path': 'a/b/c', 'count': 1}])
+        self.assertEqual(facets['folders'], [{'path': '', 'count': 3}, {'path': 'a', 'count': 2}, {'path': 'a/b', 'count': 2}, {'path': 'a/b/c', 'count': 1}])
         self.assertEqual(facets['types'], [{'mime': 'image/jpeg', 'count': 2}, {'mime': 'image/png', 'count': 1}])
+
+    def test_facets_count_near_duplicates_as_the_one_tile_the_grid_shows(self):
+        best = self.image(1, 'a/best.jpg')
+        blurry = self.image(2, 'b/blurry.jpg')
+        self.image(3, 'b/alone.jpg', mime='image/png')
+        self.group(best, blurry)
+        facets = self.library.facets()
+        self.assertEqual(facets['folders'], [{'path': '', 'count': 2}, {'path': 'a', 'count': 1}, {'path': 'b', 'count': 2}])
+        self.assertEqual(facets['types'], [{'mime': 'image/jpeg', 'count': 1}, {'mime': 'image/png', 'count': 1}])
+        for folder in facets['folders']:
+            self.assertEqual(self.library.pictures({'folder': folder['path']})['total'], folder['count'])
 
     def test_facets_list_video_formats_as_one_type(self):
         self.image(1, 'a.mov', mime='video/quicktime')

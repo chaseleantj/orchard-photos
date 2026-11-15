@@ -36,7 +36,7 @@ Orchard listens on port 4400. If another program has it, Orchard says so and sto
 
 ## The search model won't download
 
-The model goes into `models/` in the [data folder](using-orchard.md#where-orchard-keeps-its-data). If the download stops, choose **Try again** in Info, and it carries on where it stopped.
+The model goes into `models/` in the [data folder](using-orchard.md#where-orchard-keeps-its-data). If the download stops, click the failure under the search bar to try again, and it carries on where it stopped.
 
 The download comes from huggingface.co. Behind a proxy, set `HTTPS_PROXY` before starting Orchard, and make sure the proxy allows huggingface.co and hf.co:
 
@@ -58,10 +58,10 @@ If the model downloaded but won't load, delete `models/`, and Orchard downloads 
 Check these, in order:
 
 - **Unsupported files.** Orchard reads only the [supported formats](using-orchard.md#supported-files).
-- **Files Orchard can't read.** Info counts damaged, empty and very large files under **Could not be read**, and folders it couldn't open. Reloading with **⌘R** (Ctrl+R elsewhere) tries those files again, for when you've fixed their permissions or downloaded them.
+- **Files Orchard can't read.** Damaged, empty and very large files are skipped, as are folders it can't open. Reloading with **⌘R** (Ctrl+R elsewhere) tries those files again, for when you've fixed their permissions or downloaded them.
 - **Hidden files and Photos libraries.** Both are skipped inside a folder. To browse your Photos library, see [Apple Photos](using-orchard.md#apple-photos).
-- **Duplicates.** Identical copies show once, and near-duplicates share one tile. Info counts both.
-- **Filters.** Info says how many images your filters show.
+- **Duplicates.** Identical copies show once, and near-duplicates share one tile.
+- **Filters.** The sidebar's folder and the Filters panel narrow the grid, and the line under the search bar names any filter that is on.
 - **The date.** A photo without EXIF data is dated by when the file last changed, so a copied photo may sit in a later month than you expect.
 - **New files.** Orchard rescans every minute. Reloading with **⌘R** (Ctrl+R elsewhere) does it at once.
 
@@ -85,7 +85,7 @@ The terminal, or the app's log, shows a line starting with `Refused` for each re
 
 ## Photos on external, network and cloud drives
 
-The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. If the drive or network drops partway through a scan, Orchard stops reading, and carries on from where it was once the folder is back. Info counts any files it couldn't reach, and each scan tries them again. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
+The cache stays on your computer. If a drive is unplugged while Orchard is open, it keeps showing the last scan, and the cache is still there when the drive comes back. If the drive or network drops partway through a scan, Orchard stops reading, and carries on from where it was once the folder is back. Each scan tries again any files it couldn't reach. The cache belongs to the folder's path, so if the drive comes back under another name or drive letter, Orchard treats it as a new folder and reads it again.
 
 The first scan reads every file in full, to recognise copies, so a large folder on a slow USB or network drive takes a while. After that, Orchard only checks each file's size and date every minute. On a slow network share, start Orchard with `--no-watch` to stop that, and reload with **⌘R** (Ctrl+R elsewhere) when you've added photos, or to carry on a scan the network interrupted.
 
@@ -97,6 +97,6 @@ Install Orchard on each computer. Each one keeps its own cache and prepares its 
 
 ## Reporting a problem
 
-[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. In Info, click the link to copy diagnostics, and paste the report into the form. It names versions, counts and the last error, but no file names or folders.
+[Open a bug report](https://github.com/chaseleantj/orchard-photos/issues/new/choose) with your system, what you did, and what happened. Click the version at the foot of the sidebar, choose **Copy diagnostics**, and paste the report into the form. It names versions, counts and the last error, but no file names or folders.
 
 Include what the terminal printed, too. The Mac apps write it to `~/Library/Logs/Orchard.log`, and the Windows app to `%TEMP%\Orchard.log`.
