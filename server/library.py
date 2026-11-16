@@ -25,10 +25,16 @@ IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
-# The type filter's value for every video format at once. Real mime types contain a slash, so it never collides with one.
-VIDEO_TYPE = 'video'
 # Matches every video's mime type in SQL.
-VIDEO_MIMES = VIDEO_TYPE + '/%'
+VIDEO_MIMES = 'video/%'
+# RAW photos are typed image/x- and their extension, like image/x-nef.
+RAW_MIMES = ','.join(f"'image/x-{extension[1:]}'" for extension in sorted(RAW))
+# The type filter's choices, in the order it lists them: every format falls in exactly one. GIFs stand apart from
+# photos because they can move.
+TYPES = ('photo', 'video', 'gif', 'raw')
+# An image's type in SQL, over images as i.
+TYPE = f"""CASE WHEN i.mime LIKE '{VIDEO_MIMES}' THEN 'video' WHEN i.mime='image/gif' THEN 'gif'
+           WHEN i.mime IN ({RAW_MIMES}) THEN 'raw' ELSE 'photo' END"""
 PREVIEW_EDGE = 4096
 # The most a viewer's time zone can be from UTC, in minutes.
 MAX_OFFSET = 1440
@@ -40,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 def playable(mime: str) -> bool:
     """Whether the browser is given the original: an image it shows, or any video."""
-    return mime in WEB_TYPES or mime.startswith(VIDEO_TYPE + '/')
+    return mime in WEB_TYPES or mime.startswith('video/')
 
 
 def utc_offset(params) -> int:
@@ -178,11 +184,10 @@ class Library:
         if folder:
             where.append('(f.folder=? OR substr(f.folder,1,?)=?)')
             values += [folder, len(folder) + 1, folder + '/']
-        if params.get('type') == VIDEO_TYPE:
-            where.append('i.mime LIKE ?')
-            values.append(VIDEO_MIMES)
-        elif params.get('type'):
-            where.append('i.mime=?')
+        if params.get('type'):
+            if params['type'] not in TYPES:
+                raise ValueError('Choose a file type from the list.')
+            where.append(f'{TYPE}=?')
             values.append(params['type'])
         # Dates are the viewer's local days, so the stored UTC times are shifted by their offset before comparing.
         offset = utc_offset(params)
@@ -290,14 +295,13 @@ class Library:
 
     def facets(self):
         """The folder, its subfolders and the file types present, each with how many tiles the grid shows for it:
-        distinct images, with near-duplicates stacked as one. The folder itself is the path ''. Video formats count as
-        one type."""
+        distinct images, with near-duplicates stacked as one. The folder itself is the path ''. Types are the filter's
+        choices, in its order, and only those present."""
         with connect(self.directory, rows=True) as db:
             pairs = db.execute('''SELECT DISTINCT f.folder, coalesce(g.group_id, f.image_id) FROM files f
                                   LEFT JOIN image_groups g ON g.image_id=f.image_id WHERE f.image_id IS NOT NULL''').fetchall()
-            types = [dict(row) for row in db.execute(
-                """SELECT CASE WHEN i.mime LIKE ? THEN ? ELSE i.mime END AS mime, count(DISTINCT coalesce(g.group_id, i.id)) AS count
-                   FROM images i LEFT JOIN image_groups g ON g.image_id=i.id GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
+            counts = dict(db.execute(f'''SELECT {TYPE}, count(DISTINCT coalesce(g.group_id, i.id))
+                                         FROM images i LEFT JOIN image_groups g ON g.image_id=i.id GROUP BY 1''').fetchall())
         folders: dict[str, set] = {}
         for folder, tile in pairs:
             # A folder counts the tiles in its subfolders too.
@@ -305,7 +309,7 @@ class Library:
             for depth in range(len(parts) + 1):
                 folders.setdefault('/'.join(parts[:depth]), set()).add(tile)
         return {'folders': [{'path': path, 'count': len(tiles)} for path, tiles in sorted(folders.items(), key=lambda item: item[0].lower())],
-                'types': types}
+                'types': [{'type': kind, 'count': counts[kind]} for kind in TYPES if kind in counts]}
 
     def details(self, image_id):
         with connect(self.directory, rows=True) as db:

@@ -44,7 +44,7 @@ export interface Status { app: string; version: string; platform: string; picker
 /** The opt-in check for a newer release, and the release it found, if any. */
 export interface Updates { enabled: boolean; update: { version: string; url: string } | null }
 /** The folder, as the path '', its subfolders and its file types, each with how many tiles the grid shows for it. */
-export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
+export interface Facets { folders: { path: string; count: number }[]; types: { type: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }
 export interface Results { items: Picture[]; total: number; offset: number; hasMore: boolean }
@@ -84,8 +84,8 @@ export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
 /** `sidebar` says whether the folders sidebar is open in a wide window. */
 interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string; sidebar: boolean }
-// Filters saved before videos shared one type name a single format, like video/quicktime.
-const savedType = (type: unknown) => typeof type !== 'string' ? '' : isVideo({ mime: type }) ? VIDEO_TYPE : type;
+// Filters saved before formats were grouped name a single format, like image/png, and show everything again.
+const savedType = (type: unknown) => typeof type === 'string' && type in TYPE_LABELS ? type : '';
 export function readPreferences(): Preferences {
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
@@ -117,15 +117,17 @@ export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month
 export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-/** The type filter's value for every video format, matching the server's. */
-const VIDEO_TYPE = 'video';
-const TYPES: Record<string, string> = {
+/** The type filter's choices, matching the server's, as the filter names them. */
+const TYPE_LABELS: Record<string, string> = { photo: 'Photos', video: 'Videos', gif: 'GIFs', raw: 'RAW' };
+export const typeLabel = (type: string) => TYPE_LABELS[type] ?? type;
+const FORMATS: Record<string, string> = {
   'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
   'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
 };
 // RAW photos are typed image/x- and their extension, like image/x-nef.
-export const typeLabel = (mime: string) => mime === VIDEO_TYPE ? 'Videos' : TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
-export const isVideo = (picture: { mime: string }) => picture.mime.startsWith(`${VIDEO_TYPE}/`);
+/** A file's format, like JPEG or NEF. */
+export const formatLabel = (mime: string) => FORMATS[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
+export const isVideo = (picture: { mime: string }) => picture.mime.startsWith('video/');
 /** A video's length as a clock reads it, like 0:42 or 1:02:03. */
 export function durationLabel(seconds: number) {
   const whole = Math.round(seconds), hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60, rest = String(whole % 60).padStart(2, '0');
