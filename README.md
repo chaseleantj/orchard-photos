@@ -1,6 +1,6 @@
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-inverted.svg"><img src="docs/logo.svg" alt="Orchard Photos" height="56"></picture>
 
-<p align="center"><img src="docs/hero.gif" width="800" alt="Orchard Photos: a photo of the Colosseum is dragged onto the search bar and similar photos of Rome fill the grid; typing &quot;a bowl of noodles&quot; brings up photos of noodles; the map then lights up those noodle photos, grouped together among similar food."></p>
+<p align="center"><img src="docs/hero.gif" width="800" alt="Orchard Photos: a photo of the Colosseum is dragged onto the search bar and similar photos of Rome fill the grid; typing &quot;a bowl of noodles&quot; brings up photos of noodles; the map then lights up those noodle photos, grouped together among similar food, and zooms in on them."></p>
 
 Orchard is a free app for finding photos and videos on your computer. Open a folder, and Orchard shows every photo and video in it as one timeline. To find a photo, describe it, like "dog on a beach", or drop in a similar photo.
 
