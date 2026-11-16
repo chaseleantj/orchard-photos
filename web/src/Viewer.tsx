@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Download, FolderOpen, Images, ScanSearch, X } from 'lucide-react';
 import type { Details, Filters, Picture, Results } from './types';
-import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, isVideo, plural, post, request, sizeLabel, typeLabel, unbroken } from './types';
+import { dateLabel, downloadUrl, dragImage, durationLabel, fileName, filterParams, folderOf, imageUrl, formatLabel, isVideo, plural, post, request, sizeLabel, unbroken } from './types';
 import { aheadUrl, imagesAhead, shared } from './preload';
 import { scrollsSideways, swipe } from './swipe';
 import { stageZoom, type StageZoom } from './zoom';
@@ -191,7 +191,7 @@ export default function Viewer({ items, index, total, hasMore, loadingMore, page
           {!!item.duration && <><dt>Length</dt><dd className="numbers">{durationLabel(item.duration)}</dd></>}
           <dt>Size</dt><dd className="numbers">{sizeLabel(item.size)}</dd>
         </dl>
-        {details?.preview && <p>Shown as a converted preview. Download for the original {typeLabel(item.mime)}.</p>}
+        {details?.preview && <p>Shown as a converted preview. Download for the original {formatLabel(item.mime)}.</p>}
         <div className="detail-actions">
           {onSimilar && <button className="text-button" onClick={() => onSimilar(item.id)}><ScanSearch />Find similar</button>}
           {!video && <button className="text-button" onClick={copy}>{copied?.id === item.id ? <Check /> : <Copy />}Copy image</button>}

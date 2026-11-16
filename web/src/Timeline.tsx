@@ -68,9 +68,10 @@ export default function Timeline({ data, loaded, gallery, header, onReach }: Pro
     return label ? { index: label.index, y: label.y } : { index: indexAt(y), y };
   };
 
-  // The column starts level with the top of the grid and runs to the bottom of the window.
+  // The column runs to the bottom of the window from where the newest year's marker is level with the top of the first
+  // row of images, below the month's heading.
   useLayoutEffect(() => {
-    const place = () => setTop(gallery.current?.offsetOf(0) ?? header.current?.getBoundingClientRect().bottom ?? 0);
+    const place = () => setTop(gallery.current ? gallery.current.firstRow() - LABEL / 2 : header.current?.getBoundingClientRect().bottom ?? 0);
     place();
     const node = rail.current!;
     const observer = new ResizeObserver(([entry]) => setHeight(entry.contentRect.height));

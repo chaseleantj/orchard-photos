@@ -102,8 +102,8 @@ export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Fi
   const types = facets?.types ?? [];
   const typeChoices: Choice[] = facets ? [
     { value: '', label: 'All types' },
-    ...(draft.type && !types.some(t => t.mime === draft.type) ? [{ value: draft.type, label: typeLabel(draft.type), note: 'No images' }] : []),
-    ...types.map(t => ({ value: t.mime, label: typeLabel(t.mime), note: t.count.toLocaleString() })),
+    ...(draft.type && !types.some(t => t.type === draft.type) ? [{ value: draft.type, label: typeLabel(draft.type), note: 'No images' }] : []),
+    ...types.map(t => ({ value: t.type, label: typeLabel(t.type), note: t.count.toLocaleString() })),
   ] : [];
   return <Panel title="Filters" anchor={anchor} onClose={onClose}>
     <fieldset className="field"><legend>File type</legend>
@@ -170,7 +170,7 @@ async function copyText(text: string, button: HTMLElement) {
   return copied;
 }
 
-/** Open a folder: the system dialog where there is one, a typed path, or a recent folder. `offerSetup` adds the choice
+/** Open a folder: the system dialog, or a typed path where there is none, or a recent folder. `offerSetup` adds the choice
  *  to set up visual search along with whichever folder is opened, for a first visit. */
 export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { status: Status; offerSetup?: boolean; onOpened: (status: Status) => void; onSetUp?: () => void }) {
   const [path, setPath] = useState('');
@@ -185,10 +185,10 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
   return <div className="chooser">
     {status.picker && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
     {status.photos && !status.folder?.photos && <button className="text-button secondary" disabled={!!busy} onClick={() => open('photos', () => post('/api/folder', { path: status.photos }))}><Images />{busy === 'photos' ? 'Opening…' : 'Photos library'}</button>}
-    <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
-      <label htmlFor="folder-path">{status.picker ? 'Or type its path' : 'Folder path'}</label>
+    {!status.picker && <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
+      <label htmlFor="folder-path">Folder path</label>
       <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button secondary" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>
-    </form>
+    </form>}
     {error && <p className="error-copy" role="alert">{error}</p>}
     {!!status.recent.length && <div className="recent"><h3>Recent</h3><ul>{status.recent.map(folder => <li key={folder.path}>
       <button className="recent-open" disabled={!!busy || !folder.available} title={folder.available ? folder.path : `${folder.path} is not available. Reconnect its drive to open it.`} onClick={() => open(folder.path, () => post('/api/folder', { path: folder.path }))}><span className="path">{folder.label}</span>{!folder.available && <span className="muted">Not available</span>}{busy === folder.path && <span className="muted">Opening…</span>}</button>

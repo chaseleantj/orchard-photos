@@ -49,6 +49,8 @@ export interface GalleryHandle {
   indexAt: (y: number) => number;
   /** Where the image's row starts, or its month's heading if it is the month's first image. */
   offsetOf: (index: number) => number;
+  /** Where the first row of images starts, below any heading. */
+  firstRow: () => number;
   /** Lays the grid out at once for the width it has just been given, while that width is still being animated toward
    *  it, and moves each tile and heading from where it is to its new place in the same motion, until `settled`. */
   glide: (settled: Promise<unknown>) => void;
@@ -159,6 +161,7 @@ export default function Gallery({ items, sections, onOpen, ref }: { items: Pictu
       const heading = headings.find(h => h.first === index);
       return container.current!.getBoundingClientRect().top + scrollY + (heading ? heading.top : positions[Math.min(index, positions.length - 1)]?.top ?? 0);
     },
+    firstRow: () => container.current!.getBoundingClientRect().top + scrollY + (layout.current.positions[0]?.top ?? 0),
     glide: settled => {
       const motion = slowMotion();
       const element = container.current!;

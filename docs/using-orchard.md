@@ -4,7 +4,7 @@ This guide covers what you can do in Orchard once it's running. To install it, s
 
 ## Opening a folder
 
-To choose a folder, click the open folder's name in the sidebar, under **Grid** and **Map**. It opens the system folder dialog, or you can type or paste a path, or pick a recent folder. When Orchard runs in your browser, the folder dialog needs `zenity` or `kdialog` on Linux. On Windows there's no dialog in the browser, so type or paste the path.
+To choose a folder, click the open folder's name in the sidebar, under **Grid** and **Map**. It opens the system folder dialog, or you can pick a recent folder. When Orchard runs in your browser, the folder dialog needs `zenity` or `kdialog` on Linux. Where there's no dialog, as on Windows in the browser, you type or paste the folder's path instead.
 
 You can also open a folder from the terminal, with `./orchard ~/Pictures`, or `orchard.cmd C:\Users\you\Pictures` on Windows. If Orchard is already open, this switches its window to the folder and brings it to the front.
 
@@ -85,7 +85,7 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 
 **Filter** narrows the grid by:
 
-- **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
+- **File type**. **Photos**, **Videos**, **GIFs** or **RAW**, each listed only when the folder has some. Photos are every still format except camera RAW files and GIFs, which can move.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
 Each choice takes effect at once. Filters also apply to search and the map.

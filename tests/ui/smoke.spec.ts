@@ -24,6 +24,8 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
   const pictures = page.getByRole('button', { name: /^Open / });
 
   await test.step('welcome screen', async () => {
+    // As on a computer with no folder dialog, so a typed path opens the folder.
+    await page.route('**/api/status', async route => route.fulfill({ json: { ...await (await route.fetch()).json(), picker: false } }));
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Choose a folder of images' })).toBeVisible();
   });
@@ -153,8 +155,8 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
   });
 
   await test.step('filters narrow the grid by type and date', async () => {
-    await filter(page, 'File type', /^BMP/);
-    await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
+    await filter(page, 'File type', /^Photos/);
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image'), ' · Photos'));
     await filter(page, 'File type', 'All types');
     await filter(page, 'Date', 'Past year');
     await expect(meta).toHaveText(showing(plural(FIXTURE.today, 'image'), ' · Past year'));
