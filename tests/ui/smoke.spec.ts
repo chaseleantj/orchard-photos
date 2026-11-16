@@ -3,23 +3,29 @@ import { FIXTURE } from './server';
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
-async function filter(page: Page, label: string, value: string) {
+// Chooses a filter, which takes effect at once, then closes the panel. `choice` is how its menu names the option.
+async function filter(page: Page, label: string, choice: string | RegExp) {
   await page.getByRole('button', { name: /^Filters/ }).click();
   const panel = page.getByRole('dialog', { name: 'Filters' });
-  // The folder and type lists are disabled until their facets arrive.
-  await expect(panel.getByLabel(label)).toBeEnabled();
-  await panel.getByLabel(label).selectOption(value);
-  await panel.getByRole('button', { name: 'Apply' }).click();
+  // The type list is disabled until its facets arrive.
+  const field = panel.getByRole('button', { name: new RegExp(`^${label},`) });
+  await expect(field).toBeEnabled();
+  await field.click();
+  await page.getByRole('dialog', { name: label }).getByRole('button', { name: choice, exact: typeof choice === 'string' }).click();
+  await expect(page.getByRole('dialog', { name: label })).toBeHidden();
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 }
 
 test('opens a folder and browses, filters, maps and searches it', async ({ page }) => {
   const meta = page.locator('.library-meta p');
-  // The count reads into the folder button: "Showing 12 images in photos", then any filters.
-  const showing = (count: string, scope = '') => `Showing ${count} in photos${scope}`;
+  // The count, "Showing 12 images", then any filters from the Filters panel. The folder shown is marked in the sidebar.
+  const showing = (count: string, scope = '') => `Showing ${count}${scope}`;
   const pictures = page.getByRole('button', { name: /^Open / });
 
   await test.step('welcome screen', async () => {
+    // As on a computer with no folder dialog, so a typed path opens the folder.
+    await page.route('**/api/status', async route => route.fulfill({ json: { ...await (await route.fetch()).json(), picker: false } }));
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Choose a folder of images' })).toBeVisible();
   });
@@ -34,6 +40,12 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
   await test.step('the grid fills', async () => {
     await expect(pictures).toHaveCount(FIXTURE.images);
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+  });
+
+  await test.step('the status line offers visual search in words, with its download size', async () => {
+    const line = page.locator('.activity');
+    await expect(line.getByRole('button', { name: /^Set up visual search · \d+ MB, once$/ })).toBeVisible();
+    await expect(line.getByRole('progressbar')).toHaveCount(0);
   });
 
   await test.step('Ctrl+R reloads the page and rescans the folder', async () => {
@@ -73,7 +85,6 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     const first = await name.textContent();
     await viewer.locator('.image-stage img').click();
     await expect(stage).toHaveClass(/zoomed/);
-    await expect(viewer.getByRole('button', { name: 'Fit to screen' })).toBeVisible();
     // Escape zooms out before it closes.
     await page.keyboard.press('Escape');
     await expect(stage).not.toHaveClass(/zoomed/);
@@ -103,17 +114,53 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
-  await test.step('filters narrow the grid by folder, type and date', async () => {
-    await filter(page, 'Folder', 'trips');
-    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image'), ' › trips'));
+  await test.step('the folders sidebar shows one folder, by pointer or keyboard, and collapses', async () => {
+    const tree = page.getByRole('tree', { name: 'Folders' });
+    const everything = tree.getByRole('treeitem', { name: `All images ${FIXTURE.images}` });
+    const trips = tree.getByRole('treeitem', { name: `trips ${FIXTURE.trips}` });
+    await expect(everything).toHaveAttribute('aria-selected', 'true');
+    await trips.click();
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image')));
     await expect(pictures).toHaveCount(FIXTURE.trips);
-    await filter(page, 'Folder', '');
-    await filter(page, 'File type', 'image/bmp');
-    await expect(meta).toHaveText(showing(plural(1, 'image'), ' · BMP'));
-    await filter(page, 'File type', '');
-    await filter(page, 'Date', 'year');
+    await expect(trips).toHaveAttribute('aria-selected', 'true');
+    // All images, at the top, shows every folder again.
+    await everything.click();
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+    await expect(everything).toHaveAttribute('aria-selected', 'true');
+    // The tree is one tab stop; the arrow keys move through it and Enter shows a folder.
+    await everything.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(trips).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(meta).toHaveText(showing(plural(FIXTURE.trips, 'image')));
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
+    // Collapsed to a rail, it keeps the views and stays collapsed after a reload.
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+    await expect(tree).toBeHidden();
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Grid', exact: true }).click();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+    await expect(tree).toBeHidden();
+    await page.getByRole('button', { name: 'Expand sidebar' }).click();
+    await expect(everything).toBeVisible();
+    // Cmd or Ctrl and B does the same from the keyboard.
+    await page.keyboard.press('ControlOrMeta+B');
+    await expect(tree).toBeHidden();
+    await page.keyboard.press('ControlOrMeta+B');
+    await expect(everything).toBeVisible();
+  });
+
+  await test.step('filters narrow the grid by type and date', async () => {
+    await filter(page, 'File type', /^Photos/);
+    await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image'), ' · Photos'));
+    await filter(page, 'File type', 'All types');
+    await filter(page, 'Date', 'Past year');
     await expect(meta).toHaveText(showing(plural(FIXTURE.today, 'image'), ' · Past year'));
-    await filter(page, 'Date', 'all');
+    await filter(page, 'Date', 'All');
     await expect(meta).toHaveText(showing(plural(FIXTURE.images, 'image')));
   });
 
@@ -209,4 +256,46 @@ test('opens a folder and browses, filters, maps and searches it', async ({ page 
     await expect(box).toBeFocused();
     await page.getByRole('button', { name: 'Grid', exact: true }).click();
   });
+});
+
+test('while the model is here and a scan reads, the page waits instead of offering setup', async ({ page }) => {
+  // The folder the first test opened, with the status of a first scan that visual search is waiting on.
+  await page.route('**/api/status', async route => {
+    const status = await (await route.fetch()).json();
+    status.model.present = true;
+    status.library.scan = { state: 'scanning', found: 7872, done: 1200, changed: 7872 };
+    status.library.search = { state: 'waiting', indexed: 0, total: 1200, downloaded: true };
+    await route.fulfill({ json: status });
+  });
+  await page.goto('/');
+  const line = page.locator('.activity');
+  await expect(line.getByRole('status', { name: 'Reading images: 1,200 of 7,872' })).toBeVisible();
+  await expect(line.getByRole('progressbar')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Search options' }).click();
+  const menu = page.getByRole('dialog', { name: 'Search options' });
+  await expect(menu.getByRole('button', { name: 'Appearance' })).toBeDisabled();
+  await expect(menu.getByText('Ready once your images are read')).toBeVisible();
+  await expect(page.getByText(/set up/i)).toHaveCount(0);
+});
+
+test('how many images a search covers is said once, by the status line while they are being prepared', async ({ page }) => {
+  // Some images prepared: first with the rest being prepared, then with the rest waiting on a scan.
+  let search = { state: 'indexing', indexed: 1542, total: 7504, downloaded: true };
+  let scan: Record<string, unknown> = { state: 'ready' };
+  await page.route('**/api/status', async route => {
+    const status = await (await route.fetch()).json();
+    status.model.present = true;
+    Object.assign(status.library, { scan, search });
+    await route.fulfill({ json: status });
+  });
+  await page.goto('/');
+  const row = page.locator('.library-meta');
+  await page.getByRole('textbox', { name: 'Search images' }).fill('a red square');
+  await page.keyboard.press('Enter');
+  await expect(row.getByRole('status', { name: 'Preparing visual search: 1,542 of 7,504' })).toBeVisible();
+  await expect(row.locator('.showing')).not.toContainText('prepared');
+  search = { ...search, state: 'waiting' };
+  scan = { state: 'scanning', found: 7872, done: 7600, changed: 7872 };
+  await expect(row.getByRole('status', { name: 'Reading images: 7,600 of 7,872' })).toBeVisible();
+  await expect(row.locator('.showing')).toContainText('1,542 of 7,504 prepared');
 });

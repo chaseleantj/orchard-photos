@@ -1,6 +1,8 @@
 import errno
+import os
 from pathlib import Path
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -8,7 +10,7 @@ from unittest.mock import Mock, patch
 from PIL import Image
 
 from server.cache import connect, preview_path
-from server.library import Library
+from server.library import HEAD_START, Library
 from server.semantic import MODEL, Encoder
 
 
@@ -62,17 +64,19 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual((items[-1]['date'], items[-1]['dated']), ('2020-06-01T12:00:00Z', 'taken'))
         self.assertEqual(self.ids({'to': '2020-12-31'}), [photo])
 
-    def test_type_filter(self):
-        png = self.image(1, mime='image/png')
-        self.image(2)
-        self.assertEqual(self.ids({'type': 'image/png'}), [png])
-
-    def test_video_type_filter_matches_every_video_format(self):
-        mov = self.image(1, 'a.mov', mime='video/quicktime')
-        mp4 = self.image(2, 'b.mp4', mime='video/mp4')
-        self.image(3, mime='image/png')
+    def test_type_filter_groups_formats_into_photos_videos_gifs_and_raw(self):
+        jpeg = self.image(1, 'a.jpg')
+        heic = self.image(2, 'b.heic', mime='image/heif')
+        mov = self.image(3, 'c.mov', mime='video/quicktime')
+        mp4 = self.image(4, 'd.mp4', mime='video/mp4')
+        gif = self.image(5, 'e.gif', mime='image/gif')
+        nef = self.image(6, 'f.nef', mime='image/x-nef')
+        self.assertEqual(sorted(self.ids({'type': 'photo'})), sorted([jpeg, heic]))
         self.assertEqual(sorted(self.ids({'type': 'video'})), sorted([mov, mp4]))
-        self.assertEqual(self.ids({'type': 'video/mp4'}), [mp4])
+        self.assertEqual(self.ids({'type': 'gif'}), [gif])
+        self.assertEqual(self.ids({'type': 'raw'}), [nef])
+        with self.assertRaises(ValueError):
+            self.library.pictures({'type': 'image/png'})
 
     def test_name_search_treats_wildcards_as_literal_characters(self):
         literal = self.image(1, r'Export at 100%/photo_final C:\images.jpg')
@@ -144,7 +148,7 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.library.timeline({'zone': 'Europe/Berlin'})['months'][-1], {'month': '2026-01', 'count': 1})
         self.assertEqual(self.library.timeline({'zone': 'America/New_York'})['months'][-1], {'month': '2025-12', 'count': 1})
         self.assertEqual(self.library.timeline({'zone': 'Nowhere/Invalid', 'tz': '60'})['months'][-1], {'month': '2026-01', 'count': 1})
-        self.assertEqual(self.library.timeline({'type': 'image/png'}), {'months': [], 'total': 0})
+        self.assertEqual(self.library.timeline({'type': 'gif'}), {'months': [], 'total': 0})
 
     def test_invalid_filters_are_rejected(self):
         for params in ({'from': '2026-02-30'}, {'to': 'yesterday'}, {'tz': 'later'},
@@ -182,15 +186,26 @@ class LibraryTests(unittest.TestCase):
         self.image(2, 'a/b/c/two.jpg', mime='image/png')
         self.image(3, 'top.jpg')
         facets = self.library.facets()
-        self.assertEqual(facets['folders'], [{'path': 'a', 'count': 2}, {'path': 'a/b', 'count': 2}, {'path': 'a/b/c', 'count': 1}])
-        self.assertEqual(facets['types'], [{'mime': 'image/jpeg', 'count': 2}, {'mime': 'image/png', 'count': 1}])
+        self.assertEqual(facets['folders'], [{'path': '', 'count': 3}, {'path': 'a', 'count': 2}, {'path': 'a/b', 'count': 2}, {'path': 'a/b/c', 'count': 1}])
+        self.assertEqual(facets['types'], [{'type': 'photo', 'count': 3}])
 
-    def test_facets_list_video_formats_as_one_type(self):
+    def test_facets_count_near_duplicates_as_the_one_tile_the_grid_shows(self):
+        best = self.image(1, 'a/best.jpg')
+        blurry = self.image(2, 'b/blurry.jpg')
+        self.image(3, 'b/alone.jpg', mime='image/png')
+        self.group(best, blurry)
+        facets = self.library.facets()
+        self.assertEqual(facets['folders'], [{'path': '', 'count': 2}, {'path': 'a', 'count': 1}, {'path': 'b', 'count': 2}])
+        self.assertEqual(facets['types'], [{'type': 'photo', 'count': 2}])
+        for folder in facets['folders']:
+            self.assertEqual(self.library.pictures({'folder': folder['path']})['total'], folder['count'])
+
+    def test_facets_list_types_in_the_filters_order_and_only_those_present(self):
         self.image(1, 'a.mov', mime='video/quicktime')
         self.image(2, 'b.mp4', mime='video/mp4')
-        self.image(3, 'c.m4v', mime='video/x-m4v')
+        self.image(3, 'c.nef', mime='image/x-nef')
         self.image(4, 'd.png', mime='image/png')
-        self.assertEqual(self.library.facets()['types'], [{'mime': 'video', 'count': 3}, {'mime': 'image/png', 'count': 1}])
+        self.assertEqual(self.library.facets()['types'], [{'type': 'photo', 'count': 1}, {'type': 'video', 'count': 2}, {'type': 'raw', 'count': 1}])
 
     def test_originals_resolve_only_to_copies_of_that_image(self):
         image = self.image(1, 'a/one.jpg')
@@ -247,7 +262,7 @@ class LibraryTests(unittest.TestCase):
 
     def test_map_requires_prepared_visual_search(self):
         self.image(1)
-        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'state': 'idle'})
+        self.library.semantic = SimpleNamespace(status=lambda: {'indexed': 0, 'total': 1, 'state': 'idle', 'downloaded': False})
         with self.assertRaisesRegex(ValueError, 'not set up'):
             self.library.map({})
 
@@ -281,17 +296,33 @@ class LibraryTests(unittest.TestCase):
         self.library.index()
         self.assertEqual(len(runs), 2)
 
-    def test_preparing_waits_while_a_scan_reads_files_but_not_while_it_only_lists(self):
-        stops, grouped = [], []
-        self.library.semantic = SimpleNamespace(index=lambda cancelled: stops.append(cancelled()))
+    def test_preparing_waits_while_a_scan_reads_files_once_it_has_a_head_start(self):
+        stops, grouped, indexed = [], [], [0]
+        self.library.semantic = SimpleNamespace(index=lambda cancelled: stops.append(cancelled()),
+                                                status=lambda: {'indexed': indexed[0]})
         self.library.groups = SimpleNamespace(update=lambda: grouped.append(1))
-        for scan_state, stopped in (({'state': 'scanning', 'found': 500, 'done': 0, 'changed': 0}, False),
-                                    ({'state': 'scanning', 'found': 900, 'done': 48, 'changed': 900}, True),
-                                    ({'state': 'ready'}, False)):
-            with self.subTest(scan_state=scan_state):
-                self.library.scan_state = scan_state
+        listing = {'state': 'scanning', 'found': 500, 'done': 0, 'changed': 0}
+        reading = {'state': 'scanning', 'found': 900, 'done': 48, 'changed': 900}
+        # Near-duplicates are grouped only once the scan has read everything.
+        for scan_state, prepared, stopped, grouping in ((listing, 0, False, True), (reading, HEAD_START - 1, False, False),
+                                                        (reading, HEAD_START, True, False), ({'state': 'ready'}, HEAD_START, False, True)):
+            with self.subTest(scan_state=scan_state, prepared=prepared):
+                self.library.scan_state, indexed[0], before = scan_state, prepared, len(grouped)
                 self.library.index()
-                self.assertEqual((stops[-1], len(grouped)), (stopped, len(stops) - stops.count(True)))
+                self.assertEqual((stops[-1], len(grouped) - before), (stopped, int(grouping)))
+
+    def test_a_scan_starts_preparing_the_newest_images_until_they_have_a_head_start(self):
+        Image.new('RGB', (8, 8)).save(self.folder / 'one.png')
+        self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True)
+        # Once on the scan's commit, and once after the scan.
+        for started, preparing in ((False, 2), (True, 1)):
+            calls = threading.Semaphore(0)
+            with self.subTest(started=started), patch.object(self.library, 'head_started', return_value=started), \
+                    patch.object(self.library, 'index', side_effect=calls.release):
+                os.utime(self.folder / 'one.png', ns=(started + 1, started + 1))
+                self.library.scan()
+                self.assertTrue(all(calls.acquire(timeout=5) for _ in range(preparing)))
+                self.assertFalse(calls.acquire(timeout=.2))
 
     def test_preparing_resumes_after_a_scan_that_fails_partway(self):
         self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True)
@@ -312,6 +343,21 @@ class LibraryTests(unittest.TestCase):
         # A rescan that finds nothing new leaves it ready.
         self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 0, 'changed': 0}
         self.assertEqual(self.library.status()['search']['state'], 'ready')
+
+    def test_visual_search_waits_once_the_model_is_here_and_images_are_still_to_prepare(self):
+        self.image(1)
+        self.assertEqual(self.library.status()['search']['state'], 'idle')
+        self.library.semantic.encoder = SimpleNamespace(downloaded=lambda: True, activity=None, failure=None)
+        self.assertEqual(self.library.status()['search']['state'], 'waiting')
+        with self.assertRaisesRegex(ValueError, 'still getting ready'):
+            self.library.pictures({'q': 'sunset', 'mode': 'visual'})
+        # Before a first scan has read anything, the files it found are waiting too.
+        with connect(self.library.directory, rows=True) as db:
+            db.execute('DELETE FROM files')
+            db.execute('DELETE FROM images')
+        self.assertEqual(self.library.status()['search']['state'], 'idle')
+        self.library.scan_state = {'state': 'scanning', 'found': 1000, 'done': 0, 'changed': 1000}
+        self.assertEqual(self.library.status()['search']['state'], 'waiting')
 
     def test_scan_counts_revisions_and_reports_a_missing_folder(self):
         Image.new('RGB', (8, 8)).save(self.folder / 'one.png')

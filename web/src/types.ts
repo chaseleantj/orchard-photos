@@ -11,12 +11,20 @@ export interface Filters { folder: string; type: string; range: Range; from: str
 export interface Picture { id: string; width: number; height: number; mime: string; size: number; duration: number | null; date: string; dated: 'taken' | 'modified'; path: string; copies: number; group: string; members: number }
 interface FileCopy { path: string; modified: string }
 export interface Details { id: string; width: number; height: number; mime: string; size: number; duration: number | null; taken: string | null; camera: string | null; root: string; source: 'folder' | 'photos'; files: FileCopy[]; preview: boolean }
-/** `received` and `size` are bytes, sent while the model downloads. */
-export interface SearchStatus { state: 'idle' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
-/** Visual queries can be answered: some images are prepared. */
-export const searchable = (search: SearchStatus) => search.indexed > 0;
-/** Visual search is downloading, starting, or preparing images for the first time. */
-export const settingUp = (search: SearchStatus) => search.state === 'downloading' || search.state === 'loading' || (search.state === 'indexing' && !search.indexed);
+/** `received` and `size` are bytes, sent while the model downloads. `waiting` means the model is here and images are
+ *  still to prepare, but none are being prepared right now, usually because a scan is reading files. */
+export interface SearchStatus { state: 'idle' | 'waiting' | 'downloading' | 'loading' | 'indexing' | 'ready' | 'error'; indexed: number; total: number; downloaded: boolean; received?: number; size?: number; error?: string }
+/** Visual search is fetching, starting or preparing images, or about to. */
+export const preparing = (search: SearchStatus) => ['waiting', 'downloading', 'loading', 'indexing'].includes(search.state);
+/** Where visual search stands, for every part of the page: `off` until it is set up, `starting` while it is on its way
+ *  but can't answer yet, `on` once some images are prepared, even while more are, and `failed` when setting up failed
+ *  before any were. */
+export type SearchCondition = 'off' | 'starting' | 'on' | 'failed';
+export function searchCondition(model: Model, search: SearchStatus): SearchCondition {
+  if (search.indexed > 0) return 'on';
+  if (search.state === 'error') return 'failed';
+  return model.present ? 'starting' : 'off';
+}
 export interface Scan { state: 'ready' | 'scanning' | 'error'; found?: number; done?: number; changed?: number; error?: string }
 export interface LibraryStatus {
   /** `images` counts videos too, and `videos` how many of them are videos. */
@@ -35,7 +43,8 @@ export const SET_UP = 'Set up visual search';
 export interface Status { app: string; version: string; platform: string; picker: boolean; model: Model; folder: Folder | null; library: LibraryStatus | null; recent: RecentFolder[]; photos: string | null }
 /** The opt-in check for a newer release, and the release it found, if any. */
 export interface Updates { enabled: boolean; update: { version: string; url: string } | null }
-export interface Facets { folders: { path: string; count: number }[]; types: { mime: string; count: number }[] }
+/** The folder, as the path '', its subfolders and its file types, each with how many tiles the grid shows for it. */
+export interface Facets { folders: { path: string; count: number }[]; types: { type: string; count: number }[] }
 /** How many tiles of the date-ordered grid fall in each month (`YYYY-MM`), newest first. */
 export interface Timeline { months: { month: string; count: number }[]; total: number }
 export interface Results { items: Picture[]; total: number; offset: number; hasMore: boolean }
@@ -55,7 +64,8 @@ export function rangeLabel(filters: Filters) {
   if (filters.range !== 'custom') return RANGES.find(r => r.range === filters.range && r.days)?.label || '';
   return filters.from && filters.to ? `${dateLabel(filters.from)} – ${dateLabel(filters.to)}` : filters.from ? `From ${dateLabel(filters.from)}` : filters.to ? `Until ${dateLabel(filters.to)}` : '';
 }
-export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || filters.range !== 'all';
+// A custom range with no dates yet selects every date, so it is not a filter.
+export const isFiltered = (filters: Filters) => !!filters.folder || !!filters.type || !!rangeLabel(filters);
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -72,9 +82,10 @@ export const downloadUrl = (id: string, path: string) => `/api/images/${id}/orig
 /** Browser storage keys, namespaced by the app so two local apps never read each other's settings. */
 export const storageKey = (name: string) => `${app.slug}.${name}`;
 const STORAGE = storageKey('preferences');
-interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string }
-// Filters saved before videos shared one type name a single format, like video/quicktime.
-const savedType = (type: unknown) => typeof type !== 'string' ? '' : isVideo({ mime: type }) ? VIDEO_TYPE : type;
+/** `sidebar` says whether the folders sidebar is open in a wide window. */
+interface Preferences { filters: Filters; theme: 'light' | 'dark'; view: View; root: string; sidebar: boolean }
+// Filters saved before formats were grouped name a single format, like image/png, and show everything again.
+const savedType = (type: unknown) => typeof type === 'string' && type in TYPE_LABELS ? type : '';
 export function readPreferences(): Preferences {
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
@@ -85,15 +96,20 @@ export function readPreferences(): Preferences {
     const custom = validDate(f.from) || validDate(f.to);
     const filters: Filters = { folder: text(f.folder), type: savedType(f.type), range: RANGES.some(r => r.range === f.range && r.range !== 'all') ? f.range : custom ? 'custom' : 'all', from: validDate(f.from), to: validDate(f.to) };
     if (filters.from && filters.to && filters.from > filters.to) { filters.from = ''; filters.to = ''; }
-    return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root) };
-  } catch { return { filters: defaults, theme, view: 'grid', root: '' }; }
+    return { filters, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : theme, view: saved.view === 'map' ? 'map' : 'grid', root: text(saved.root), sidebar: saved.sidebar !== false };
+  } catch { return { filters: defaults, theme, view: 'grid', root: '', sidebar: true }; }
 }
 export function savePreferences(preferences: Preferences) {
   try { localStorage.setItem(STORAGE, JSON.stringify(preferences)); } catch { /* Browsing remains available without storage. */ }
 }
 
+/** Text that stays on one line: where a longer line has to break, it breaks beside this rather than inside it. */
+export const unbroken = (text: string) => text.replace(/ /g, '\u00A0');
+/** A date as "Jun 12, 2026". With `full`, the time follows it, and a line too short for both breaks between them. */
 export function dateLabel(date: string, full = false) {
-  return new Date(date).toLocaleString(undefined, full ? { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' } : { year: 'numeric', month: 'short', day: 'numeric' });
+  const moment = new Date(date);
+  const day = moment.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return full ? `${unbroken(day)}, ${unbroken(moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))}` : day;
 }
 /** A month as the grid's headings and the timeline name it, like "June 2026". */
 export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
@@ -101,15 +117,17 @@ export const monthLabel = (date: Date) => date.toLocaleString(undefined, { month
 export const monthStart = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
 export const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export const folderOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-/** The type filter's value for every video format, matching the server's. */
-const VIDEO_TYPE = 'video';
-const TYPES: Record<string, string> = {
+/** The type filter's choices, matching the server's, as the filter names them. */
+const TYPE_LABELS: Record<string, string> = { photo: 'Photos', video: 'Videos', gif: 'GIFs', raw: 'RAW' };
+export const typeLabel = (type: string) => TYPE_LABELS[type] ?? type;
+const FORMATS: Record<string, string> = {
   'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/tiff': 'TIFF', 'image/heif': 'HEIC',
   'video/quicktime': 'MOV', 'video/mp4': 'MP4', 'video/x-m4v': 'M4V', 'video/webm': 'WebM', 'video/x-matroska': 'MKV', 'video/x-msvideo': 'AVI', 'video/mpeg': 'MPEG', 'video/mp2t': 'MTS', 'video/3gpp': '3GP', 'video/x-ms-wmv': 'WMV', 'video/x-flv': 'FLV',
 };
 // RAW photos are typed image/x- and their extension, like image/x-nef.
-export const typeLabel = (mime: string) => mime === VIDEO_TYPE ? 'Videos' : TYPES[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
-export const isVideo = (picture: { mime: string }) => picture.mime.startsWith(`${VIDEO_TYPE}/`);
+/** A file's format, like JPEG or NEF. */
+export const formatLabel = (mime: string) => FORMATS[mime] || mime.replace(/^(image|video)\/(x-)?/, '').toUpperCase();
+export const isVideo = (picture: { mime: string }) => picture.mime.startsWith('video/');
 /** A video's length as a clock reads it, like 0:42 or 1:02:03. */
 export function durationLabel(seconds: number) {
   const whole = Math.round(seconds), hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60, rest = String(whole % 60).padStart(2, '0');
@@ -132,3 +150,13 @@ const IMAGE_MARK = 'library-image:';
 export function dragImage(id: string) { return (e: React.DragEvent) => { e.dataTransfer.setData(IMAGE_DRAG, IMAGE_MARK + id); e.dataTransfer.effectAllowed = 'copy'; }; }
 /** The id of an image dragged from the grid or viewer, or '' for anything else. */
 export function draggedImage(data: DataTransfer) { const value = data.getData(IMAGE_DRAG); return value.startsWith(IMAGE_MARK) ? value.slice(IMAGE_MARK.length) : ''; }
+
+/** The stylesheet's slower motion, --motion-slow and --ease, for motion played from code, or null when motion is
+ *  reduced. */
+export function slowMotion(): KeyframeAnimationOptions | null {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const style = getComputedStyle(document.documentElement);
+  // The built stylesheet may write 320ms as .32s.
+  const time = style.getPropertyValue('--motion-slow').trim();
+  return { duration: parseFloat(time) * (time.endsWith('ms') ? 1 : 1000), easing: style.getPropertyValue('--ease').trim() };
+}

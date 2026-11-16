@@ -6,8 +6,11 @@ const DETAIL = 2;
 const LEAST_MOST = 4;
 const CLICK = 2;
 // How far a pinch's wheel event zooms per unit of travel, and how far one press of Cmd or Ctrl and plus or minus goes.
-const PINCH_RATE = .01;
-const KEY_STEP = 1.5;
+// Both are twice a browser's own pace, so a short pinch or a couple of presses reach the detail.
+const PINCH_RATE = .02;
+// WebKit reports a pinch as the fingers' own scale, which is raised to this to keep that pace.
+const PINCH_GAIN = 2;
+const KEY_STEP = 2.25;
 // Pointer travel that turns a click into a drag.
 const DRAG_SLOP = 4;
 
@@ -18,15 +21,14 @@ type Point = { clientX: number; clientY: number };
 export interface StageZoom {
   /** The image to zoom, or null for none. A new image starts fitted. */
   set: (photo: HTMLImageElement | null) => void;
-  toggle: () => void;
   /** Escape zooms out, and Cmd or Ctrl and plus, minus and zero zoom around the pointer. Says whether it took the key. */
   key: (event: KeyboardEvent) => boolean;
   stop: () => void;
 }
 
 /** Zoom and pan for the image on a stage. A click zooms in at the point clicked, and another click zooms out. While
- *  zoomed, a drag or two fingers pan, and a pinch zooms around the pointer. `changed` runs when the zoom turns on or off. */
-export function stageZoom(stage: HTMLElement, changed: (zoomed: boolean) => void): StageZoom {
+ *  zoomed, a drag or two fingers pan, and a pinch zooms around the pointer. */
+export function stageZoom(stage: HTMLElement): StageZoom {
   let photo: HTMLImageElement | null = null;
   let scale = 1, x = 0, y = 0, pinchFrom = 1;
   let drag: { id: number; from: Point; x: number; y: number } | null = null;
@@ -46,13 +48,11 @@ export function stageZoom(stage: HTMLElement, changed: (zoomed: boolean) => void
     y = Math.min(spareY, Math.max(-spareY, y));
   };
   const show = (image: HTMLImageElement, animate = false) => {
-    const was = stage.classList.contains('zoomed');
     image.style.transition = animate ? '' : 'none';
     image.style.transform = zoomed() ? `translate(${x}px, ${y}px) scale(${scale})` : '';
     stage.classList.toggle('zoomed', zoomed());
     // Zoomed in, a drag pans the image rather than carrying it out of the window.
     image.draggable = !zoomed();
-    if (was !== zoomed()) changed(zoomed());
   };
   // Zoom to `next`, holding still the point under `at`, or the middle without one.
   const zoomTo = (next: number, at: Point | null = null, animate = false) => {
@@ -114,7 +114,7 @@ export function stageZoom(stage: HTMLElement, changed: (zoomed: boolean) => void
     show(photo);
   }, { ...options, passive: false });
   stage.addEventListener('gesturestart', event => { if (!photo) return; event.preventDefault(); pinchFrom = scale; }, options);
-  stage.addEventListener('gesturechange', event => { if (!photo) return; event.preventDefault(); const gesture = event as GestureEvent; zoomTo(pinchFrom * gesture.scale, gesture); }, options);
+  stage.addEventListener('gesturechange', event => { if (!photo) return; event.preventDefault(); const gesture = event as GestureEvent; zoomTo(pinchFrom * gesture.scale ** PINCH_GAIN, gesture); }, options);
   stage.addEventListener('gestureend', event => { if (photo) event.preventDefault(); }, options);
   // A resized window keeps the zoom, its pan held inside the image's new edges.
   const resized = new ResizeObserver(() => { if (photo && zoomed()) { clamp(photo); show(photo); } });
@@ -122,16 +122,13 @@ export function stageZoom(stage: HTMLElement, changed: (zoomed: boolean) => void
 
   return {
     set(next) {
-      const was = zoomed();
       if (photo && photo !== next) { photo.style.transform = ''; photo.draggable = true; }
       photo = next;
       scale = 1; x = y = 0;
       if (photo) { photo.style.transform = ''; photo.draggable = true; }
       release();
       stage.classList.remove('zoomed');
-      if (was) changed(false);
     },
-    toggle: () => zoomed() ? zoomOut() : zoomIn(null),
     key(event) {
       if (!photo) return false;
       const command = event.metaKey || event.ctrlKey;

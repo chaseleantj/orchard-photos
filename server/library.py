@@ -25,19 +25,28 @@ IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
 MAP_LIMIT = 25_000
 # Browsers show these directly. Anything else is viewed as a converted JPEG.
 WEB_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
-# The type filter's value for every video format at once. Real mime types contain a slash, so it never collides with one.
-VIDEO_TYPE = 'video'
 # Matches every video's mime type in SQL.
-VIDEO_MIMES = VIDEO_TYPE + '/%'
+VIDEO_MIMES = 'video/%'
+# RAW photos are typed image/x- and their extension, like image/x-nef.
+RAW_MIMES = ','.join(f"'image/x-{extension[1:]}'" for extension in sorted(RAW))
+# The type filter's choices, in the order it lists them: every format falls in exactly one. GIFs stand apart from
+# photos because they can move.
+TYPES = ('photo', 'video', 'gif', 'raw')
+# An image's type in SQL, over images as i.
+TYPE = f"""CASE WHEN i.mime LIKE '{VIDEO_MIMES}' THEN 'video' WHEN i.mime='image/gif' THEN 'gif'
+           WHEN i.mime IN ({RAW_MIMES}) THEN 'raw' ELSE 'photo' END"""
 PREVIEW_EDGE = 4096
 # The most a viewer's time zone can be from UTC, in minutes.
 MAX_OFFSET = 1440
+# How many of the newest images are prepared for visual search while a scan still reads files, so a large folder can
+# be searched soon after it opens. The rest wait for the scan, which on a laptop shares their power.
+HEAD_START = 300
 logger = logging.getLogger(__name__)
 
 
 def playable(mime: str) -> bool:
     """Whether the browser is given the original: an image it shows, or any video."""
-    return mime in WEB_TYPES or mime.startswith(VIDEO_TYPE + '/')
+    return mime in WEB_TYPES or mime.startswith('video/')
 
 
 def utc_offset(params) -> int:
@@ -97,6 +106,8 @@ class Library:
 
             def committed():
                 self.revision += 1
+                if not self.closed.is_set() and self.semantic.encoder.downloaded() and not self.head_started():
+                    threading.Thread(target=self.index, daemon=True).start()
             self.stats = self.scanner.scan(progress, committed, self.closed.is_set, retry)
             self.stats['updated'] = datetime.now(UTC).isoformat()
             self.stats_path.write_text(json.dumps(self.stats), encoding='utf-8')
@@ -119,17 +130,21 @@ class Library:
         """Whether a scan is reading new or changed files, rather than only listing the folder."""
         return self.scan_state.get('state') == 'scanning' and bool(self.scan_state.get('changed'))
 
+    def head_started(self) -> bool:
+        """Whether visual search has the head start it may take while a scan reads files."""
+        return self.semantic.status()['indexed'] >= HEAD_START
+
     def index(self):
         """Prepare new images for visual search and group near-duplicates. A call made while this runs is folded
         into another round, so images a scan adds midway are not left waiting for the next scan.
 
-        It waits while a scan reads files, which on a laptop share its power, so the scan finishes sooner. The scan
-        calls this again once it is done."""
+        While a scan reads files, which on a laptop share its power, it prepares only the first HEAD_START images, then
+        waits, so the scan finishes sooner. The scan calls this again once it is done."""
         self.index_wanted = True
         while self.index_wanted and not self.closed.is_set() and self.semantic_lock.acquire(blocking=False):
             try:
                 self.index_wanted = False
-                self.semantic.index(lambda: self.closed.is_set() or self.reading())
+                self.semantic.index(lambda: self.closed.is_set() or (self.reading() and self.head_started()))
                 if not self.closed.is_set() and not self.reading() and self.groups.update():
                     self.revision += 1
             except Exception:
@@ -151,10 +166,15 @@ class Library:
                 'revision': self.revision}
 
     def search_status(self):
-        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too."""
+        """Visual search's status. It isn't ready while the scan still has files to read, which will need preparing too.
+        Once the model is on this computer, anything still to prepare that isn't being prepared is 'waiting', for the
+        scan to finish reading or for preparing to start, so 'idle' with a model means there is nothing to do."""
         search = self.semantic.status()
-        if search['state'] == 'ready' and self.scan_state.get('changed', 0) > self.scan_state.get('done', 0):
+        unread = self.scan_state.get('changed', 0) > self.scan_state.get('done', 0)
+        if search['state'] == 'ready' and unread:
             search['state'] = 'idle'
+        if search['state'] == 'idle' and search['downloaded'] and (unread or search['indexed'] < search['total']):
+            search['state'] = 'waiting'
         return search
 
     def filters(self, params):
@@ -164,11 +184,10 @@ class Library:
         if folder:
             where.append('(f.folder=? OR substr(f.folder,1,?)=?)')
             values += [folder, len(folder) + 1, folder + '/']
-        if params.get('type') == VIDEO_TYPE:
-            where.append('i.mime LIKE ?')
-            values.append(VIDEO_MIMES)
-        elif params.get('type'):
-            where.append('i.mime=?')
+        if params.get('type'):
+            if params['type'] not in TYPES:
+                raise ValueError('Choose a file type from the list.')
+            where.append(f'{TYPE}=?')
             values.append(params['type'])
         # Dates are the viewer's local days, so the stored UTC times are shifted by their offset before comparing.
         offset = utc_offset(params)
@@ -220,9 +239,8 @@ class Library:
             return db.execute(sql, values).fetchall()
 
     def require_search(self):
-        search = self.semantic.status()
-        if search['indexed'] == 0:
-            raise ValueError('Visual search is still getting ready.' if search['state'] in ('downloading', 'loading', 'indexing')
+        if self.semantic.status()['indexed'] == 0:
+            raise ValueError('Visual search is still getting ready.' if self.search_status()['state'] in ('waiting', 'downloading', 'loading', 'indexing')
                              else 'Visual search is not set up yet.')
 
     def pictures(self, params, image_bytes=None):
@@ -276,20 +294,22 @@ class Library:
         return {'months': months, 'total': sum(month['count'] for month in months)}
 
     def facets(self):
-        """The subfolders and file types present, each with how many distinct images it holds. Video formats count as one type."""
+        """The folder, its subfolders and the file types present, each with how many tiles the grid shows for it:
+        distinct images, with near-duplicates stacked as one. The folder itself is the path ''. Types are the filter's
+        choices, in its order, and only those present."""
         with connect(self.directory, rows=True) as db:
-            pairs = db.execute('SELECT DISTINCT f.folder, f.image_id FROM files f WHERE f.image_id IS NOT NULL').fetchall()
-            types = [dict(row) for row in db.execute(
-                """SELECT CASE WHEN mime LIKE ? THEN ? ELSE mime END AS mime, count(*) AS count
-                   FROM images GROUP BY 1 ORDER BY count DESC, mime""", (VIDEO_MIMES, VIDEO_TYPE))]
+            pairs = db.execute('''SELECT DISTINCT f.folder, coalesce(g.group_id, f.image_id) FROM files f
+                                  LEFT JOIN image_groups g ON g.image_id=f.image_id WHERE f.image_id IS NOT NULL''').fetchall()
+            counts = dict(db.execute(f'''SELECT {TYPE}, count(DISTINCT coalesce(g.group_id, i.id))
+                                         FROM images i LEFT JOIN image_groups g ON g.image_id=i.id GROUP BY 1''').fetchall())
         folders: dict[str, set] = {}
-        for folder, image_id in pairs:
-            # A folder counts the images in its subfolders too.
+        for folder, tile in pairs:
+            # A folder counts the tiles in its subfolders too.
             parts = folder.split('/') if folder else []
-            for depth in range(1, len(parts) + 1):
-                folders.setdefault('/'.join(parts[:depth]), set()).add(image_id)
-        return {'folders': [{'path': path, 'count': len(ids)} for path, ids in sorted(folders.items(), key=lambda item: item[0].lower())],
-                'types': types}
+            for depth in range(len(parts) + 1):
+                folders.setdefault('/'.join(parts[:depth]), set()).add(tile)
+        return {'folders': [{'path': path, 'count': len(tiles)} for path, tiles in sorted(folders.items(), key=lambda item: item[0].lower())],
+                'types': [{'type': kind, 'count': counts[kind]} for kind in TYPES if kind in counts]}
 
     def details(self, image_id):
         with connect(self.directory, rows=True) as db:

@@ -4,7 +4,7 @@ This guide covers what you can do in Orchard once it's running. To install it, s
 
 ## Opening a folder
 
-To choose a folder, click the open folder's name, at the right of the line under the search bar. It opens the system folder dialog, or you can type or paste a path, or pick a recent folder. When Orchard runs in your browser, the folder dialog needs `zenity` or `kdialog` on Linux. On Windows there's no dialog in the browser, so type or paste the path.
+To choose a folder, click the open folder's name in the sidebar, under **Grid** and **Map**. It opens the system folder dialog, or you can pick a recent folder. When Orchard runs in your browser, the folder dialog needs `zenity` or `kdialog` on Linux. Where there's no dialog, as on Windows in the browser, you type or paste the folder's path instead.
 
 You can also open a folder from the terminal, with `./orchard ~/Pictures`, or `orchard.cmd C:\Users\you\Pictures` on Windows. If Orchard is already open, this switches its window to the folder and brings it to the front.
 
@@ -48,9 +48,17 @@ The column of years on the right is a timeline of the whole folder, where each y
 | Page Up / Page Down | Move one year |
 | Home / End | Go to the newest or oldest image |
 
+## The sidebar
+
+The sidebar on the left switches between **Grid** and **Map**, and under the name of the open folder lists its subfolders, each with how many tiles it shows, which counts near-duplicates once, as the grid does. Click a folder to show only its images, including those in the folders inside it, and click it again to close it. Click its arrow to see the folders inside without showing it. **All images**, at the top, shows every folder again. The folder applies to search and the map as well.
+
+The button at the top of the sidebar, or Cmd+B (Ctrl+B on Windows and Linux), collapses it to a rail of icons for the two views and the open folder, and brings it back. Orchard remembers which. In a narrow window, the sidebar opens over the grid instead, and closes once you choose a folder or view.
+
+The sidebar is one stop for the Tab key. Once a folder has focus, the up and down arrow keys move between folders, the right arrow opens a folder or moves into it, the left arrow closes it or moves to the folder it's in, and Enter or Space shows it, or opens or closes the folder already shown.
+
 ## Viewing an image
 
-Click an image to open it. The viewer shows the file name, date, folder, size and type.
+Click an image to open it. Beside the image, the viewer lists when it was taken, its folder, its dimensions and its size, under the file name.
 
 The viewer's buttons are labelled:
 
@@ -59,11 +67,11 @@ The viewer's buttons are labelled:
 - **Download original** saves the file. In the window, this asks where to save it.
 - **Show in Finder**, or **Show in folder** on Windows and Linux, opens the folder that holds it.
 
-Click its folder to show only images from that folder.
+Click its folder to show only images from that folder, as choosing it in the sidebar does.
 
 Click the image to zoom in where you clicked, and click again to zoom out. While zoomed, drag or scroll with two fingers to move around. Pinch, or press Cmd and plus or minus on a Mac, or Ctrl elsewhere, to zoom around the pointer, and Cmd+0 or Ctrl+0 to fit the image again.
 
-Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer.
+Use the left and right arrow keys, or swipe with two fingers, to move between images. Escape zooms out, then closes the viewer. Over the map, all four arrow keys move to the nearest image that way on the map, and closing the viewer shrinks the image back to its place there.
 
 In Orchard's window on a Mac, drag an image from the grid or the viewer into another app, like Finder, Mail or a website, to give it the original file, as dragging from Finder does. The other app always gets a copy, so the file in your folder stays where it is.
 
@@ -77,11 +85,12 @@ Images that look almost the same, like bursts, edits and resized copies, share o
 
 **Filter** narrows the grid by:
 
-- **Subfolder**, including the folders inside it.
-- **File type**. Every video format is grouped as **Videos**; each image format is listed on its own.
+- **File type**. **Photos**, **Videos**, **GIFs** or **RAW**, each listed only when the folder has some. Photos are every still format except camera RAW files and GIFs, which can move.
 - **Date**: Today, Past 7 days, Past 28 days, Past year, All, or a custom range.
 
-Filters also apply to search and the map.
+Each choice takes effect at once. Filters also apply to search and the map.
+
+Each filter that is on shows after the count, under the search bar. Click one to take it off.
 
 ## Searching
 
@@ -111,7 +120,7 @@ The first layout takes a few seconds. After that, new images are placed next to 
 
 Visual search and the map need a model called SigLIP 2. It's a one-time download of about 504 MB on an Apple Silicon Mac, or 690 MB on other computers, and it runs offline after that.
 
-When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, set it up later from **Info**, from the map, or by choosing **Appearance** in the search options. Once it's set up, every folder you open is prepared for visual search on its own.
+When you choose your first folder, **Set up visual search too** is ticked, so the download starts with the scan. If you skipped it, click **Set up visual search** under the search bar, at the left, and the download's progress takes its place. You can also set it up from the map, or by choosing **Appearance** in the search options. If setting up fails, the same place says so, and clicking it tries again. Once it's set up, every folder you open is prepared for visual search on its own. Preparing waits while Orchard reads new files, and **Appearance** says what it is waiting on until it can search.
 
 Preparing takes a moment per image, and how long a whole folder takes depends mostly on whether Orchard can use the computer's [GPU](#which-gpu-orchard-uses). These rough times come from one Mac and one Intel laptop:
 
@@ -133,14 +142,14 @@ Orchard prepares images on the GPU where it can:
 
 If the GPU fails, Orchard uses the CPU and prints a warning in the terminal, like "Core ML could not run the search model, so the CPU runs it". On a Mac, Orchard then downloads a 372 MB version of the image model for the CPU. [How Orchard works](how-it-works.md#visual-search) explains the check it runs first.
 
-## Background work and Info
+## Background work and the version
 
-Background work shows under the search bar, at the left: reading new files, downloading the model, and preparing images for visual search. Click it, or the ⓘ button, to open **Info**, which shows how many images and files the folder holds and how long background work has left. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere).
+Background work shows under the search bar, at the left, with how far it has got: reading new files, downloading the model, and preparing images for visual search.
 
-At the bottom, Info shows Orchard's version, and:
+Orchard's version is at the foot of the sidebar. Click it for:
 
-- **Check for updates on GitHub**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and Info links to it. Nothing about your images is sent.
-- A link that copies diagnostics, a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
+- **Check for updates**, which is off until you turn it on. Once on, Orchard asks GitHub once a day whether a newer version is out, and the menu links to it. Nothing about your images is sent.
+- **Copy diagnostics**, a short report for a bug report: versions, the search engine, counts and the last error, without file names or folders.
 
 You rarely need to rescan by hand. Orchard rescans the folder every minute, so added, changed and removed files show up on their own. A folder that's slow to list, like one on a network drive, is rechecked less often. To rescan at once, reload with **⌘R** (Ctrl+R elsewhere), which also tries again the files that couldn't be read.
 
@@ -148,25 +157,25 @@ You rarely need to rescan by hand. Orchard rescans the folder every minute, so a
 
 Orchard reads JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF and AVIF. Browsers can't show HEIC and TIFF, so the viewer shows a converted JPEG of those, and **Download** still gives you the original.
 
-Camera RAW photos, such as NEF, CR2, CR3, ARW and DNG, are shown by the full-size JPEG preview the camera stores inside each one. A RAW file without a preview is counted under **Could not be read**.
+Camera RAW photos, such as NEF, CR2, CR3, ARW and DNG, are shown by the full-size JPEG preview the camera stores inside each one. A RAW file without a preview can't be shown.
 
 Orchard also reads videos: MOV, MP4, M4V, WebM, MKV, AVI, MPEG, MTS, 3GP, WMV and FLV. The grid shows each one's first frame and length, and visual search finds a video by frames from a quarter, half and three quarters of the way through. The viewer plays it muted, on a loop, with controls to unmute; MOV, MP4, M4V and WebM play in the window, and the rest need **Download original**.
 
 Orchard skips:
 
 - Hidden files and folders, including the `._` files macOS leaves on external drives.
-- Photos libraries, since macOS keeps them closed to other apps. Info says when it finds one. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
-- Damaged, empty and very large files, over 300 megapixels. Info lists how many could not be read.
+- Photos libraries, since macOS keeps them closed to other apps. To browse your Apple Photos, [export them to a folder](#apple-photos) first.
+- Damaged, empty and very large files, over 300 megapixels.
 
 ## Apple Photos
 
-On a Mac, Orchard can show and search your Photos library, photos and videos alike. Choose **Photos library** on the welcome screen, or in the panel under the folder name. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
+On a Mac, Orchard can show and search your Photos library, photos and videos alike. Choose **Photos library** on the welcome screen, or in the panel the folder's name opens in the sidebar. The first time, macOS asks whether Orchard may access your photos. To change your answer later, use **System Settings › Privacy & Security › Photos**.
 
 - Orchard reads each photo through Photos, with your edits, and never changes your library.
 - Videos are shown and searched too, with your edits. Hidden photos and videos are skipped.
 - Photos has no folders, so there's no folder filter. Searching file names uses each photo's original name.
 - **Show in Photos** opens the photo in Photos, in place of Show in Finder. The first time, macOS asks whether Orchard may control Photos. **Download original** saves the file.
-- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read, and Info counts them under **Could not be read**. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then reload with **⌘R**.
+- Photos kept only in iCloud, when **Optimize Mac Storage** is on, can't be read. To include them, choose **Download Originals to this Mac** in **Photos › Settings › iCloud**, then reload with **⌘R**.
 - Orchard opens the library Photos uses as its System Photo Library. To browse another one, make it the system library in **Photos › Settings › General**.
 - Started from Terminal, Orchard can't ask for access, since macOS only asks apps that say why they want it. Open Orchard from its app, or from the one [`scripts/install-app`](#the-mac-app-from-a-clone) makes.
 

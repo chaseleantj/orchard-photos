@@ -1,37 +1,42 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
-import type { Facets, Filters, LibraryStatus, Model, Range, SearchMode, SearchStatus, Status, Updates } from './types';
-import { APP_NAME, RANGES, SET_UP, countNoun, defaults, megabytes, plural, post, request, searchable, settingUp, typeLabel } from './types';
-import { type Estimate, Progress } from './Progress';
-import { estimated, searchWork } from './Activity';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowUpRight, Check, ChevronDown, Copy, FolderOpen, Image as ImageIcon, Images, X } from 'lucide-react';
+import type { Facets, Filters, LibraryStatus, Model, Range, SearchCondition, SearchMode, Status, Updates } from './types';
+import { APP_NAME, RANGES, SET_UP, megabytes, post, request, typeLabel } from './types';
+import { waitingOn } from './Activity';
 
 // Room kept between a popover and the control above it, and between a popover and the window edge.
 const OFFSET = 8;
 const EDGE = 16;
-// How long Info says the diagnostics were copied.
+// How long the version's menu says the diagnostics were copied.
 const COPIED_FOR = 4000;
 
-/** A popover opened from `anchor`: under it, lined up with its right edge, or with its left edge and width for `menu`. */
-function Popover({ label, anchor, menu, className, onClose, children }: { label: string; anchor: HTMLElement | null; menu?: boolean; className: string; onClose: () => void; children: React.ReactNode }) {
+/** A popover opened from `anchor`: under it, or over it where there is more room above. It lines up with the anchor's
+ *  right edge (`end`), its left edge (`start`), or both (`stretch`, taking its width). `focus` is the element inside
+ *  that takes focus as it opens; otherwise the popover takes it itself, so no control inside is marked until the
+ *  keyboard moves there. */
+function Popover({ label, anchor, align = 'end', focus, className, onClose, onKeyDown, children }: { label: string; anchor: HTMLElement | null; align?: 'start' | 'end' | 'stretch'; focus?: (popover: HTMLDialogElement) => HTMLElement | null; className: string; onClose: () => void; onKeyDown?: (e: React.KeyboardEvent<HTMLDialogElement>) => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
     const node = ref.current!;
     node.showModal();
-    // The popover takes focus itself, so no control inside it is ringed until the keyboard moves there.
-    node.focus();
+    (focus?.(node) ?? node).focus();
     const place = () => {
       if (!anchor?.isConnected) return;
       const r = anchor.getBoundingClientRect();
-      if (menu) node.style.width = `${r.width}px`;
+      if (align === 'stretch') node.style.width = `${r.width}px`;
       const width = node.offsetWidth;
-      const left = Math.max(EDGE, Math.min(innerWidth - width - EDGE, menu ? r.left : r.right - width));
-      Object.assign(node.style, { top: `${r.bottom + OFFSET}px`, left: `${left}px`, right: 'auto', maxHeight: `${innerHeight - r.bottom - OFFSET - EDGE}px` });
+      const left = Math.max(EDGE, Math.min(innerWidth - width - EDGE, align === 'end' ? r.right - width : r.left));
+      const below = innerHeight - r.bottom - OFFSET - EDGE, above = r.top - OFFSET - EDGE;
+      const up = node.scrollHeight > below && above > below;
+      node.toggleAttribute('data-up', up);
+      Object.assign(node.style, { top: `${up ? r.top - OFFSET - Math.min(node.scrollHeight, above) : r.bottom + OFFSET}px`, left: `${left}px`, right: 'auto', maxHeight: `${up ? above : below}px` });
     };
     place();
     addEventListener('resize', place);
     return () => { removeEventListener('resize', place); node.close(); };
-  }, [anchor, menu]);
-  return <dialog ref={ref} tabIndex={-1} className={className} aria-label={label} onCancel={onClose} onClick={e => { if (e.target !== e.currentTarget) return; const r = ref.current!.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); }}>{children}</dialog>;
+  // `focus` is a new function each render and is only read as the popover opens, so it does not reopen it.
+  }, [anchor, align]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <dialog ref={ref} tabIndex={-1} className={className} aria-label={label} onKeyDown={onKeyDown} onCancel={e => { e.stopPropagation(); onClose(); }} onClick={e => { if (e.target !== e.currentTarget) return; const r = ref.current!.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); }}>{children}</dialog>;
 }
 
 function Panel({ title, anchor, onClose, children }: { title: string; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode }) {
@@ -43,109 +48,85 @@ function Panel({ title, anchor, onClose, children }: { title: string; anchor: HT
   </Popover>;
 }
 
-function Select({ label, value, onChange, disabled, children }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; children: React.ReactNode }) {
-  return <div className="select"><select aria-label={label} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>{children}</select><ChevronDown /></div>;
+interface Choice { value: string; label: string; note?: string }
+
+/** A field that opens a menu of choices under it, in the same menu the search bar opens, with a tick on the one chosen.
+ *  The arrow keys move between choices and Escape closes it without choosing. */
+function Dropdown({ label, value, choices, placeholder, onChange }: { label: string; value: string; choices: Choice[]; placeholder?: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const chosen = choices.find(c => c.value === value);
+  const close = () => { setOpen(false); button.current?.focus(); };
+  const move = (e: React.KeyboardEvent<HTMLDialogElement>) => {
+    const all = [...e.currentTarget.querySelectorAll<HTMLElement>('.menu-item')], at = all.indexOf(document.activeElement as HTMLElement);
+    const to = { ArrowDown: at + 1, ArrowUp: at < 0 ? all.length - 1 : at - 1, Home: 0, End: all.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    all[Math.max(0, Math.min(all.length - 1, to))]?.focus();
+  };
+  return <>
+    <button ref={button} type="button" className="dropdown" aria-label={`${label}, ${chosen?.label ?? placeholder ?? ''}`} aria-haspopup="dialog" aria-expanded={open} disabled={!choices.length} onClick={() => setOpen(true)}
+      onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); } }}>
+      <span className="dropdown-value">{chosen?.label ?? placeholder}</span>{chosen?.note && <span className="muted">{chosen.note}</span>}<ChevronDown />
+    </button>
+    {open && <Popover label={label} anchor={button.current} align="stretch" className="panel menu dropdown-menu" onClose={close} onKeyDown={move}
+      focus={popover => popover.querySelector<HTMLElement>('[aria-pressed="true"]') ?? popover.querySelector<HTMLElement>('.menu-item')}>
+      <div role="group" aria-label={label}>
+        {choices.map(c => <button key={c.value} type="button" className="text-button menu-item" aria-pressed={c.value === value} onClick={() => { onChange(c.value); close(); }}>
+          <Check /><span className="dropdown-value">{c.label}</span>{c.note && <span className="muted">{c.note}</span>}
+        </button>)}
+      </div>
+    </Popover>}
+  </>;
 }
 
+/** The file type and date filters, which take effect as they are chosen. A custom range takes effect once its dates
+ *  are in order. */
 export function FilterPanel({ filters, anchor, onApply, onClose }: { filters: Filters; anchor: HTMLElement | null; onApply: (filters: Filters) => void; onClose: () => void }) {
   const [draft, setDraft] = useState(filters);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { request<Facets>('/api/facets').then(setFacets, e => setError((e as Error).message)); }, []);
-  const invalid = draft.range === 'custom' && !!draft.from && !!draft.to && draft.from > draft.to;
-  const folders = facets?.folders ?? [];
+  // A date field passes through years like 0002 and 0020 while one is typed, so a date takes effect once its year is
+  // whole, and the range is judged only then.
+  const whole = (date: string) => !date || date >= '1000';
+  const inOrder = (f: Filters) => !f.from || !f.to || f.from <= f.to;
+  const ready = (f: Filters) => f.range !== 'custom' || (whole(f.from) && whole(f.to) && inOrder(f));
+  const invalid = draft.range === 'custom' && whole(draft.from) && whole(draft.to) && !inOrder(draft);
+  const change = (next: Partial<Filters>) => {
+    const filters = { ...draft, ...next };
+    if (Object.entries(next).every(([key, value]) => draft[key as keyof Filters] === value)) return;
+    setDraft(filters);
+    if (ready(filters)) onApply(filters);
+  };
   const types = facets?.types ?? [];
-  const loading = !facets && !error;
+  const typeChoices: Choice[] = facets ? [
+    { value: '', label: 'All types' },
+    ...(draft.type && !types.some(t => t.type === draft.type) ? [{ value: draft.type, label: typeLabel(draft.type), note: 'No images' }] : []),
+    ...types.map(t => ({ value: t.type, label: typeLabel(t.type), note: t.count.toLocaleString() })),
+  ] : [];
   return <Panel title="Filters" anchor={anchor} onClose={onClose}>
-    <fieldset className="field"><legend>Folder</legend>
-      <Select label="Folder" value={draft.folder} disabled={loading} onChange={folder => setDraft({ ...draft, folder })}>
-        <option value="">{loading ? 'Loading folders…' : 'All folders'}</option>
-        {/* A remembered choice that no longer exists stays listed, so the panel never misstates what is applied. */}
-        {draft.folder && facets && !folders.some(f => f.path === draft.folder) && <option value={draft.folder}>{draft.folder} · no images</option>}
-        {folders.map(f => <option key={f.path} value={f.path}>{f.path} · {f.count.toLocaleString()}</option>)}
-      </Select>
-      {facets && !folders.length && <p className="field-note">This folder has no subfolders with images.</p>}
-    </fieldset>
     <fieldset className="field"><legend>File type</legend>
-      <Select label="File type" value={draft.type} disabled={loading} onChange={type => setDraft({ ...draft, type })}>
-        <option value="">All types</option>
-        {draft.type && facets && !types.some(t => t.mime === draft.type) && <option value={draft.type}>{typeLabel(draft.type)} · no images</option>}
-        {types.map(t => <option key={t.mime} value={t.mime}>{typeLabel(t.mime)} · {t.count.toLocaleString()}</option>)}
-      </Select>
+      <Dropdown label="File type" value={draft.type} choices={typeChoices} placeholder={error ? 'Types unavailable' : 'Loading types…'} onChange={type => change({ type })} />
     </fieldset>
     <fieldset className="field"><legend>Date</legend>
-      <Select label="Date" value={draft.range} onChange={range => setDraft({ ...draft, range: range as Range })}>{RANGES.map(({ range, label }) => <option key={range} value={range}>{label}</option>)}</Select>
-      {draft.range === 'custom' && <div className="date-inputs"><label><span>From</span><input aria-label="From date" type="date" value={draft.from} max={draft.to || undefined} onChange={e => setDraft({ ...draft, from: e.target.value })} /></label><label><span>To</span><input aria-label="To date" type="date" value={draft.to} min={draft.from || undefined} onChange={e => setDraft({ ...draft, to: e.target.value })} /></label></div>}
+      <Dropdown label="Date" value={draft.range} choices={RANGES.map(({ range, label }) => ({ value: range, label }))} onChange={range => change({ range: range as Range })} />
+      {draft.range === 'custom' && <div className="date-inputs"><label><span>From</span><input aria-label="From date" type="date" value={draft.from} max={draft.to || undefined} onChange={e => change({ from: e.target.value })} /></label><label><span>To</span><input aria-label="To date" type="date" value={draft.to} min={draft.from || undefined} onChange={e => change({ to: e.target.value })} /></label></div>}
       {invalid && <p className="error-copy" role="alert">The end date must follow the start date.</p>}
-      <p className="field-note">Photos are dated when they were taken. Images without that record use the date the file was last changed.</p>
     </fieldset>
     {error && <p className="error-copy" role="alert">{error}</p>}
-    <div className="panel-footer"><button className="text-button secondary" onClick={() => setDraft(defaults)}>Reset</button><button className="text-button primary" disabled={invalid} onClick={() => { onApply(draft); onClose(); }}>Apply</button></div>
   </Panel>;
 }
 
-/** `narrowed` says the grid is filtered or searched, so it shows less than the library; `shown` is how many, when known.
- *  `scanProgress` and `searchProgress` estimate how far reading and visual search are, and the time they have left. */
-export function LibraryPanel({ status, shown, narrowed, scanProgress, searchProgress, anchor, onClose, onSetUp }: { status: Status; shown: number | null; narrowed: boolean; scanProgress: Estimate; searchProgress: Estimate; anchor: HTMLElement | null; onClose: () => void; onSetUp: () => void }) {
-  const library = status.library!;
-  const { counts, scan, search } = library;
-  const noun = countNoun(library);
-  const scanning = scan.state === 'scanning';
-  const complete = search.state === 'ready';
-  const work = estimated(searchWork(search), searchProgress);
-  const scanLabel = scan.changed ? `Reading ${(scan.done ?? 0).toLocaleString()} of ${scan.changed.toLocaleString()}${scanProgress.left ? `. ${scanProgress.left}` : ''}` : 'Looking for images…';
-  // Each row is taken from the one above, so the last is exactly the number of images the unfiltered grid shows.
-  const ledger = [
-    { label: 'Images and videos', value: counts.files + counts.unreadable, shown: true },
-    { label: 'Could not be read', value: -counts.unreadable, shown: !!counts.unreadable },
-    { label: 'Identical copies, shown once', value: -counts.duplicates, shown: !!counts.duplicates },
-    { label: 'Near-duplicates, stacked', value: -counts.nearDuplicates, shown: !!counts.nearDuplicates },
-  ].filter(row => row.shown);
-  const totalLabel = ledger.length < 2 ? (noun === 'item' ? 'Items' : 'Images') : narrowed ? 'In the library' : 'Total shown';
-  return <Panel title="Info" anchor={anchor} onClose={onClose}>
-    <dl className="counts">
-      {ledger.length > 1 && ledger.map(row => <Fragment key={row.label}><dt>{row.label}</dt><dd>{row.value < 0 ? `− ${(-row.value).toLocaleString()}` : row.value.toLocaleString()}</dd></Fragment>)}
-      <dt className={ledger.length > 1 ? 'total' : undefined}>{totalLabel}</dt><dd className={ledger.length > 1 ? 'total' : undefined}>{(counts.images - counts.nearDuplicates).toLocaleString()}</dd>
-    </dl>
-    {shown !== null && <p>{plural(shown, noun)} shown with your filters.</p>}
-    {status.folder!.photos && !!counts.unreadable && <p>Photos kept only in iCloud can’t be read. To include them, choose Download Originals to this Mac in Photos › Settings › iCloud, then reload with {status.platform === 'darwin' ? '⌘R' : 'Ctrl+R'}.</p>}
-    {!!library.photoLibraries.length && <p>{library.photoLibraries.length === 1 ? 'The Photos library here is' : 'The Photos libraries here are'} skipped in this folder. {status.photos ? 'To see your Photos library, choose Photos library under the folder name.' : 'Export photos to a folder to include them.'}</p>}
-    {!!library.unlistedFolders && <p>{plural(library.unlistedFolders, 'folder')} could not be opened. Check their permissions.</p>}
-    {!!library.unreached && <p>{plural(library.unreached, 'file')} could not be reached. Each scan tries {library.unreached === 1 ? 'it' : 'them'} again.</p>}
-    {scanning && <Progress value={scanProgress.value} label="Reading images" />}
-    {scanning && <p>{scanLabel}</p>}
-    {scan.error && <p className="error-copy">{scan.error}</p>}
-    <hr className="rule" /><h3>Visual search</h3>
-    {work && !work.error ? <>
-      <p>{work.label}{work.detail && <span className="numbers"> · {work.detail}</span>}</p>
-      <Progress value={work.value} label={work.label} />
-      {search.state === 'downloading' && <p>{searchProgress.left ? `${searchProgress.left}.` : 'This happens once.'} You can keep browsing meanwhile.</p>}
-      {search.state === 'indexing' && <p>{searchProgress.left ? `${searchProgress.left}. ` : ''}Prepared images can be searched already.</p>}
-    </> : search.state === 'error' ? <>
-      <p className="error-copy" role="alert">{search.error}</p>
-      <button className="text-button secondary" onClick={onSetUp}>Try again</button>
-    </> : complete ? <p>Find any image by describing it in the search bar, or by dropping or pasting a similar one there. Search runs on this computer.</p>
-    : search.downloaded && !counts.images && !scanning ? <p>Visual search is set up. Images added to this folder are prepared automatically.</p>
-    : search.downloaded && scanning ? <p>{plural(Math.max(0, counts.images - search.indexed), noun)} to prepare once reading finishes.</p>
-    : search.downloaded ? <>
-      <p>{plural(Math.max(0, counts.images - search.indexed), noun)} still to prepare. New ones are prepared automatically.</p>
-      <button className="text-button primary" onClick={onSetUp}>Finish preparing</button>
-    </> : <>
-      <p>Find images by describing them or by showing a similar one, and see the folder laid out by look. The search model downloads once (about {megabytes(status.model.size)} MB), then runs on this computer.</p>
-      <button className="text-button primary" onClick={onSetUp}>{SET_UP}</button>
-    </>}
-    {search.error && search.state !== 'error' && <p className="error-copy">{search.error}</p>}
-    <hr className="rule" /><h3>{APP_NAME} {status.version}</h3>
-    <About library={library} />
-  </Panel>;
-}
-
-/** The update check and the link that copies diagnostics, under the version in Info. */
-function About({ library }: { library: LibraryStatus }) {
+/** The version, at the foot of the sidebar, which opens the opt-in update check, the newer release it found, and the
+ *  diagnostics a bug report asks for. */
+export function AboutMenu({ version, library }: { version: string; library: LibraryStatus }) {
+  const [open, setOpen] = useState(false);
   const [updates, setUpdates] = useState<Updates | null>(null);
   const [report, setReport] = useState('');
   const [copied, setCopied] = useState<'copied' | 'select' | null>(null);
   const [error, setError] = useState('');
+  const button = useRef<HTMLButtonElement>(null);
   const reportArea = useRef<HTMLTextAreaElement>(null);
   // An update check that fails says nothing; the next day's check tries again.
   useEffect(() => { request<Updates>('/api/updates').then(setUpdates, () => {}); }, []);
@@ -158,14 +139,17 @@ function About({ library }: { library: LibraryStatus }) {
     setError(''); setUpdates(old => old && { ...old, enabled });
     try { setUpdates(await post<Updates>('/api/updates', { enabled })); } catch (e) { setUpdates(old => old && { ...old, enabled: !enabled }); setError((e as Error).message); }
   };
-  const copy = async (button: HTMLElement) => setCopied(await copyText(report, button) ? 'copied' : 'select');
+  const copy = async (target: HTMLElement) => setCopied(await copyText(report, target) ? 'copied' : 'select');
+  const close = () => { setOpen(false); setCopied(null); setError(''); };
   return <>
-    {updates?.update && <div className="panel-action"><p>Version {updates.update.version} is available.</p><a className="text-button secondary" href={updates.update.url} target="_blank" rel="noreferrer">See the release</a></div>}
-    <label className="check"><input type="checkbox" checked={!!updates?.enabled} disabled={!updates} onChange={e => void turn(e.target.checked)} /><span>Check for updates on GitHub</span></label>
-    <p role="status">{copied === 'copied' ? 'Copied. Paste it into your bug report.' : copied === 'select' ? 'Copy the text below into your bug report.'
-      : <>Click <button className="inline-link" disabled={!report} onClick={e => void copy(e.currentTarget)}>here</button> to copy diagnostics for bug reports.</>}</p>
-    {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
-    {error && <p className="error-copy" role="alert">{error}</p>}
+    <button ref={button} className="text-button about" aria-haspopup="dialog" aria-expanded={open} title={updates?.update ? `Version ${updates.update.version} is available` : undefined} onClick={() => setOpen(true)}>{APP_NAME} {version}</button>
+    {open && <Popover label={`${APP_NAME} ${version}`} anchor={button.current} align="start" className="panel menu about-menu" onClose={close}>
+      {updates?.update && <a className="text-button menu-item" href={updates.update.url} target="_blank" rel="noreferrer"><ArrowUpRight />Get version {updates.update.version}</a>}
+      <button className="text-button menu-item" aria-pressed={!!updates?.enabled} disabled={!updates} onClick={() => void turn(!updates?.enabled)}><Check />Check for updates</button>
+      <button className="text-button menu-item" disabled={!report} onClick={e => void copy(e.currentTarget)}>{copied === 'copied' ? <><Check />Diagnostics copied</> : <><Copy />Copy diagnostics</>}</button>
+      {copied === 'select' && <textarea ref={reportArea} className="report" readOnly rows={report.split('\n').length} value={report} aria-label="Diagnostics" />}
+      {error && <p className="menu-note error-copy" role="alert">{error}</p>}
+    </Popover>}
   </>;
 }
 
@@ -186,7 +170,7 @@ async function copyText(text: string, button: HTMLElement) {
   return copied;
 }
 
-/** Open a folder: the system dialog where there is one, a typed path, or a recent folder. `offerSetup` adds the choice
+/** Open a folder: the system dialog, or a typed path where there is none, or a recent folder. `offerSetup` adds the choice
  *  to set up visual search along with whichever folder is opened, for a first visit. */
 export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { status: Status; offerSetup?: boolean; onOpened: (status: Status) => void; onSetUp?: () => void }) {
   const [path, setPath] = useState('');
@@ -201,10 +185,10 @@ export function FolderChooser({ status, offerSetup, onOpened, onSetUp }: { statu
   return <div className="chooser">
     {status.picker && <button className="text-button primary" disabled={!!busy} onClick={() => open('dialog', () => post('/api/folder/choose'))}><FolderOpen />{busy === 'dialog' ? 'Waiting for the folder dialog…' : 'Choose folder…'}</button>}
     {status.photos && !status.folder?.photos && <button className="text-button secondary" disabled={!!busy} onClick={() => open('photos', () => post('/api/folder', { path: status.photos }))}><Images />{busy === 'photos' ? 'Opening…' : 'Photos library'}</button>}
-    <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
-      <label htmlFor="folder-path">{status.picker ? 'Or type its path' : 'Folder path'}</label>
+    {!status.picker && <form className="path-form" onSubmit={e => { e.preventDefault(); void open('path', () => post('/api/folder', { path })); }}>
+      <label htmlFor="folder-path">Folder path</label>
       <div className="path-row"><input id="folder-path" value={path} placeholder="~/Pictures" spellCheck={false} autoCapitalize="off" autoComplete="off" onChange={e => setPath(e.target.value)} /><button className="text-button secondary" type="submit" disabled={!!busy || !path.trim()}>{busy === 'path' ? 'Opening…' : 'Open'}</button></div>
-    </form>
+    </form>}
     {error && <p className="error-copy" role="alert">{error}</p>}
     {!!status.recent.length && <div className="recent"><h3>Recent</h3><ul>{status.recent.map(folder => <li key={folder.path}>
       <button className="recent-open" disabled={!!busy || !folder.available} title={folder.available ? folder.path : `${folder.path} is not available. Reconnect its drive to open it.`} onClick={() => open(folder.path, () => post('/api/folder', { path: folder.path }))}><span className="path">{folder.label}</span>{!folder.available && <span className="muted">Not available</span>}{busy === folder.path && <span className="muted">Opening…</span>}</button>
@@ -222,22 +206,22 @@ export function FolderPanel({ status, anchor, onOpened, onClose }: { status: Sta
 }
 
 /** How the search bar searches. It opens from the bar itself and is the one place the mode is chosen. Until visual
- *  search can answer, choosing Appearance sets it up. */
-export function SearchMenu({ mode, search, model, anchor, onMode, onSetUp, onUpload, onClose }: { mode: SearchMode; search: SearchStatus | null; model: Model; anchor: HTMLElement | null; onMode: (mode: SearchMode) => void; onSetUp: () => void; onUpload: () => void; onClose: () => void }) {
-  const ready = !!search && searchable(search);
-  const busy = !!search && settingUp(search);
+ *  search is set up, choosing Appearance sets it up; while it is starting, Appearance says what it is waiting on. */
+export function SearchMenu({ mode, condition, library, model, anchor, onMode, onSetUp, onUpload, onClose }: { mode: SearchMode; condition: SearchCondition | null; library: LibraryStatus | null; model: Model; anchor: HTMLElement | null; onMode: (mode: SearchMode) => void; onSetUp: () => void; onUpload: () => void; onClose: () => void }) {
+  const ready = condition === 'on';
+  const busy = condition === 'starting';
   const option = (value: SearchMode, label: string) => <button className="text-button menu-item" aria-pressed={mode === value} onClick={() => { onMode(value); onClose(); }}><Check />{label}</button>;
-  return <Popover label="Search options" anchor={anchor} menu className="panel menu" onClose={onClose}>
+  return <Popover label="Search options" anchor={anchor} align="stretch" className="panel menu" onClose={onClose}>
     <div role="group" aria-labelledby="search-by">
       <div className="menu-label" id="search-by">Search by</div>
       {ready ? option('visual', 'Appearance') : <>
         <button className="text-button menu-item" aria-pressed={false} aria-describedby="appearance-note" disabled={busy} onClick={() => { onSetUp(); onClose(); }}><Check />Appearance</button>
-        <div className="menu-note" id="appearance-note">{busy ? 'Getting ready. Progress shows under the search bar.' : search?.state === 'error' ? 'The last try failed. Choose it to try again.' : `Sets up visual search: a ${megabytes(model.size)} MB download, once.`}</div>
+        <div className="menu-note" id="appearance-note">{busy ? waitingOn(library!) : condition === 'failed' ? 'The last try failed. Choose it to try again.' : `Sets up visual search: a ${megabytes(model.size)} MB download, once.`}</div>
       </>}
       {option('name', 'File name')}
     </div>
     <hr className="menu-rule" />
     <button className="text-button menu-item" disabled={!ready} onClick={() => { onClose(); onUpload(); }}><ImageIcon />Find images like a file…</button>
-    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : 'Works once visual search is set up.'}</div>
+    <div className="menu-note">{ready ? 'You can also drop or paste an image.' : busy ? 'Works once visual search is ready.' : 'Works once visual search is set up.'}</div>
   </Popover>;
 }

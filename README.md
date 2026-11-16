@@ -14,7 +14,7 @@ Most photo apps with this kind of search upload your library to a server. Orchar
 - **Play and search your videos.** Search finds a video by what is in it.
 - **See camera RAW photos**, such as NEF, CR2, ARW and DNG, by the preview the camera stores in each one.
 - **Open your Apple Photos library** on a Mac, photos and videos alike, without exporting it.
-- **Filter** by subfolder, file type and date.
+- **Browse by folder** in a sidebar, and **filter** by file type and date.
 - **See fewer duplicates.** Copies, bursts and edits of the same photo share one tile.
 
 ## Download
@@ -38,7 +38,7 @@ On Linux or an Intel Mac, see [Running from source](docs/running-from-source.md)
 
 ## Privacy
 
-Orchard only goes online to download the search model, and to check for updates if you turn that on in **Info**. Your photos never leave your computer, and websites you visit can't reach them.
+Orchard only goes online to download the search model, and to check for updates if you turn that on under the version, at the foot of the sidebar. Your photos never leave your computer, and websites you visit can't reach them.
 
 ## More help
 
