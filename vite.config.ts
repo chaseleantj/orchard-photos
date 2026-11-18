@@ -6,9 +6,12 @@ const server = `http://127.0.0.1:${app.port}`;
 
 export default defineConfig({
   plugins: [react(), { name: 'app-name', transformIndexHtml: html => html.replace('%APP_NAME%', app.name) }],
+  // launch-video/ holds the launch video's own pages and tens of thousands of media files, none of them the app's.
+  optimizeDeps: { entries: ['index.html'] },
   server: {
     port: app.devPort,
     strictPort: true,
+    watch: { ignored: ['**/launch-video/**'] },
     proxy: {
       '/api': {
         target: server,

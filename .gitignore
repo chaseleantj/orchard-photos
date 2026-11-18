@@ -22,3 +22,6 @@ desktop.ini
 # Playwright output
 test-results/
 playwright-report/
+
+# The launch video's working files: footage, renders and sample photo libraries
+launch-video/
